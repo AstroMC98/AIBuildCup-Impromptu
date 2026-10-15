@@ -51,6 +51,14 @@
     background: linear-gradient(var(--glow), var(--glow)) 0 94% / calc(var(--wp, 0) * 100%) .09em no-repeat;
   }
   .cap.now { animation: cap-in var(--dur-smooth) var(--spring-smooth) both; }
+  /* a detour: what the producer asked sits where the previous line was */
+  .cap.prev.asked .cap-who { color: var(--amber); }
+  .cap.prev.asked p { color: var(--fg); font-style: italic; }
+  /* interrupted: the words the hosts won't get to say dissolve */
+  .cap.now p.dissolve .w:not(.said) { opacity: 0 !important; filter: blur(6px); transform: translateY(-6px); transition: opacity .6s ease, filter .6s ease, transform .6s ease; }
+  .cap.now p.dissolve .w { display: inline-block; }
+  /* the stinger's flash: the gel swings to amber fast, then eases back (.stage's own transition) */
+  .stage.gel-flash { transition: --gel .12s ease-out; }
   @keyframes cap-in { from { opacity: 0; transform: translateY(14px); } }
   .cap-status { font-size: 15px; color: var(--fg-2); font-style: italic; }
   .cap-status.small { font-size: 14px; }
@@ -146,6 +154,13 @@
   .chapter-bar.thin .cb-part { height: 3px; }
   .cb-part.done { background: var(--fg); }
   .cb-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 2px; background: var(--fg); }
+  /* a detour: an amber piece where the producer's interruption was heard */
+  .cb-detour {
+    position: absolute; top: -1px; bottom: -1px; min-width: 4px; border-radius: 2px; background: var(--amber);
+    box-shadow: 0 0 8px color-mix(in oklch, var(--amber) 70%, transparent); transform-origin: top;
+    animation: detour-drop var(--dur-bouncy) var(--spring-bouncy) both;
+  }
+  @keyframes detour-drop { from { transform: translateY(-10px) scaleY(2.4); opacity: 0; } }
   .cb-knob {
     position: absolute; top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%;
     background: #fff; box-shadow: 0 0 0 6px color-mix(in oklch, #fff 14%, transparent), 0 1px 4px rgba(0, 0, 0, .35);
@@ -290,8 +305,12 @@
 
   /* ---- interrupting the show (the producer) ----------------------------------------------------- */
   .interrupt { display: flex; flex-direction: column; gap: 14px; align-items: stretch; }
+  /* hold-to-talk sits inside the studio clock: a dot a second, up to the minute you can hold it */
+  .talk-clock { position: relative; align-self: center; width: 196px; height: 196px; display: grid; place-items: center; }
+  .talk-ring { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .talk-ring circle.lit { fill: var(--tally); }
   .talk-btn {
-    position: relative; align-self: center; width: 136px; height: 136px; border-radius: 50%; border: 0; cursor: pointer;
+    position: relative; width: 136px; height: 136px; border-radius: 50%; border: 0; cursor: pointer;
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
     background: var(--pri); color: var(--on-pri); font: inherit; font-weight: 800; font-size: 13px;
     touch-action: none; user-select: none; -webkit-user-select: none;
@@ -306,7 +325,8 @@
 
   /* reduced motion: arrivals fade in place; nothing travels, breathes or bounces */
   @media (prefers-reduced-motion: reduce) {
-    .cap.now, .gr-rundown li.drop, .callin-line.arrive, .np-overlay, .np-cover, .behind-pill { animation: fade-in .2s ease both; }
+    .cap.now, .gr-rundown li.drop, .callin-line.arrive, .np-overlay, .np-cover, .behind-pill, .cb-detour { animation: fade-in .2s ease both; }
+    .cap.now p.dissolve .w:not(.said) { filter: none; transform: none; }
     .gr-title.arrive, .gr-theme i, .tune-play { animation: none; }
     .cap.now p.kinetic .w { transition: none; }
   }

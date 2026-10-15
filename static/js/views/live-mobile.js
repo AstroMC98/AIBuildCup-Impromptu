@@ -3,7 +3,7 @@
 // (the one talking glows with their voice), and a bar to call in, react or, for the
 // producer, interrupt. Replays go straight to Now playing.
 import {
-  callinLines, callinsKey, captions, captionsKey, captionTick, chapterBar, chapterBarKey, chapterLabel, hostChips,
+  callinLines, callinsKey, captions, captionsKey, captionTick, chapterBar, chapterBarKey, chapterLabel, detourCue, hostChips,
   hostChipsKey, liveBadge, liveBadgeKey, myCallinNews,
 } from "../components.js";
 import { html, setHtml } from "../html.js";
@@ -99,6 +99,7 @@ export function mountMobile(root, ctl) {
       r.set("sub", sub, () => sub);
       r.set("captions", captionsKey(s, ctl, pos), () => captions(s, ctl, pos, { big: 30 }));
       captionTick(r.el("captions"), s, pos, { calm });
+      detourCue(s, pos, el);
       r.set("chapters", chapterBarKey(s, pos), () => chapterBar(s, pos));
       r.set("lines", callinsKey(s, pos), () => callinLines(s, pos));
       const news = myCallinNews(s, pos);

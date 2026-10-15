@@ -6,7 +6,9 @@ import { icon, VISIBILITY_ICON } from "./icons.js";
 import { session } from "./session.js";
 import { confirmSheet, openSheet } from "./ui.js";
 import { saveBlob, slug, toast } from "./util.js";
-import { Recorder } from "./audio/recorder.js";
+import { MAX_TALK_SECONDS, Recorder } from "./audio/recorder.js";
+import { reduced } from "./motion.js";
+import { fillRing, ring } from "./ring.js";
 
 // ---- Add context ----------------------------------------------------------------
 
@@ -439,8 +441,9 @@ export function openInterruptSheet(ctl) {
   setHtml(div, html`
     <p class="muted small">The show's paused. Ask the hosts anything, or tell them where to take it: they answer right away, then carry on.</p>
     ${Recorder.supported ? html`
-      <button type="button" class="talk-btn" data-talk aria-label="Hold to ask by voice">
-        ${icon("mic", 34, 2)}<span data-talk-label>Hold to talk</span></button>` : ""}
+      <div class="talk-clock">${ring({ cls: "talk-ring", r: 46, dot: 1.9 })}
+        <button type="button" class="talk-btn" data-talk aria-label="Hold to ask by voice">
+          ${icon("mic", 34, 2)}<span data-talk-label>Hold to talk</span></button></div>` : ""}
     <form class="row gap" data-ask>
       <label class="sr-only" for="int-text">Your question or direction</label>
       <input id="int-text" class="field grow" maxlength="500" placeholder="Why did the serpent talk?" autocomplete="off">
@@ -461,6 +464,8 @@ export function openInterruptSheet(ctl) {
   const send = (kind, text = "") => {
     if (ctl.interrupt(kind, text, wasPlaying)) {
       sent = true;
+      // What the hosts were about to say won't be said: those words dissolve.
+      document.querySelectorAll(".cap.now p.kinetic").forEach((p) => p.classList.add("dissolve"));
       sheet.close();
     } else {
       error("The show can't be interrupted right now.");
@@ -486,12 +491,15 @@ export function openInterruptSheet(ctl) {
   const talk = div.querySelector("[data-talk]");
   if (!talk) return;
   const label = div.querySelector("[data-talk-label]");
-  let rec = null;
+  // The studio clock around the button: one dot a second, up to the minute you can hold it.
+  const talkRing = div.querySelector(".talk-ring");
+  const calm = reduced();
+  let rec = null, since = 0, tick = 0;
   const begin = async (e) => {
     e?.preventDefault?.();
     if (rec) return;
     error("");
-    rec = new Recorder();
+    rec = new Recorder({ onLevel: calm ? null : (l) => talk.style.setProperty("--mic", l.toFixed(3)) });
     try {
       await rec.start();
     } catch {
@@ -500,19 +508,27 @@ export function openInterruptSheet(ctl) {
     }
     talk.classList.add("on");
     label.textContent = "Listening… let go to send";
+    since = performance.now();
+    fillRing(talkRing, 1);
+    tick = setInterval(() => fillRing(talkRing, Math.min(MAX_TALK_SECONDS, 1 + (performance.now() - since) / 1000)), 250);
   };
   const finish = async () => {
     if (!rec) return;
     const r = rec;
     rec = null;
+    clearInterval(tick);
     talk.classList.remove("on");
+    talk.style.removeProperty("--mic");
     const blob = await r.stop();
     if (blob.size < 1200) {
       label.textContent = "Hold to talk";
+      fillRing(talkRing, 0);
       return error("Hold the button while you speak.");
     }
     label.textContent = "Got it…";
     talk.disabled = true;
+    talkRing.classList.add("chase");   // working on it: the clock chases while it's transcribed
+    talkRing.querySelectorAll("circle").forEach((c, i) => c.style.setProperty("--i", i));
     try {
       const { text } = await ctl.transcribe(blob);
       input.value = text;
@@ -521,6 +537,8 @@ export function openInterruptSheet(ctl) {
       error(err.message);
       label.textContent = "Hold to talk";
       talk.disabled = false;
+      talkRing.classList.remove("chase");
+      fillRing(talkRing, 0);
     }
   };
   talk.addEventListener("pointerdown", begin);

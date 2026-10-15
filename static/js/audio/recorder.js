@@ -10,11 +10,41 @@
 // stop the microphone.
 
 const TYPES = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4;codecs=mp4a.40.2", "audio/mp4"];
-const MAX_MS = 60000;
+export const MAX_TALK_SECONDS = 60;
+
+/** Calls onLevel(0..1) every frame with how loud the microphone is; returns a stop function. */
+function meter(stream, onLevel) {
+  let ctx = null, raf = 0;
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    ctx = new Ctx();
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 1024;
+    ctx.createMediaStreamSource(stream).connect(analyser);
+    const data = new Uint8Array(analyser.fftSize);
+    const loop = () => {
+      analyser.getByteTimeDomainData(data);
+      let sum = 0;
+      for (const v of data) sum += ((v - 128) / 128) ** 2;
+      onLevel(Math.min(1, Math.sqrt(sum / data.length) * 4));
+      raf = requestAnimationFrame(loop);
+    };
+    loop();
+  } catch { /* no meter: recording works without it */ }
+  return () => {
+    cancelAnimationFrame(raf);
+    ctx?.close().catch(() => {});
+  };
+}
 
 export class Recorder {
   static get supported() {
     return Boolean(navigator.mediaDevices?.getUserMedia && window.MediaRecorder);
+  }
+
+  /** onLevel(0..1): the microphone's loudness, every frame while recording. */
+  constructor({ onLevel = null } = {}) {
+    this.onLevel = onLevel;
   }
 
   /** Asks for the microphone the first time. */
@@ -27,7 +57,8 @@ export class Recorder {
     this.parts = [];
     this.rec.ondataavailable = (e) => { if (e.data.size) this.parts.push(e.data); };
     this.rec.start();
-    this.timer = setTimeout(() => this.stop(), MAX_MS);
+    this.timer = setTimeout(() => this.stop(), MAX_TALK_SECONDS * 1000);
+    if (this.onLevel) this._stopMeter = meter(this.stream, this.onLevel);
   }
 
   /** Resolves with what was recorded (an empty Blob if nothing was). */
@@ -51,6 +82,8 @@ export class Recorder {
   }
 
   _release() {
+    this._stopMeter?.();
+    this._stopMeter = null;
     for (const t of this.stream?.getTracks() || []) t.stop();
     this.stream = null;
   }
@@ -148,23 +181,7 @@ export class MemoRecorder {
   }
 
   _meter() {
-    try {
-      const Ctx = window.AudioContext || window.webkitAudioContext;
-      this._ctx = new Ctx();
-      const analyser = this._ctx.createAnalyser();
-      analyser.fftSize = 1024;
-      this._ctx.createMediaStreamSource(this.stream).connect(analyser);
-      const data = new Uint8Array(analyser.fftSize);
-      const loop = () => {
-        if (this.state !== "recording" && this.state !== "paused") return;
-        analyser.getByteTimeDomainData(data);
-        let sum = 0;
-        for (const v of data) sum += ((v - 128) / 128) ** 2;
-        this.onLevel(this.state === "paused" ? 0 : Math.min(1, Math.sqrt(sum / data.length) * 4));
-        this._raf = requestAnimationFrame(loop);
-      };
-      loop();
-    } catch { /* no meter: recording works without it */ }
+    this._stopMeter = meter(this.stream, (level) => this.onLevel(this.state === "paused" ? 0 : level));
   }
 
   async _keepAwake() {
@@ -175,9 +192,9 @@ export class MemoRecorder {
 
   _cleanup() {
     clearInterval(this._timer);
-    cancelAnimationFrame(this._raf);
+    this._stopMeter?.();
+    this._stopMeter = null;
     for (const t of this.stream?.getTracks() || []) t.stop();
-    this._ctx?.close().catch(() => {});
     this._wake?.release?.().catch(() => {});
     this._wake = null;
   }

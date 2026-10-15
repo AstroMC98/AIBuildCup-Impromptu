@@ -2,7 +2,7 @@
 // left, the 16:9 live player in the middle, call-ins / context / rundown on the right.
 import {
   callins, callinsKey, captions, captionsKey, captionTick, chapterBar, chapterBarKey, chapterLabel, chapters, chaptersKey,
-  contextKey, contextList, hostAvatars, liveBadge, liveBadgeKey, showNotes,
+  contextKey, contextList, detourCue, hostAvatars, liveBadge, liveBadgeKey, showNotes,
 } from "../components.js";
 import { reduced } from "../motion.js";
 import { html, renderSpoken, setHtml } from "../html.js";
@@ -173,6 +173,7 @@ export function mountStudio(root, ctl) {
       r.set("captions", `${captionsOn}|${captionsKey(s, ctl, pos)}`,
         () => (captionsOn ? captions(s, ctl, pos, { big: 40 }) : html`<p class="cap-status">Captions are off.</p>`));
       if (captionsOn) captionTick(r.el("captions"), s, pos, { calm: reduced() });
+      detourCue(s, pos, el);
       el.style.setProperty("--level", reduced() ? "0" : Math.min(1, (ctl.player.level?.() || 0) * 6).toFixed(3));
       r.set("chapters", chapterBarKey(s, pos), () => chapterBar(s, pos));
       const paused = !ctl.play.started || ctl.play.paused;

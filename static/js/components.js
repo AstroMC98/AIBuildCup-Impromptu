@@ -118,8 +118,16 @@ export function captions(store, ctl, pos, { big = 30 } = {}) {
   const len = spokenText(piece.text).length;
   const size = Math.round(big * (len > 130 ? 0.82 : len > 90 ? 0.9 : 1));
   // The previous line only while the current one starts; a continuing chunk stands alone.
-  const prev = lines.length > 1 && piece.i === 0 && len <= 100 ? lines[0] : null;
+  // As a detour starts, what the producer asked takes that place.
+  const detour = cur.seg.interrupt;
+  const asked = detour?.text && detourStarts(store, cur.seg) && cur.idx <= 1 && piece.i === 0;
+  const prev = !asked && lines.length > 1 && piece.i === 0 && len <= 100 ? lines[0] : null;
   return html`
+    ${asked ? html`
+      <div class="cap prev asked">
+        <span class="cap-who">${store.producer ? "You asked" : "The producer asked"}</span>
+        <p>“${detour.text}”</p>
+      </div>` : ""}
     ${prev ? html`
       <div class="cap prev">
         <span class="cap-who" style="color:${label(store.hostIndex(prev.line.speaker))}">${prev.line.speaker}</span>
@@ -128,11 +136,41 @@ export function captions(store, ctl, pos, { big = 30 } = {}) {
     <div class="cap now" style="--cap:${size}px">
       <span class="cap-who-row">
         <span class="cap-who" style="color:${label(curHost)}">${cur.line.speaker}</span>
-        ${caller ? html`<span class="pill pink">${store.isMine(caller) ? "Reading your call-in" : `Reading ${caller.name}'s call-in`}</span>` : ""}
+        ${caller ? html`<span class="pill pink">${store.isMine(caller) ? "Reading your call-in" : `Reading ${caller.name}'s call-in`}</span>`
+          : detour ? html`<span class="pill next">${(store.producer ? DETOUR_MINE : DETOUR_THEIRS)[detour.kind] || "Detour"}</span>` : ""}
       </span>
       <p>${renderSpoken(piece.text, curHost ? 0 : 1)}</p>
     </div>
     ${status ? html`<p class="cap-status small">${status}</p>` : ""}`;
+}
+
+// ---- detours: when the producer interrupts --------------------------------------------------
+const DETOUR_MINE = { ask: "Answering you", deeper: "Going deeper for you", steer: "Taking your steer", move_on: "Moving on, as you asked" };
+const DETOUR_THEIRS = { ask: "Answering the producer", deeper: "Going deeper", steer: "The producer steered", move_on: "Moving on" };
+const sameDetour = (a, b) => !!a && !!b && JSON.stringify(a) === JSON.stringify(b);
+
+/** Whether seg is the first segment of a detour (the one the stinger opens). */
+function detourStarts(store, seg) {
+  if (!seg?.interrupt) return false;
+  const before = store.segments[store.segments.indexOf(seg) - 1];
+  return !sameDetour(before?.interrupt, seg.interrupt);
+}
+
+const cued = new WeakMap();
+
+/** The stinger that opens a detour: the stage's gel flashes amber for 600 ms (never white),
+ *  once per detour, and not for someone tuning in halfway through one. */
+export function detourCue(store, pos, el) {
+  const seg = store.segmentAt(pos);
+  if (!detourStarts(store, seg) || cued.get(store) === seg.seq) return;
+  cued.set(store, seg.seq);
+  if (pos - seg.start > 2 * store.rate) return;
+  el.classList.add("gel-flash");
+  el.style.setProperty("--gel", "#FFB000");
+  setTimeout(() => {
+    el.style.removeProperty("--gel");
+    el.classList.remove("gel-flash");
+  }, 600);
 }
 
 // ---- the green room ---------------------------------------------------------------------
@@ -252,21 +290,35 @@ export function captionsKey(store, ctl, pos) {
   return `${store.version}|${at ? at.seg.seq + ":" + at.idx + ":" + piece : "-"}|${statusText(store, ctl, pos)}`;
 }
 
-/** The segmented chapter bar; widths follow the plan until a chapter has really happened. */
+/** Detour segments that have been heard by pos. */
+const heardDetours = (store, pos) => store.segments.filter((g) => g.interrupt && g.start <= pos && g.samples !== 0);
+
+/** The segmented chapter bar; widths follow the plan until a chapter has really happened.
+ *  Detours drop in as amber pieces where they were heard. */
 export function chapterBar(store, pos, { knob = false } = {}) {
   const parts = store.chapterBar(pos);
   if (!parts.length) return html`<span class="cb-part"><span class="cb-fill" style="width:0"></span></span>`;
-  return html`${parts.map((p) => html`
-    <span class="cb-part ${p.state}" style="flex:${p.flex.toFixed(0)}" title="${p.title}">
-      <span class="cb-fill" style="width:${(p.fill * 100).toFixed(1)}%"></span>
-      ${knob && p.state === "now" ? html`<span class="cb-knob" style="left:${(p.fill * 100).toFixed(1)}%"></span>` : ""}
-    </span>`)}`;
+  const detours = heardDetours(store, pos);
+  const pct = (f) => `${(Math.max(0, Math.min(1, f)) * 100).toFixed(1)}%`;
+  return html`${parts.map((p, i) => {
+    const end = parts[i + 1]?.start;
+    const marks = p.start === undefined ? [] : detours.filter((g) => g.start >= p.start && (end === undefined || g.start < end));
+    return html`
+      <span class="cb-part ${p.state}" style="flex:${p.flex.toFixed(0)}" title="${p.title}">
+        <span class="cb-fill" style="width:${pct(p.fill)}"></span>
+        ${marks.map((g) => {
+          const x = Math.min(0.97, (g.start - p.start) / p.flex);
+          return html`<span class="cb-detour" style="left:${pct(x)};width:${pct(Math.min(store.segLength(g) / p.flex, 1 - x))}"></span>`;
+        })}
+        ${knob && p.state === "now" ? html`<span class="cb-knob" style="left:${pct(p.fill)}"></span>` : ""}
+      </span>`;
+  })}`;
 }
 
 export function chapterBarKey(store, pos) {
   const now = store.chapterAt(pos);
   const parts = store.chapterBar(pos);
-  return `${store.version}|${now}|${Math.round((parts[now]?.fill || 0) * 200)}`;
+  return `${store.version}|${now}|${Math.round((parts[now]?.fill || 0) * 200)}|${heardDetours(store, pos).length}`;
 }
 
 export function chapterLabel(store, pos) {
