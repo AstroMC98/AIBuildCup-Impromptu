@@ -835,7 +835,7 @@ async def memo_scenario(checks: dict, alice_c, bob_c, anon, credits_for, opts: d
     checks["one memo pod at a time -> 409"] = (await alice_c.post("/api/memos", **memo())).status_code == 409
     data = await wait_for_status(alice_c, memo_id, {"finished", "failed"})
     show, segs = data["show"], data["segments"]
-    stings = sum(r_[2] == "sting" for r_ in show["music"]["regions"])
+    stings = sum(r_["kind"] == "sting" for r_ in show["music"]["regions"])
     inserted = int(INTRO_LEAD_S * RATE) + stings * int(STING_S * RATE) + int(OUTRO_PLAYOUT_S * RATE)
     checks["memo pod made: intro, stings and outro, every start shifted"] = (
         show["status"] == "finished" and show["kind"] == "memo" and show["render"]["stage"] == "done"

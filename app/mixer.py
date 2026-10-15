@@ -68,7 +68,9 @@ class Insert:
 class MixResult:
     pcm: bytearray                               # s16le
     inserts: list[Insert] = field(default_factory=list)
-    regions: list[list] = field(default_factory=list)   # [start, end, kind] where music plays, output samples
+    # Where music plays, in output samples: {start, end, kind}. Dicts, not [start, end,
+    # kind] lists: the pod document keeps them, and Firestore rejects arrays of arrays.
+    regions: list[dict] = field(default_factory=list)
 
     @property
     def samples(self) -> int:
@@ -159,7 +161,7 @@ def mix(voice: bytes | bytearray, chapters: dict[int, int], cues: Cues | None, r
     np.multiply(v16[src:], gain, out=out[dst:], casting="unsafe")
 
     duck, ramp = from_db(DUCK_DB), RAMP_S * rate
-    regions: list[list] = []
+    regions: list[dict] = []
     for ins, pos in placed:
         if ins.kind == "intro":
             clip = cues.intro[: ins.length + int(INTRO_UNDER_S * rate)]
@@ -174,7 +176,7 @@ def mix(voice: bytes | bytearray, chapters: dict[int, int], cues: Cues | None, r
         else:
             # The theme's ending: rising under the last words, then alone. Never
             # under earlier music, so it can't stack on a late sting.
-            prev_end = regions[-1][1] if regions else 0
+            prev_end = regions[-1]["end"] if regions else 0
             under = max(0, min(int(OUTRO_UNDER_S * rate), len(cues.outro) - ins.length, pos - prev_end))
             clip = cues.outro[len(cues.outro) - ins.length - under:]
             n = len(clip)
@@ -182,7 +184,7 @@ def mix(voice: bytes | bytearray, chapters: dict[int, int], cues: Cues | None, r
                                 (n - OUTRO_FADE_S * rate, 1), (n, 0)])
             _add(out, pos - under, clip, env)
             pos -= under
-        regions.append([pos, pos + n, ins.kind])
+        regions.append({"start": pos, "end": pos + n, "kind": ins.kind})
     return MixResult(pcm=_to_pcm(out), inserts=inserts, regions=regions)
 
 

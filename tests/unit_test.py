@@ -956,8 +956,9 @@ def _():
     assert m.shift(60 * rate) == 60 * rate + intro + sting
     assert m.chapter_start(0, 0) == 0 and m.chapter_start(1, 60 * rate) == 60 * rate + intro   # the sting opens it
     assert m.chapter_start(2, 90 * rate) == m.shift(90 * rate)
-    assert [r[2] for r in m.regions] == ["intro", "sting", "outro"]
-    assert m.regions[1][:2] == [60 * rate + intro, 60 * rate + intro + sting] and m.regions[2][1] == m.samples
+    assert [r["kind"] for r in m.regions] == ["intro", "sting", "outro"]
+    assert (m.regions[1]["start"], m.regions[1]["end"]) == (60 * rate + intro, 60 * rate + intro + sting)
+    assert m.regions[2]["end"] == m.samples
 
 
 @check("music ducks under speech, and the limiter keeps peaks down")
@@ -1353,7 +1354,7 @@ async def _():
     segs = (await s.load_children("memo1"))["segments"]
     assert segs[0]["start"] == int(INTRO_LEAD_S * 24_000) and segs[0]["lines"][0]["text"] == "Welcome!"
     assert saved["beats"][0]["start"] == 0 and saved["music"]["source"] == "library"
-    assert saved["music"]["regions"][0][2] == "intro" and saved["samples"] > sum(x["samples"] for x in segs)
+    assert saved["music"]["regions"][0]["kind"] == "intro" and saved["samples"] > sum(x["samples"] for x in segs)
     assert saved["show_notes"]["credit"] == "Made from a voice memo by Ann." and saved["show_notes"]["sources"]
     used = math.ceil(saved["duration_s"] / 60)
     assert (await acc.get("ann")).credits == 30 - used and saved["credits_refunded"] == 3 - used
