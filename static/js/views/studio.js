@@ -4,7 +4,7 @@ import {
   callins, callinsKey, captions, captionsKey, captionTick, chapterBar, chapterBarKey, chapterLabel, chapters, chaptersKey,
   contextKey, contextList, detourCue, hostAvatars, liveBadge, liveBadgeKey, showNotes,
 } from "../components.js";
-import { reduced } from "../motion.js";
+import { odometer, reduced } from "../motion.js";
 import { html, renderSpoken, setHtml } from "../html.js";
 import { icon, VISIBILITY_LABEL } from "../icons.js";
 import { navigate } from "../router.js";
@@ -205,7 +205,7 @@ export function mountStudio(root, ctl) {
       const meta = [by, s.style?.label || s.show.style_label, s.show.minutes ? `about ${s.show.minutes} minutes` : ""]
         .filter(Boolean).join(" · ");
       r.set("stylemeta", meta, () => meta);
-      r.set("hearts", s.hearts, () => (s.hearts ? String(s.hearts) : "React"));
+      odometer(r.el("hearts"), s.hearts, { empty: "React" });
       if (e.type === "react" && e.burst) floatHearts(el.querySelector("[data-heart]"), e.burst);
       if (e.type === "plan" || e.type === "ended") lib?.refresh();
       renderTune();

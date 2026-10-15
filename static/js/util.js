@@ -71,16 +71,40 @@ export function reducedMotion() {
   return matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
-let toastTimer = 0;
-/** A cue card drops in from the top; the bar along its foot runs down for as long as it stays. */
+// Cue cards drop in from the top; the bar along a card's foot runs down for as long as it
+// stays. They queue rather than replace each other: a card with others waiting behind it
+// gets a shorter turn, and the same message isn't dealt twice in a row.
+const cards = [];
+let showing = "";
+
 export function toast(msg, ms = 4500) {
+  if (!msg || msg === showing || cards.some((c) => c.msg === msg)) return;
+  cards.push({ msg, ms });
+  if (cards.length > 3) cards.shift();
+  if (!showing) dealCard();
+}
+
+function dealCard() {
   const t = document.getElementById("toast");
-  if (!t) return;
-  t.hidden = true;            // restart the drop-in and the timer bar for every new message
-  t.textContent = msg;
+  const card = cards.shift();
+  if (!t || !card) {
+    showing = "";
+    return;
+  }
+  showing = card.msg;
+  const ms = cards.length ? Math.min(card.ms, 2600) : card.ms;
+  t.hidden = true;            // restart the drop-in and the timer bar
+  t.classList.remove("leaving");
+  t.textContent = card.msg;
   t.style.setProperty("--toast-ms", `${ms}ms`);
   void t.offsetWidth;
   t.hidden = false;
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => (t.hidden = true), ms);
+  setTimeout(() => {
+    t.classList.add("leaving");
+    setTimeout(() => {
+      t.hidden = true;
+      t.classList.remove("leaving");
+      dealCard();
+    }, 200);
+  }, ms);
 }

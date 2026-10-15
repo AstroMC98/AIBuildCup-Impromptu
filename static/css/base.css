@@ -259,6 +259,16 @@
   }
   .seg-tab[aria-selected="true"] { background: var(--raised); color: var(--fg); box-shadow: 0 1px 3px rgba(20, 23, 32, .14); }
 
+  /* the selected option's raised pill slides between options (motion.js slideIndicator) */
+  .has-ind { position: relative; }
+  .has-ind > :is(.seg-tab, .seg-btn) { position: relative; z-index: 1; }
+  .has-ind > :is([aria-selected="true"], [aria-pressed="true"]) { background: transparent; box-shadow: none; }
+  .seg-ind {
+    position: absolute; left: 0; top: 0; border-radius: 9px; background: var(--raised); box-shadow: 0 1px 3px rgba(20, 23, 32, .14);
+    pointer-events: none; transition: transform var(--dur-snappy) var(--spring-snappy), width var(--dur-snappy) var(--spring-snappy);
+  }
+  .segmented > .seg-ind { border-radius: 10px; }
+
   /* ---- the studio clock: 60 second-dots, quarter marks brighter ------------------------- */
   .ring { display: block; width: var(--ring, 64px); height: var(--ring, 64px); flex: none; overflow: visible; }
   .ring circle { fill: color-mix(in srgb, var(--fg) 16%, transparent); transition: fill .25s; }
@@ -287,6 +297,11 @@
   }
   .spinner.small { width: 16px; height: 16px; border-width: 2px; }
 
+  /* odometer digits: each column is a strip of 0-9 that rolls to its digit */
+  .odo { display: inline-block; height: 1lh; overflow: hidden; vertical-align: top; }
+  .odo > span { display: flex; flex-direction: column; transform: translateY(calc(var(--d, 0) * -1lh)); transition: transform var(--dur-snappy) var(--spring-snappy); }
+  .odo > span > span { height: 1lh; text-align: center; }
+
   /* ---- cue-card toasts ------------------------------------------------------------------- */
   .toast {
     position: fixed; left: 50%; top: calc(14px + env(safe-area-inset-top)); z-index: 300; transform: translateX(-50%);
@@ -302,6 +317,10 @@
     transform-origin: left; animation: cue-timer var(--toast-ms, 4.5s) linear both;
   }
   @keyframes cue-in { from { transform: translate(-50%, -140%) rotate(-3deg); } }
+  .toast.leaving { animation: cue-out .2s var(--ease-in) both; }
+  .toast.leaving::after { animation-play-state: paused; }
+  @keyframes cue-out { to { transform: translate(-50%, -30%) rotate(1.5deg); opacity: 0; } }
+  @keyframes toast-fade { to { opacity: 0; } }
   @keyframes cue-timer { from { transform: scaleX(1); } to { transform: scaleX(0); } }
 
   /* ---- odds and ends ----------------------------------------------------------------------- */
@@ -349,6 +368,8 @@
     .ring.chase circle:nth-child(5n + 1) { fill: var(--gel-text, var(--fg)); }
     .pill.wait::before, .lamp.blink, .badge.live .dot { animation: none; }
     .toast { animation: none; }
+    .toast.leaving { animation: toast-fade .15s both; }
+    .odo > span { transition: none; }
     .wm.ignite .tittle, .badge.live.ignite { animation: none; }
   }
 }

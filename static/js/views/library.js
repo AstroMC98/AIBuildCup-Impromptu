@@ -3,7 +3,7 @@
 import { api } from "../api.js";
 import { html, setHtml } from "../html.js";
 import { icon, VISIBILITY_ICON, VISIBILITY_LABEL, wordmark } from "../icons.js";
-import { flipById, stagger } from "../motion.js";
+import { flipById, slideIndicator, stagger } from "../motion.js";
 import { ring } from "../ring.js";
 import { navigate } from "../router.js";
 import { loginPath, session } from "../session.js";
@@ -221,6 +221,7 @@ export function mountLibraryList(container, {
     // Rows move to their new places instead of flashing (filters, tags, refreshes).
     if (shows && !firstPaint) flipById(container, paint);
     else paint();
+    slideIndicator(container.querySelector(".seg-tabs"), `tabs-${key}`);
     if (shows && firstPaint) {
       firstPaint = false;
       stagger(container.querySelectorAll("[data-id]"), { step: 30, rise: 6 });

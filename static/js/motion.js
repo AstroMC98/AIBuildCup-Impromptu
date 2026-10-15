@@ -75,6 +75,128 @@ export function flipById(container, paint, { spring: s = "snappy" } = {}) {
   }
 }
 
+/** A count that rolls to its new value digit by digit, like an odometer (the heart count).
+ *  Updated in place; an empty value ("" or 0) shows nothing. */
+export function odometer(el, value, { empty = "" } = {}) {
+  if (!el) return;
+  const text = value ? String(value) : "";
+  if (el.dataset.value === text && el.dataset.value !== undefined) return;
+  el.dataset.value = text;
+  if (!text) {
+    el.textContent = empty;
+    return;
+  }
+  if (!el.querySelector(".odo")) el.textContent = "";
+  el.setAttribute("aria-label", text);
+  const digits = [...text];
+  while (el.children.length < digits.length) {
+    const col = document.createElement("span");
+    col.className = "odo";
+    col.setAttribute("aria-hidden", "true");
+    const strip = document.createElement("span");
+    for (let d = 0; d <= 9; d++) {
+      const s = document.createElement("span");
+      s.textContent = String(d);
+      strip.append(s);
+    }
+    col.append(strip);
+    el.prepend(col);
+  }
+  while (el.children.length > digits.length) el.firstElementChild.remove();
+  digits.forEach((d, i) => el.children[i].style.setProperty("--d", d));
+}
+
+// ---- drag down to dismiss (sheets, Now playing) -----------------------------------------------
+
+/**
+ * dragToDismiss(el, { handle, onDrag, onDismiss, enabled })
+ *   el follows the finger down from a handle (and rubber-bands upward). Let go past 120 px
+ *   or on a flick faster than 0.5 px/ms and onDismiss runs; otherwise it springs back.
+ *   handle(e): whether this pointerdown starts a drag. onDrag(0..1): how far down it is.
+ *   While dragging el has .dragging (CSS turns its transition off).
+ */
+export function dragToDismiss(el, { handle, onDrag = () => {}, onDismiss, enabled = () => true }) {
+  let drag = null;
+  el.addEventListener("pointerdown", (e) => {
+    if (!enabled() || !handle(e)) return;
+    drag = { y0: e.clientY, last: e.clientY, t: performance.now(), v: 0, dy: 0 };
+    el.setPointerCapture(e.pointerId);
+    el.classList.add("dragging");
+  });
+  el.addEventListener("pointermove", (e) => {
+    if (!drag) return;
+    const now = performance.now();
+    drag.v = (e.clientY - drag.last) / Math.max(1, now - drag.t);
+    drag.last = e.clientY;
+    drag.t = now;
+    drag.dy = e.clientY - drag.y0;
+    const y = drag.dy > 0 ? drag.dy : -Math.pow(-drag.dy, 0.7);
+    el.style.transform = `translateY(${y}px)`;
+    onDrag(Math.max(0, Math.min(1, drag.dy / el.offsetHeight)));
+  });
+  const end = () => {
+    if (!drag) return;
+    const { dy, v } = drag;
+    drag = null;
+    el.classList.remove("dragging");
+    const dismiss = dy > 120 || v > 0.5;
+    if (!dismiss) el.style.transform = "";
+    onDrag(0);
+    if (dismiss) onDismiss(dy);
+  };
+  el.addEventListener("pointerup", end);
+  el.addEventListener("pointercancel", end);
+}
+
+// ---- the segmented control's indicator ------------------------------------------------------
+// The raised pill under the selected option slides to the new one. The controls are re-rendered
+// on every pick, so where the pill last was is remembered per control (key).
+const spots = new Map();
+const spotOf = (on) => ({ x: on.offsetLeft, y: on.offsetTop, w: on.offsetWidth, h: on.offsetHeight });
+const place = (ind, s) => {
+  ind.style.transform = `translate(${s.x}px, ${s.y}px)`;
+  ind.style.width = `${s.w}px`;
+  ind.style.height = `${s.h}px`;
+};
+const selected = (group) => group.querySelector(':scope > [aria-selected="true"], :scope > [aria-pressed="true"]');
+
+export function slideIndicator(group, key) {
+  if (!group) return;
+  let ind = group.querySelector(":scope > .seg-ind");
+  if (!ind) {
+    ind = document.createElement("span");
+    ind.className = "seg-ind";
+    ind.setAttribute("aria-hidden", "true");
+    group.prepend(ind);
+  }
+  group.classList.add("has-ind");
+  group.dataset.indKey = key;
+  const on = selected(group);
+  ind.hidden = !on;
+  if (!on) return;
+  const to = spotOf(on);
+  const from = spots.get(key);
+  spots.set(key, to);
+  if (!from || reduced() || (from.x === to.x && from.y === to.y && from.w === to.w)) return place(ind, to);
+  ind.style.transition = "none";
+  place(ind, from);
+  void ind.offsetWidth;
+  ind.style.transition = "";
+  place(ind, to);
+}
+
+// A rotated phone or a resized window moves the options: put each pill back under its option.
+addEventListener("resize", () => {
+  for (const group of document.querySelectorAll(".has-ind")) {
+    const on = selected(group), ind = group.querySelector(":scope > .seg-ind");
+    if (!on || !ind) continue;
+    ind.style.transition = "none";
+    place(ind, spotOf(on));
+    spots.set(group.dataset.indKey, spotOf(on));
+    requestAnimationFrame(() => { ind.style.transition = ""; });
+  }
+});
+
 /** Restart a CSS animation class (e.g. the tally's ignite flicker). */
 export function replayClass(el, cls) {
   if (!el) return;

@@ -2,6 +2,7 @@
 // sheets, and click delegation through data-action attributes.
 import { html, setHtml } from "./html.js";
 import { icon } from "./icons.js";
+import { dragToDismiss } from "./motion.js";
 
 /** Named [data-r] slots inside a root, each re-rendered only when its key changes. */
 export class Regions {
@@ -83,38 +84,17 @@ export function openSheet({ title, body, className = "", onClose, wide = false }
     onClose?.();
   };
 
-  // Drag the sheet down by its handle or header: it follows the finger, closes past
-  // 120 px or on a quick flick, and springs back otherwise.
-  const handle = (e) => e.target.closest(".grabber, .sheet-head") && !e.target.closest("button, a, input");
-  let drag = null;
-  sheet.addEventListener("pointerdown", (e) => {
-    if (!handle(e) || matchMedia("(min-width: 768px)").matches) return;
-    drag = { y0: e.clientY, last: e.clientY, t: performance.now(), v: 0, dy: 0 };
-    sheet.setPointerCapture(e.pointerId);
-    sheet.classList.add("dragging");
+  // Drag the sheet down by its handle or header (phones): it follows the finger, closes
+  // past 120 px or on a quick flick, and springs back otherwise.
+  dragToDismiss(sheet, {
+    handle: (e) => e.target.closest(".grabber, .sheet-head") && !e.target.closest("button, a, input"),
+    enabled: () => !matchMedia("(min-width: 768px)").matches,
+    onDrag: (f) => (f ? overlay.style.setProperty("--drag", String(f)) : overlay.style.removeProperty("--drag")),
+    onDismiss: () => {
+      sheet.style.transform = "";   // the closing transition carries on from where the finger let go
+      close();
+    },
   });
-  sheet.addEventListener("pointermove", (e) => {
-    if (!drag) return;
-    const now = performance.now();
-    drag.v = (e.clientY - drag.last) / Math.max(1, now - drag.t);
-    drag.last = e.clientY;
-    drag.t = now;
-    drag.dy = e.clientY - drag.y0;
-    const y = drag.dy > 0 ? drag.dy : -Math.pow(-drag.dy, 0.7);   // a rubber band upward
-    sheet.style.transform = `translateY(${y}px)`;
-    overlay.style.setProperty("--drag", String(Math.max(0, Math.min(1, drag.dy / sheet.offsetHeight))));
-  });
-  const endDrag = () => {
-    if (!drag) return;
-    const { dy, v } = drag;
-    drag = null;
-    sheet.classList.remove("dragging");
-    sheet.style.transform = "";
-    overlay.style.removeProperty("--drag");
-    if (dy > 120 || v > 0.5) close();
-  };
-  sheet.addEventListener("pointerup", endDrag);
-  sheet.addEventListener("pointercancel", endDrag);
   const onKey = (e) => {
     if (e.key === "Escape") close();
   };

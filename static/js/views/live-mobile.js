@@ -8,7 +8,7 @@ import {
 } from "../components.js";
 import { html, setHtml } from "../html.js";
 import { icon } from "../icons.js";
-import { reduced } from "../motion.js";
+import { animate, dragToDismiss, odometer, reduced } from "../motion.js";
 import { fillRing, ring, secondsLit } from "../ring.js";
 import { navigate } from "../router.js";
 import { loginPath, session } from "../session.js";
@@ -61,18 +61,43 @@ export function mountMobile(root, ctl) {
   const clockRing = el.querySelector(".clock-ring");
   let np = null;
   const npHost = el.querySelector("[data-np]");
+  // Now playing grows out of the episode's sleeve (the cover flies from it to its place),
+  // and goes back down when closed: by its chevron, or dragged down by its top bar (the
+  // rest of it scrolls).
   const openNp = () => {
     if (np) return;
+    const from = el.querySelector(".lm-episode .sleeve")?.getBoundingClientRect();
     npHost.hidden = false;
-    np = mountNowPlaying(npHost, ctl, { onClose: closeNp });
+    npHost.style.transform = "";
+    np = mountNowPlaying(npHost, ctl, { onClose: () => closeNp(true) });
     npHost.scrollTop = 0;
+    const cover = npHost.querySelector(".np-cover");
+    if (!from || !cover || reduced()) return;
+    npHost.classList.add("flip");
+    const to = cover.getBoundingClientRect();
+    animate(cover, [
+      { transformOrigin: "0 0", transform: `translate(${from.left - to.left}px, ${from.top - to.top}px) scale(${from.width / to.width})`, borderRadius: `${8 * (to.width / from.width)}px` },
+      { transformOrigin: "0 0", transform: "none", borderRadius: "14px" },
+    ], { spring: "smooth" });
   };
-  const closeNp = () => {
+  const closeNp = async (animated = false) => {
+    if (!np) return;
+    if (animated && !reduced()) {
+      await animate(npHost, [{ opacity: 1 }, { opacity: 0, transform: `${npHost.style.transform || ""} translateY(48px)`.trim() }],
+        { duration: 220, easing: "cubic-bezier(.3, 0, .8, .15)" }).finished.catch(() => {});
+    }
     np?.destroy();
     np = null;
     npHost.hidden = true;
+    npHost.classList.remove("flip");
+    npHost.style.transform = "";
+    npHost.getAnimations().forEach((a) => a.cancel());
     npHost.replaceChildren();
   };
+  dragToDismiss(npHost, {
+    handle: (e) => !!np && npHost.scrollTop <= 0 && e.target.closest(".np-top") && !e.target.closest("button, a"),
+    onDismiss: () => closeNp(true),
+  });
 
   const offActions = bindActions(el, showActions(ctl, {
     "now-playing": openNp,
@@ -117,7 +142,7 @@ export function mountMobile(root, ctl) {
     onEvent(e) {
       r.set("listeners", `${s.listeners}`, () => (s.listeners > 1 ? `${s.listeners} listening` : ""));
       if (e.type === "react" && e.burst) floatHearts(el.querySelector("[data-heart]"), e.burst);
-      r.set("hearts", s.hearts, () => (s.hearts ? String(s.hearts) : ""));
+      odometer(r.el("hearts"), s.hearts);
       renderTune();
       np?.onEvent(e);
     },

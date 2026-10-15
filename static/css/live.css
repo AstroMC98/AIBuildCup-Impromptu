@@ -245,6 +245,11 @@
     animation: np-rise var(--dur-smooth) var(--spring-smooth) both;
   }
   .np-overlay[hidden] { display: none; }
+  /* opened from the episode's sleeve: the overlay fades while the cover flies (live-mobile.js) */
+  .np-overlay.flip { animation: fade-in .25s ease both; }
+  .np-overlay.flip .np-cover { animation: none; }
+  .np-overlay .np-top { touch-action: none; cursor: grab; }
+  .np-overlay.dragging .np-top { cursor: grabbing; }
   @keyframes np-rise { from { transform: translateY(40px); opacity: 0; } }
   .np-page { min-height: 100dvh; }
 

@@ -4,10 +4,11 @@ import { avatar, contextList } from "./components.js";
 import { html, setHtml } from "./html.js";
 import { icon, VISIBILITY_ICON } from "./icons.js";
 import { session } from "./session.js";
+import { applyAccent } from "./theme.js";
 import { confirmSheet, openSheet } from "./ui.js";
 import { saveBlob, slug, toast } from "./util.js";
 import { MAX_TALK_SECONDS, Recorder } from "./audio/recorder.js";
-import { reduced } from "./motion.js";
+import { reduced, slideIndicator } from "./motion.js";
 import { fillRing, ring } from "./ring.js";
 
 // ---- Add context ----------------------------------------------------------------
@@ -27,6 +28,7 @@ export function openContextSheet(ctl, { callin = "", onSent } = {}) {
   const state = { kind: "text", when: "now", cite: true, file: null };
   const form = document.createElement("form");
   form.className = "ctx-form";
+  const indKey = `ctx-kind-${performance.now()}`;   // each opening starts on its own pick
   form.noValidate = true;
 
   const render = () => {
@@ -56,6 +58,7 @@ export function openContextSheet(ctl, { callin = "", onSent } = {}) {
       <button class="btn white big block" type="submit" data-submit>Add to the show</button>
       <h3 class="sheet-h3 rule">Already in this show</h3>
       <div class="ctx-already">${contextList(store, ctl.player.position(), { pills: true })}</div>`);
+    slideIndicator(form.querySelector(".segmented"), indKey);
   };
 
   form.addEventListener("click", (e) => {
@@ -167,6 +170,11 @@ function kindInput(state, limits, producer) {
 export function openRestyleSheet(ctl) {
   const presets = session.options?.presets || [];
   let choice = ctl.store.style?.vibe || null;
+  // Picking a vibe lights the stage behind the sheet with its gel before you confirm;
+  // closing without switching puts the old light back.
+  const root = document.documentElement;
+  const before = getComputedStyle(root).getPropertyValue("--accent").trim();
+  let switched = false;
   const form = document.createElement("form");
   form.className = "stack";
   const render = () => setHtml(form, html`
@@ -182,6 +190,8 @@ export function openRestyleSheet(ctl) {
     const own = form.querySelector("input").value;
     render();
     form.querySelector("input").value = own;
+    const preset = presets.find((p) => p.id === choice);
+    if (preset?.accent) applyAccent(root, preset.accent);
   });
   form.addEventListener("submit", (e) => {
     e.preventDefault();
@@ -189,11 +199,15 @@ export function openRestyleSheet(ctl) {
     if (own) ctl.restyle({ style: own });
     else if (choice) ctl.restyle({ vibe: choice });
     else return;
+    switched = !own;   // a vibe keeps its previewed light; a described style gets its own from the show
     toast("Restyling. The hosts will switch in a moment.");
     sheet.close();
   });
   render();
-  const sheet = openSheet({ title: "Restyle the show", body: form, wide: true });
+  const sheet = openSheet({
+    title: "Restyle the show", body: form, wide: true,
+    onClose: () => { if (!switched && before) applyAccent(root, before); },
+  });
 }
 
 export function vibeTile(p, selected) {
