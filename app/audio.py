@@ -68,6 +68,19 @@ class PcmWindow:
             out.append((start, seq, pcm))
         return out
 
+    def truncate(self, at: int) -> None:
+        """Forget everything from `at` on: audio that was voiced but never heard,
+        because the listener interrupted the show there."""
+        while self._chunks:
+            start, seq, pcm = self._chunks[-1]
+            if start >= at:
+                self._chunks.pop()
+                continue
+            end = start + len(pcm) // 2
+            if end > at:
+                self._chunks[-1] = (start, seq, pcm[: (at - start) * 2])
+            break
+
     def trim(self, before: int) -> None:
         while self._chunks:
             start, _, pcm = self._chunks[0]

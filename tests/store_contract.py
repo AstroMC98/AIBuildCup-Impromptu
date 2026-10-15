@@ -154,6 +154,39 @@ async def contract(store, tag: str) -> list[str]:
         assert await store.count_subscribers(f"creator:nobody-{run}") == 0
     await check("subscriptions: idempotent, counted, removable", subscriptions)
 
+    # ---- the listener timeline a live show saves (Firestore takes no arrays of arrays) ----
+    async def timeline():
+        from app.stats import timeline_doc, timeline_pairs
+        await store.update_show(s3, {"listener_timeline": timeline_doc([[0, 1], [10, 2]])})
+        assert timeline_pairs((await store.get_show(s3))["listener_timeline"]) == [[0, 1], [10, 2]]
+        assert timeline_pairs([[0, 1]]) == [[0, 1]]          # older local saves still read
+    await check("a show's listener timeline saves and reads back", timeline)
+
+    # ---- personal briefings ----
+    async def briefings():
+        now = time.time()
+        await store.update_user(u1, {"briefing_due_at": now - 60, "briefing_schedule": {"enabled": True}})
+        await store.update_user(u2, {"briefing_due_at": now + 3600})
+        await store.update_user(u3, {"briefing_due_at": None})
+        due = [u["uid"] for u in await store.users_due_for_briefing(now, limit=500) if u["uid"] in {u1, u2, u3}]
+        assert due == [u1], due
+        b1, b2 = f"b1-{run}", f"b2-{run}"
+        await store.create_show({"id": b1, "kind": "briefing", "owner_uid": u1, "expires_at": now - 5, "created_at": now})
+        await store.create_show({"id": b2, "kind": "briefing", "owner_uid": u1, "expires_at": now + 999, "created_at": now})
+        expired = [d["id"] for d in await store.expired_shows(now, limit=500) if d["id"] in {b1, b2, s1, s2, s3}]
+        assert expired == [b1], expired
+        await store.put_item(u1, "watches", {"id": "w1", "url": "https://a.example", "pending": [{"title": "x"}],
+                                             "created_at": 1})
+        await store.put_item(u1, "watch_pages", {"id": "w1", "paras": [{"h": "abc", "t": "Pro: $25"}]})
+        await store.put_item(u1, "briefing_templates", {"id": "t1", "name": "Mine", "created_at": 1})
+        assert [w["pending"] for w in await store.list_items(u1, "watches")] == [[{"title": "x"}]]
+        assert (await store.list_items(u1, "watch_pages"))[0]["paras"] == [{"h": "abc", "t": "Pro: $25"}]
+        await store.delete_item(u1, "watches", "w1")
+        assert await store.list_items(u1, "watches") == [] and len(await store.list_items(u1, "briefing_templates")) == 1
+        await store.delete_show(b1)
+        await store.delete_show(b2)
+    await check("briefings: due schedules, expired briefings, watches and templates", briefings)
+
     # ---- lifecycle ----
     async def lifecycle():
         assert await store.mark_interrupted({s1, s3}) >= 1

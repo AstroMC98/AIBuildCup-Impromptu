@@ -301,8 +301,8 @@ class MemoJob:
 
         self._update(stage="researching", detail="Looking things up")
         try:
-            dossier = await asyncio.wait_for(self.gemini.research(brief, max_queries=s.max_research_queries),
-                                             s.research_timeout_seconds)
+            dossier = await asyncio.wait_for(self.gemini.research_memo(brief, max_queries=s.max_research_queries),
+                                             s.memo_research_timeout_seconds)
         except asyncio.CancelledError:
             raise
         except Exception as exc:

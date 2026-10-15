@@ -6,6 +6,7 @@ import { icon, VISIBILITY_ICON } from "./icons.js";
 import { session } from "./session.js";
 import { confirmSheet, openSheet } from "./ui.js";
 import { saveBlob, slug, toast } from "./util.js";
+import { Recorder } from "./audio/recorder.js";
 
 // ---- Add context ----------------------------------------------------------------
 
@@ -213,6 +214,12 @@ const VIS = [
 /** Owners choose who can listen; everyone can copy the link (it only opens for people with access). */
 export async function openShareSheet(ctl) {
   const s = ctl.store;
+  if (s.show.kind === "briefing") {
+    openSheet({ title: "Just for you", body: html`<p class="muted">Briefings are private: they can't be shared,
+      and they're deleted ${s.show.expires_at ? `${Math.max(1, Math.ceil((s.show.expires_at - Date.now() / 1000) / 3600))} hours from now`
+        : "after two days"}. Download the audio if you want to keep it.</p>` });
+    return;
+  }
   const owner = s.producer;
   const state = { visibility: s.show.visibility || "private", shared: [...(s.show.shared_with || [])] };
   let connections = null;
@@ -309,16 +316,21 @@ export function openMoreSheet(ctl) {
   const div = document.createElement("div");
   div.className = "menu";
   const live = ctl.live && !s.ended;
+  const briefing = s.show.kind === "briefing";
   setHtml(div, html`
     <button type="button" class="menu-item" data-dl-audio>${icon("download", 20)}Download audio${live ? " so far" : ""}</button>
+    ${s.producer && s.show.has_raw_audio ? html`
+      <button type="button" class="menu-item" data-dl-raw>${icon("download", 20)}Download the unedited call <span class="faint">before the editor's cuts</span></button>` : ""}
     <button type="button" class="menu-item" data-dl-text>${icon("note", 20)}Download transcript</button>
-    <button type="button" class="menu-item" data-share>${icon("share", 20)}Share</button>
+    ${briefing ? html`<a class="menu-item" href="/briefings" data-link>${icon("sparkle", 20)}Your briefings</a>`
+      : html`<button type="button" class="menu-item" data-share>${icon("share", 20)}Share</button>`}
     ${s.producer && live ? html`
       <button type="button" class="menu-item" data-wrap>${icon("chat", 20)}Wrap it up <span class="faint">The hosts sign off soon</span></button>
       <button type="button" class="menu-item danger" data-stop>${icon("stop", 20)}Stop now</button>` : ""}
     ${s.producer ? html`
+      ${briefing ? "" : html`
       <a class="menu-item" href="/show/${ctl.id}/stats" data-link>${icon("people", 20)}Stats <span class="faint">who listened, when they left</span></a>
-      <button type="button" class="menu-item" data-organize>${icon("bars", 20)}Albums and tags</button>
+      <button type="button" class="menu-item" data-organize>${icon("bars", 20)}Albums and tags</button>`}
       <a class="menu-item" href="/new" data-link>${icon("plus", 20)}Start a new pod</a>` : ""}
     ${!s.producer && s.creator ? html`
       <a class="menu-item" href="/creator/${s.creator.uid}" data-link>${icon("user", 20)}More from ${s.creator.name}</a>` : ""}`);
@@ -326,6 +338,8 @@ export function openMoreSheet(ctl) {
   div.addEventListener("click", async (e) => {
     if (e.target.closest("[data-dl-audio]")) {
       location.href = ctl.audioDownloadUrl();
+    } else if (e.target.closest("[data-dl-raw]")) {
+      location.href = api.rawAudioUrl(ctl.id);
     } else if (e.target.closest("[data-dl-text]")) {
       saveBlob(new Blob([s.transcriptMarkdown()], { type: "text/markdown" }), `${slug(s.show.title)}.md`);
     } else if (e.target.closest("[data-share]")) {
@@ -400,6 +414,107 @@ export async function openOrganizeSheet(ctl) {
       }
     }
   });
+}
+
+// ---- Interrupt (the producer) ---------------------------------------------------------
+
+export function openInterruptSheet(ctl) {
+  if (!ctl.canInterrupt) return;
+  const wasPlaying = ctl.holdForInterrupt();
+  let sent = false;
+  const div = document.createElement("div");
+  div.className = "interrupt";
+  setHtml(div, html`
+    <p class="muted small">The show's paused. Ask the hosts anything, or tell them where to take it: they answer right away, then carry on.</p>
+    ${Recorder.supported ? html`
+      <button type="button" class="talk-btn" data-talk aria-label="Hold to ask by voice">
+        ${icon("mic", 34, 2)}<span data-talk-label>Hold to talk</span></button>` : ""}
+    <form class="row gap" data-ask>
+      <label class="sr-only" for="int-text">Your question or direction</label>
+      <input id="int-text" class="field grow" maxlength="500" placeholder="Why did the serpent talk?" autocomplete="off">
+      <button class="btn white" type="submit">Ask</button>
+    </form>
+    <div class="int-actions">
+      <button type="button" class="btn chip-btn" data-kind="deeper">${icon("plus", 16, 2.4)}Go deeper</button>
+      <button type="button" class="btn chip-btn" data-kind="move_on">${icon("jumpLive", 16)}Move on</button>
+      <button type="button" class="btn chip-btn" data-kind="steer">${icon("restyle", 16)}Steer: take it where I typed</button>
+    </div>
+    <p class="error" role="alert" data-error></p>`);
+  const sheet = openSheet({
+    title: "Interrupt the show", body: div,
+    onClose: () => { if (!sent) ctl.resumeAfterHold(wasPlaying); },
+  });
+  const input = div.querySelector("#int-text");
+  const error = (msg) => { div.querySelector("[data-error]").textContent = msg || ""; };
+  const send = (kind, text = "") => {
+    if (ctl.interrupt(kind, text, wasPlaying)) {
+      sent = true;
+      sheet.close();
+    } else {
+      error("The show can't be interrupted right now.");
+    }
+  };
+  div.querySelector("[data-ask]").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const text = input.value.trim();
+    if (!text) return input.focus();
+    send("ask", text);
+  });
+  div.querySelector(".int-actions").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-kind]");
+    if (!b) return;
+    const text = input.value.trim();
+    if (b.dataset.kind === "steer" && !text) {
+      error("Type where you want the show to go first, e.g. \"Argue the other side\".");
+      return input.focus();
+    }
+    send(b.dataset.kind, text);
+  });
+
+  const talk = div.querySelector("[data-talk]");
+  if (!talk) return;
+  const label = div.querySelector("[data-talk-label]");
+  let rec = null;
+  const begin = async (e) => {
+    e?.preventDefault?.();
+    if (rec) return;
+    error("");
+    rec = new Recorder();
+    try {
+      await rec.start();
+    } catch {
+      rec = null;
+      return error("No microphone access. Allow it in the browser, or type instead.");
+    }
+    talk.classList.add("on");
+    label.textContent = "Listening… let go to send";
+  };
+  const finish = async () => {
+    if (!rec) return;
+    const r = rec;
+    rec = null;
+    talk.classList.remove("on");
+    const blob = await r.stop();
+    if (blob.size < 1200) {
+      label.textContent = "Hold to talk";
+      return error("Hold the button while you speak.");
+    }
+    label.textContent = "Got it…";
+    talk.disabled = true;
+    try {
+      const { text } = await ctl.transcribe(blob);
+      input.value = text;
+      send("ask", text);
+    } catch (err) {
+      error(err.message);
+      label.textContent = "Hold to talk";
+      talk.disabled = false;
+    }
+  };
+  talk.addEventListener("pointerdown", begin);
+  for (const ev of ["pointerup", "pointerleave", "pointercancel"]) talk.addEventListener(ev, finish);
+  talk.addEventListener("keydown", (e) => { if ((e.key === " " || e.key === "Enter") && !e.repeat) begin(e); });
+  talk.addEventListener("keyup", (e) => { if (e.key === " " || e.key === "Enter") finish(); });
 }
 
 export function downloadTranscript(ctl) {

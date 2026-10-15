@@ -7,23 +7,16 @@ the one before it has been voiced, and a 15-minute show takes only as long as
 Gemini needs to write and speak it. The runner can't tell the difference.
 
 RenderRoom is the RoomPort for that: it keeps what the runner publishes and the
-voiced audio for the mixer (app/mixer.py), and broadcasts nothing. Never use a
-ShowRoom for this: its idle check signs off a show nobody is connected to.
+voiced audio for the mixer (app/mixer.py), and broadcasts nothing. A headless
+ShowRoom (scheduled briefings) also renders with nobody listening, but it encodes
+and saves as it goes, so there would be nothing left to mix music into.
 """
 from __future__ import annotations
 
 import asyncio
 from typing import Callable
 
-from .clock import LiveClock
-
-
-class RenderClock(LiveClock):
-    """A playhead that is always at the end of the voiced audio."""
-
-    def tick(self) -> float:
-        self.live = float(self.audio_end)
-        return self.live
+from .clock import RenderClock
 
 
 class RenderRoom:
@@ -65,6 +58,19 @@ class RenderRoom:
     def push_audio(self, seq: int, pcm: bytes) -> None:
         self.clock.add_audio(len(pcm) // 2)
         self.voice += pcm
+        self.wake.set()
+
+    def truncate(self, at: int, keep_seq: int, cut: dict | None) -> None:
+        """Only a producer's interruption cuts a show, and nobody interrupts a render;
+        kept so the RoomPort is whole. Drops the audio after `at` like ShowRoom does."""
+        self.clock.audio_end = at
+        self.clock.live = min(self.clock.live, float(at))
+        del self.voice[at * 2:]
+        for seq in [s for s in self.segments if s > keep_seq]:
+            del self.segments[seq]
+        if cut and cut["seq"] in self.segments:
+            self.segments[cut["seq"]].update(lines=cut["lines"], samples=cut["samples"])
+        self.chapters = {i: s for i, s in self.chapters.items() if s < at}
         self.wake.set()
 
     # ---- results ----------------------------------------------------------------------

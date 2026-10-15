@@ -1,12 +1,62 @@
-// The voice-memo recorder: the microphone through MediaRecorder, in whatever
-// container this browser records (WebM in Chrome and on Android, Ogg in Firefox,
-// MP4 in Safari). The server tells them apart by their bytes, so any will do.
+// The microphone through MediaRecorder, in whatever container this browser records
+// (WebM/Opus in Chrome, Firefox and on Android, MP4/AAC in Safari). Gemini accepts
+// all of them and the server tells them apart by their bytes, so nothing is
+// re-encoded here.
 //
-// Length comes from our own clock: Chrome's WebM recordings say they're Infinity
-// seconds long. The screen is kept awake while recording, where the browser lets
-// us, because a phone that locks mid-memo can stop the microphone.
+// Recorder: hold-to-talk for the producer's questions.
+// MemoRecorder: a voice memo. Its length comes from our own clock: Chrome's WebM
+// recordings say they're Infinity seconds long. The screen is kept awake while
+// recording, where the browser lets us, because a phone that locks mid-memo can
+// stop the microphone.
 
-const TYPES = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/mp4;codecs=mp4a.40.2", "audio/mp4", "audio/webm"];
+const TYPES = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4;codecs=mp4a.40.2", "audio/mp4"];
+const MAX_MS = 60000;
+
+export class Recorder {
+  static get supported() {
+    return Boolean(navigator.mediaDevices?.getUserMedia && window.MediaRecorder);
+  }
+
+  /** Asks for the microphone the first time. */
+  async start() {
+    this.stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 },
+    });
+    const type = TYPES.find((t) => MediaRecorder.isTypeSupported(t)) || "";
+    this.rec = new MediaRecorder(this.stream, type ? { mimeType: type } : {});
+    this.parts = [];
+    this.rec.ondataavailable = (e) => { if (e.data.size) this.parts.push(e.data); };
+    this.rec.start();
+    this.timer = setTimeout(() => this.stop(), MAX_MS);
+  }
+
+  /** Resolves with what was recorded (an empty Blob if nothing was). */
+  stop() {
+    clearTimeout(this.timer);
+    if (!this.rec || this.rec.state === "inactive") {
+      this._release();
+      return Promise.resolve(this._blob());
+    }
+    return new Promise((resolve) => {
+      this.rec.onstop = () => {
+        this._release();
+        resolve(this._blob());
+      };
+      this.rec.stop();
+    });
+  }
+
+  _blob() {
+    return new Blob(this.parts || [], { type: (this.rec?.mimeType || "audio/webm").split(";")[0] });
+  }
+
+  _release() {
+    for (const t of this.stream?.getTracks() || []) t.stop();
+    this.stream = null;
+  }
+}
+
+// ---- voice memos ------------------------------------------------------------------
 
 export function recordingSupported() {
   return Boolean(window.isSecureContext && navigator.mediaDevices?.getUserMedia && window.MediaRecorder);

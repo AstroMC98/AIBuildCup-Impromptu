@@ -64,7 +64,16 @@ export const api = {
   startDraft: (showId) => call("POST", `/api/shows/${id(showId)}/start`),
   deleteShow: (showId) => call("DELETE", `/api/shows/${id(showId)}`),
   addContext: (showId, form) => call("POST", `/api/shows/${id(showId)}/context`, { form }),
+  transcribe: (showId, blob) => {
+    const form = new FormData();
+    const ext = { "audio/ogg": "ogg", "audio/mp4": "m4a" }[blob.type] || "webm";
+    form.append("audio", blob, `question.${ext}`);
+    return call("POST", `/api/shows/${id(showId)}/transcribe`, { form });
+  },
   audioUrl: (showId, download = false) => `/api/shows/${id(showId)}/audio${download ? "?download=1" : ""}`,
+  rawAudioUrl: (showId) => `/api/shows/${id(showId)}/audio?raw=1&download=1`,   // a co-hosted call, unedited
+  // co-hosting
+  createCohost: (body) => call("POST", "/api/cohost", { json: body }),
   organize: (showId, body) => call("PATCH", `/api/shows/${id(showId)}/organize`, { json: body }),
   // voice memos, your music and your show intro
   createMemo: (form) => call("POST", "/api/memos", { form }),
@@ -96,6 +105,18 @@ export const api = {
   unsubscribe: (kind, targetId) => call("DELETE", `/api/subscriptions/${id(kind)}/${id(targetId)}`),
   feed: () => call("GET", "/api/feed"),
   feedSeen: () => call("POST", "/api/feed/seen"),
+  // personal briefings and the watchlist they're made from
+  briefings: () => call("GET", "/api/briefings"),
+  makeBriefing: (body) => call("POST", "/api/briefings", { json: body }),
+  setSchedule: (body) => call("PUT", "/api/briefings/schedule", { json: body }),
+  createBriefingTemplate: (body) => call("POST", "/api/briefing-templates", { json: body }),
+  updateBriefingTemplate: (tid, body) => call("PUT", `/api/briefing-templates/${id(tid)}`, { json: body }),
+  deleteBriefingTemplate: (tid) => call("DELETE", `/api/briefing-templates/${id(tid)}`),
+  watches: () => call("GET", "/api/watches"),
+  addWatch: (body) => call("POST", "/api/watches", { json: body }),
+  updateWatch: (wid, body) => call("PATCH", `/api/watches/${id(wid)}`, { json: body }),
+  removeWatch: (wid) => call("DELETE", `/api/watches/${id(wid)}`),
+  checkWatch: (wid) => call("POST", `/api/watches/${id(wid)}/check`),
   // admin
   adminUsers: (q = "") => call("GET", `/api/admin/users?q=${id(q)}`),
   grant: (uid, amount, note) => call("POST", `/api/admin/users/${id(uid)}/credits`, { json: { amount, note } }),

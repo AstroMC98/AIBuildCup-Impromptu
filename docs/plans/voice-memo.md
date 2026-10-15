@@ -254,6 +254,26 @@ Renders slot (FIFO, max_renders) ─► MemoJob.produce:
   - Google grounding for every visibility setting, with the terms risk accepted
 
 ## Progress notes
+- **Merged `main` @ `1cdce9d`** (co-host live, call-in promises and Research, interactive branching, briefings). The decisions:
+  - **One `RenderClock`:** main's, in `clock.py`. `render.py` imports it.
+    - `RenderRoom` gained `truncate()` to satisfy main's `RoomPort`.
+    - Memo renders keep `RenderRoom` rather than main's headless `ShowRoom`, which encodes as it goes and leaves nothing to mix music into.
+  - **Research names:** main's live-lookup names stay (`Gemini.research`, `prompts.RESEARCH_SYSTEM`/`research_input`, `settings.research_timeout_seconds`).
+    - The memo's became `research_memo`, `MEMO_RESEARCH_*`, `memo_research_system/input/schema` and `memo_research_timeout_seconds`.
+  - **Grounding helpers:** one set, main's, which returns dicts. `_dossier` turns them into `WebSource`.
+  - **Stingers:** the reaction clips are voiced only when `mode == "live"`. Nobody can interrupt a recorded episode.
+  - **Writer prompt:** `WRITER_LIVE_RULES` now carries main's `{research}` block, formatted before it's substituted.
+    - Live writer prompts are byte-identical to main's. The planner differs only in the cold-open intro rule.
+  - **Visibility:**
+    - `published()` (memo pods being made or in review) and main's `_recording()` (co-host calls in progress) are both applied.
+    - A visitor to a call in progress still gets main's 409 "still being recorded".
+  - **Recorder:** `audio/recorder.js` holds both main's hold-to-talk `Recorder` and `MemoRecorder`, with one MIME list.
+  - **CSS:** `memo.css`'s `.spinner.small` and `.search-suggestions` rules are scoped to the memo screens. They had overridden the co-host and live ones.
+  - **Fake Gemini:**
+    - Audio asked for a memo brief (`thesis` in the schema) gets the brief. Other audio is a producer's question to transcribe.
+    - Memo research is told apart from live lookups by its schema or system prompt. Its counters are `memo_briefs`/`memo_research`.
+  - **Smoke tests:** they use main's `SMOKE_PORT` (the app on the next port).
+  - **Not done:** briefings and co-host calls don't open on a library theme. Their spoken intro comes from the shared planner, and calls aren't planned.
 - **Phase 6, code and docs done; the real-API runs are yours:**
   - `tests/live_test.py --memo FILE [--memo-minutes] [--music] [--review] [--gemini-base-url]`. It reports per-stage times, how much faster than real time the show was voiced, the research and the music, and writes the MP3, transcript, outline and show notes to `data/live-tests/<ts>/`. Checked against the fake Gemini.
   - Pressing Produce kept the stage timings from before the review, so the report adds the two halves.
@@ -285,7 +305,7 @@ Renders slot (FIFO, max_renders) ─► MemoJob.produce:
   - Memo pods are tagged `kind: "memo"`, not `origin`, to match `cohost`'s `kind` field.
   - `refund_unused` stays in `room.py`; memo credits settle from the ledger instead.
   - `mixer.mix()` takes no segment list.
-  - The smoke test's ports can be overridden with `SMOKE_FAKE_PORT` / `SMOKE_APP_PORT`.
+  - The smoke test's ports can be moved with `SMOKE_PORT` (main's convention, adopted in the merge).
 - **Merging with `worktree-cohost`** (commit `64a5a26`):
   - `cohost` hides calls in progress with `main._recording()` inside `_visible` only. Fold its `live` and `editing` states for `kind == "cohost"` into `accounts.published()`, so `can_view` covers direct links too.
   - Expect simple conflicts in the imports of `llm.py`, `prompts.py` and `main.py`, and in `main.py`'s `_public_request`, `_visible` and `list_shows`.

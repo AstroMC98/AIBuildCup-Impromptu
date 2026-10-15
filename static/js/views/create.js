@@ -34,6 +34,7 @@ export async function createView(root, { query }) {
     hosts: (saved.hosts || [{}, {}]).map(hostOf),
     albums: [],               // album ids this pod goes into
     minutes: LENGTHS.includes(saved.minutes) ? saved.minutes : 10,
+    research: Boolean(saved.research),
     language: saved.language || "English",
     visibility: saved.visibility || "private",
     sharedWith: [],
@@ -91,6 +92,8 @@ export async function createView(root, { query }) {
       <h2 class="create-h2">How long?</h2>
       <div class="len-chips" role="group" aria-label="Length" data-lengths></div>
 
+      <h2 class="create-h2">Research <span class="faint small">optional</span></h2>
+      <div data-research></div>
       <h2 class="create-h2">Intro</h2>
       <div data-intro></div>
 
@@ -143,7 +146,7 @@ export async function createView(root, { query }) {
   // ---- rendering ----------------------------------------------------------------------
 
   const renderFree = () => {
-    const cost = session.cost(state.minutes);
+    const cost = session.cost(state.minutes, state.research);
     setHtml($("[data-free]"), session.credits >= cost ? "" : html`
       <div class="free-note">${icon("coin", 18)}<span>
         ${session.credits ? html`<strong>You have ${session.credits} credits.</strong> This pod needs ${cost}. Pick a shorter length, or ask an admin for more.`
@@ -185,8 +188,19 @@ export async function createView(root, { query }) {
   };
   const renderAlbums = () => setHtml($("[data-albums]"), albumChips(data.albums, state.albums));
   const renderIntro = () => setHtml($("[data-intro]"), introRow(data.intro, state.useIntro));
+  const renderResearch = () => {
+    const extra = session.options.research_credits_per_minute || 0;
+    setHtml($("[data-research]"), html`
+      <button type="button" role="switch" class="radio-card research-card" data-toggle-research aria-checked="${state.research}">
+        <span class="radio-dot" aria-hidden="true"></span>
+        <span class="radio-text"><span class="radio-title">${icon("search", 16)} Let the hosts look things up</span>
+          <span class="radio-desc">When a call-in or a chapter needs facts your source doesn't have (the latest stats,
+            recent news), the hosts search Google while they keep talking, then answer and say where it's from.
+            ${extra ? `+${extra} credit${extra === 1 ? "" : "s"} a minute.` : ""}</span></span>
+      </button>`);
+  };
   const renderCost = () => {
-    const cost = session.cost(state.minutes);
+    const cost = session.cost(state.minutes, state.research);
     const enough = session.credits >= cost;
     $("[data-cost]").textContent = `Uses ${cost} credit${cost === 1 ? "" : "s"} when it goes live · you have ${session.credits}`;
     $("[data-cost]").classList.toggle("short", !enough);
@@ -269,6 +283,10 @@ export async function createView(root, { query }) {
     } else if (t.closest("[data-min]")) {
       state.minutes = Number(t.closest("[data-min]").dataset.min);
       renderLengths();
+    } else if (t.closest("[data-toggle-research]")) {
+      state.research = !state.research;
+      renderResearch();
+      renderCost();
     } else if (t.closest("[data-host]")) {
       editHost(Number(t.closest("[data-host]").dataset.host));
     } else if (t.closest("[data-host-count]")) {
@@ -407,13 +425,13 @@ export async function createView(root, { query }) {
     const language = $("#language").value.trim() || "English";
     const request = {
       source, style: pick.style, vibe: pick.vibe, style_label: pick.label, accent: pick.accent,
-      hosts: state.hosts, minutes: state.minutes, language,
+      hosts: state.hosts, minutes: state.minutes, language, research: state.research,
       source_names: state.attachments.map((a) => a.name).slice(0, 20),
     };
     local.set("gp_create", {
       vibe: state.pick.kind === "preset" ? state.pick.id : "gossip",
       hosts: state.hosts.map((h) => ({ ...h, context: "" })),  // private notes aren't kept in the browser
-      minutes: state.minutes, language, visibility: state.visibility,
+      minutes: state.minutes, language, visibility: state.visibility, research: state.research,
     });
     btn.disabled = true;
     if (live) await unlockAudio();  // inside the click, so the pod can start playing on its own
@@ -444,6 +462,7 @@ export async function createView(root, { query }) {
   renderTemplates();
   renderVibes();
   renderHosts();
+  renderResearch();
   renderLengths();
   renderVisibility();
   renderChips();

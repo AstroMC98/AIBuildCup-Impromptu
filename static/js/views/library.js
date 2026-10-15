@@ -84,6 +84,7 @@ export async function openAccountSheet() {
     <nav class="menu">
       <a class="menu-item" href="/" data-link>${icon("mic", 20)}Your pods</a>
       <a class="menu-item" href="/following" data-link>${icon("heart", 20)}Following</a>
+      <a class="menu-item" href="/briefings" data-link>${icon("sparkle", 20)}Briefings <span class="faint">made just for you</span></a>
       <a class="menu-item" href="/albums" data-link>${icon("bars", 20)}Albums</a>
       <a class="menu-item" href="/stats" data-link>${icon("people", 20)}Stats</a>
       <a class="menu-item" href="/creator/${me.uid}" data-link>${icon("user", 20)}Your creator page</a>
@@ -115,7 +116,8 @@ function ledgerLabel(e) {
   switch (e.reason) {
     case "pod": return `Pod made · ${when}`;
     case "music": return `Original music · ${when}`;
-    case "refund": return `Refund: ${e.note || "Unused minutes"} · ${when}`;
+    case "briefing": return `Briefing · ${when}`;
+    case "refund": return `${e.note ? `Refund: ${e.note}` : "Unused minutes back"} · ${when}`;
     case "signup": return `Welcome credits · ${when}`;
     case "grant": return `${e.note || "Credits added"} · ${when}`;
     default: return `${e.note || "Adjustment"} · ${when}`;
@@ -241,10 +243,12 @@ function emptyText(scope, total) {
 
 export function row(s, active, scope) {
   const live = s.status === "live";
+  const call = s.kind === "cohost";
   const by = scope === "following" && s.via ? `${s.via} · `
     : scope !== "mine" && s.owner_name ? `by ${s.owner_name} · ` : "";
   const memo = s.kind === "memo";
-  const meta = live ? `${by}Live now`
+  const meta = live ? `${by}${call ? "On a call now" : "Live now"}`
+    : s.status === "editing" ? "Editing the episode…"
     : s.status === "draft" ? `Draft, ${s.style_label}`
       : s.status === "rendering" ? `From a voice memo · making it, ${Math.round((s.render?.progress || 0) * 100)}%`
       : s.status === "review" ? "From a voice memo · ready for you to review"
@@ -253,8 +257,8 @@ export function row(s, active, scope) {
           : `${by}${s.style_label}${s.duration_s ? `, ${fmtTime(s.duration_s)}` : ""} · ${fmtAgo(s.created_at)}`;
   return html`
     <li>
-      <a class="lib-row ${active ? "active" : ""}" href="/show/${s.id}" data-link>
-        <span class="lib-cover" style="--tile:${s.accent || "#30284F"}" aria-hidden="true">${initial(s.title)}</span>
+      <a class="lib-row ${active ? "active" : ""}" href="${call && (live || s.status === "editing") ? `/cohost/${s.id}` : `/show/${s.id}`}" data-link>
+        <span class="lib-cover" style="--tile:${s.accent || "#30284F"}" aria-hidden="true">${call ? icon("mic", 20, 2.2) : initial(s.title)}</span>
         <span class="lib-text"><span class="lib-title">${s.title || "Untitled pod"}</span>
           <span class="lib-meta ${live || s.status === "review" ? "live" : ""}">${meta}</span></span>
         ${s.new ? html`<span class="pill pink new-pill">New</span>` : ""}
@@ -314,7 +318,9 @@ export async function libraryView(root, { url }) {
               <div class="row gap wrap">
                 <a class="btn white big go" href="/new" data-link><span class="rec-dot"></span>Start a new pod</a>
                 <a class="btn quiet big" href="/memo" data-link>${icon("mic", 20)}From a voice memo</a>
-              </div>`
+                <a class="btn quiet big" href="/cohost" data-link>${icon("mic", 20, 2.2)}Co-host live</a>
+              </div>
+              <p class="faint small">Co-host live: talk with an AI co-host in real time; hang up and it's an episode.</p>`
               : html`<div class="free-note">${icon("coin", 18)}<span><strong>Free account.</strong> Listen, call in, connect, and build personas and styles for free.
                   Creating pods uses credits (${session.options.credits_per_minute} per minute); ask an admin for demo credits.</span></div>`}
           ${me && !session.options.api_key_set ? html`<p class="error">GEMINI_API_KEY isn't set on the server yet, so pods can't start.</p>` : ""}

@@ -4,6 +4,14 @@
     python -m tests.live_test --minutes 10 15      # two pods at once
     python -m tests.live_test --memo walk.m4a      # a 15-minute pod from a voice memo
     python -m tests.live_test --memo walk.m4a --memo-minutes 5 --music generate --review
+    python -m tests.live_test --cohost             # a co-host call (Gemini Live), ~2 minutes
+
+--cohost plays "you": your lines are voiced with the TTS model, then streamed into
+a real co-host call as mic audio in real time (as if through headphones: the
+co-host's voice isn't fed back). It measures how fast the co-host answers after
+you stop talking, how fast cutting in stops it, a mode switch, and how long the
+episode takes to edit after hanging up, then saves the episode, the unedited call
+and the transcript.
 
 Starts the app on its own port (dev sign-in, local storage under
 data/live-tests/<time>/), signs in a producer and a connected listener, and for
@@ -296,6 +304,254 @@ async def run_pod(minutes: int, spec: dict, producer: httpx.AsyncClient, guest: 
     return result
 
 
+# ---- co-hosting ------------------------------------------------------------------------
+
+MIC_RATE = 16_000
+MIC_FRAME = 640    # 40 ms
+COHOST_LINES = [
+    "Hey! Sorry, can you hear me okay?",                           # a mic check, for the editor to cut
+    "So I've been baking sourdough for about a year now, and honestly? I think it's a little overrated.",
+    "Okay, but here's my problem. The flavor is great, but feeding a starter every single day is a chore.",
+    "Wait, wait, let me stop you there. What about people who just want bread on a Tuesday night?",
+    "Alright, that's fair. Last thing: what's the one tip you'd give a total beginner?",
+]
+CUT_IN_LINE = 3     # said over the co-host's answer, 1.5 s after it starts
+
+
+async def voice_lines(lines: list[str]) -> list[bytes]:
+    """Each line as 16 kHz mono s16le, voiced by the TTS model (a male voice)."""
+    import numpy as np
+    from app.config import Settings
+    from app.llm import Gemini
+    from app.models import Host, Line
+
+    gemini = Gemini(Settings())
+    host = Host(name="Marc", persona="", voice="Puck", gender="male")
+    out = []
+    for text in lines:
+        pcm = b"".join([c async for c in gemini.stream_speech([Line(speaker="Marc", text=text)], [host])])
+        x = np.frombuffer(pcm[: len(pcm) // 2 * 2], dtype="<i2").astype(np.float32)
+        n = len(x) * MIC_RATE // RATE
+        y = np.interp(np.arange(n) * (RATE / MIC_RATE), np.arange(len(x)), x)
+        out.append(y.astype("<i2").tobytes())
+    return out
+
+
+class CallPhone:
+    """A phone on a co-host call: streams its mic in real time and plays (in
+    simulation) the co-host the moment each chunk arrives."""
+
+    def __init__(self, show_id: str, cookie: str):
+        self.url = f"{WS}/ws/cohost/{show_id}"
+        self.cookie = cookie
+        self.events: list[tuple[float, dict]] = []
+        self.turn_first: dict[int, float] = {}      # turn -> when its first audio arrived
+        self.play_end = 0.0                         # when the co-host's audio so far finishes playing
+        self.flushed: set[int] = set()
+        self.speech = b""
+        self.ws = None
+        self.tasks: list[asyncio.Task] = []
+
+    async def open(self) -> "CallPhone":
+        self.ws = await websockets.connect(self.url, additional_headers={"Cookie": f"gp_session={self.cookie}"},
+                                           max_size=None, ping_interval=20, ping_timeout=60)
+        await self.ws.send(json.dumps({"type": "join"}))
+        self.tasks = [asyncio.create_task(self._recv()), asyncio.create_task(self._mic())]
+        return self
+
+    async def _recv(self) -> None:
+        try:
+            async for msg in self.ws:
+                now = time.monotonic()
+                if isinstance(msg, bytes):
+                    turn = struct.unpack("<I", msg[:4])[0]
+                    if turn in self.flushed:
+                        continue
+                    self.turn_first.setdefault(turn, now)
+                    self.play_end = max(self.play_end, now + 0.06) + (len(msg) - 4) / 2 / RATE
+                else:
+                    e = json.loads(msg)
+                    self.events.append((now, e))
+                    if e["type"] == "interrupted":
+                        self.flush(e["turn"])
+        except websockets.ConnectionClosed:
+            pass
+
+    async def _mic(self) -> None:
+        start, n = time.monotonic(), 0
+        try:
+            while True:
+                chunk, self.speech = self.speech[: MIC_FRAME * 2], self.speech[MIC_FRAME * 2:]
+                await self.ws.send(chunk + b"\x00" * (MIC_FRAME * 2 - len(chunk)))
+                n += 1
+                await asyncio.sleep(max(0.0, start + n * 0.04 - time.monotonic()))
+        except (websockets.ConnectionClosed, asyncio.CancelledError):
+            pass
+
+    def flush(self, turn: int) -> None:
+        self.flushed.add(turn)
+        self.play_end = time.monotonic()
+
+    @property
+    def last_turn(self) -> int:
+        return max(self.turn_first, default=0)
+
+    @property
+    def playing(self) -> bool:
+        return time.monotonic() < self.play_end
+
+    def of(self, kind: str) -> list[dict]:
+        return [e for _, e in self.events if e["type"] == kind]
+
+    def first(self, kind: str, pred=lambda e: True) -> float | None:
+        return next((t for t, e in self.events if e["type"] == kind and pred(e)), None)
+
+    async def say(self, pcm: bytes) -> float:
+        """Talk; returns when you stopped (the last of it went out)."""
+        self.speech += pcm
+        await asyncio.sleep(len(pcm) / 2 / MIC_RATE)
+        while self.speech:
+            await asyncio.sleep(0.02)
+        return time.monotonic()
+
+    async def until(self, pred, timeout: float) -> bool:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if pred():
+                return True
+            await asyncio.sleep(0.02)
+        return False
+
+    async def close(self) -> None:
+        for t in self.tasks:
+            t.cancel()
+        try:
+            await self.ws.close()
+        except Exception:
+            pass
+
+
+async def run_cohost(producer: httpx.AsyncClient, cookie: str, opts: dict, out: Path) -> dict:
+    print("[co-host] voicing your lines with the TTS model…", flush=True)
+    lines = await voice_lines(COHOST_LINES)
+    preset = next(p for p in opts["persona_presets"] if p["id"] == "comedian")
+    r = await producer.post("/api/cohost", json={"request": {
+        "host": {k: preset[k] for k in ("name", "gender", "voice", "persona", "likes", "specialties", "skills")},
+        "mode": "banter", "topic": "Is sourdough worth the hassle?", "minutes": 5, "your_name": "Marc",
+    }, "visibility": opts["visibility"]})
+    r.raise_for_status()
+    show_id = r.json()["id"]
+    print(f"[co-host] on a call: {show_id}", flush=True)
+    phone = await CallPhone(show_id, cookie).open()
+    t_join = time.monotonic()
+    marks: dict = {"answers": [], "jump_ins": 0}
+
+    async def answer_after(stopped: float, after_turn: int) -> float | None:
+        """Seconds from when you stopped to the co-host's answer. A turn it started
+        while you were still talking (it took a pause for the end of your turn, then
+        stopped when you carried on) is a jump-in, not the answer."""
+        def answer() -> int | None:
+            return next((t for t, at in sorted(phone.turn_first.items())
+                         if t > after_turn and at >= stopped - 0.3), None)
+        ok = await phone.until(lambda: answer() is not None, 15)
+        marks["jump_ins"] += sum(1 for t, at in phone.turn_first.items() if t > after_turn and at < stopped - 0.3)
+        return round(phone.turn_first[answer()] - stopped, 2) if ok else None
+
+    async def let_it_finish() -> None:
+        turn = phone.last_turn
+        await phone.until(lambda: any(e["turn"] == turn for e in phone.of("turn_done")) or turn in phone.flushed, 30)
+        await phone.until(lambda: not phone.playing, 30)
+        await asyncio.sleep(0.6)
+
+    await phone.until(lambda: phone.last_turn >= 1, 20)
+    marks["opening_s"] = round(phone.turn_first[1] - t_join, 2) if phone.last_turn else None
+    await let_it_finish()
+    i = 0
+    while i < len(lines):
+        if i == 2:     # switch the mode, and time the co-host's answer to it
+            before = phone.last_turn
+            t = time.monotonic()
+            await phone.ws.send(json.dumps({"type": "mode", "mode": "debate"}))
+            marks["mode_switch_answer_s"] = await answer_after(t, before)
+            await let_it_finish()
+        before = phone.last_turn
+        stopped = await phone.say(lines[i])
+        marks["answers"].append(await answer_after(stopped, before))
+        if i + 1 == CUT_IN_LINE:   # talk over this answer, 1.5 s into it
+            turn = phone.last_turn
+            await asyncio.sleep(1.5)
+            t_cut = time.monotonic()
+            speaking = asyncio.create_task(phone.say(lines[CUT_IN_LINE]))
+            # the phone stops playback itself after 0.4 s of you talking over it (see controller.js)
+            interrupted = await phone.until(lambda: phone.first("interrupted", lambda e: e["turn"] == turn), 0.4)
+            if not interrupted:
+                await phone.ws.send(json.dumps({"type": "cut_in"}))
+                phone.flush(turn)
+            t_int = phone.first("interrupted", lambda e: e["turn"] == turn)
+            marks["cut_in"] = {"by": "gemini" if interrupted else "phone",
+                               "after_s": round((t_int or time.monotonic()) - t_cut, 2)}
+            stopped = await speaking
+            marks["answers"].append(await answer_after(stopped, turn))
+            i += 1
+        await let_it_finish()
+        i += 1
+
+    t_hang = time.monotonic()
+    await phone.ws.send(json.dumps({"type": "hangup"}))
+    await phone.until(lambda: phone.of("saved") or phone.of("ended"), 120)
+    saved_at = phone.first("saved")
+    await phone.close()
+
+    data = (await producer.get(f"/api/shows/{show_id}")).json()
+    show, segs = data.get("show", {}), data.get("segments", [])
+    md = [f"# Co-host call: {show.get('title')}", "", show.get("about", ""), "",
+          "Chapters: " + " · ".join(f"{b['title']} ({b['start'] / RATE:.0f}s)" for b in show.get("beats", [])), ""]
+    for s in segs:
+        md += [f"**{ln['speaker']}:** {ln['text']}" for ln in s["lines"]] + [""]
+    (out / "cohost.md").write_text("\n".join(md), encoding="utf-8")
+    for name, params in (("cohost.mp3", {}), ("cohost-unedited.mp3", {"raw": 1})):
+        audio = await producer.get(f"/api/shows/{show_id}/audio", params=params, follow_redirects=True)
+        if audio.status_code == 200:
+            (out / name).write_bytes(audio.content)
+    answers = [a for a in marks["answers"] if a is not None]
+    result = {
+        "show_id": show_id, "saved": bool(saved_at), "title": show.get("title"),
+        "opening_s": marks["opening_s"],
+        "answers_s": marks["answers"],
+        "answer_median_s": sorted(answers)[len(answers) // 2] if answers else None,
+        "answer_max_s": max(answers) if answers else None,
+        "cut_in": marks.get("cut_in"),
+        "jump_ins": marks["jump_ins"],
+        "mode_switch_answer_s": marks.get("mode_switch_answer_s"),
+        "hangup_to_saved_s": round(saved_at - t_hang, 1) if saved_at else None,
+        "call_s": show.get("call_s"), "episode_s": show.get("duration_s"), "edit": show.get("edit"),
+        "segments": len(segs), "chapters": [b["title"] for b in show.get("beats", [])],
+        "errors": [e.get("message") for e in phone.of("error")] + [e.get("message") for e in phone.of("ended")],
+    }
+    print(f"[co-host] done: {json.dumps(result)}", flush=True)
+    return result
+
+
+def cohost_report(result: dict, out: Path) -> None:
+    rows = [
+        ("Saved", result.get("saved")), ("Title", result.get("title")),
+        ("Co-host opened the show after (s)", result.get("opening_s")),
+        ("Answered after you stopped (s), each line", result.get("answers_s")),
+        ("Answer latency median / max (s)", f"{result.get('answer_median_s')} / {result.get('answer_max_s')}"),
+        ("Cut in: stopped by / after (s)", result.get("cut_in")),
+        ("Co-host jumped in while you were still talking", result.get("jump_ins")),
+        ("Answered a mode switch after (s)", result.get("mode_switch_answer_s")),
+        ("Hang up to saved episode (s)", result.get("hangup_to_saved_s")),
+        ("Call / episode length (s)", f"{result.get('call_s')} / {result.get('episode_s')}"),
+        ("Edit", result.get("edit")), ("Chapters", result.get("chapters")), ("Errors", result.get("errors")),
+    ]
+    lines = [f"# Co-host live test, {datetime.now():%Y-%m-%d %H:%M}", "", "| | |", "|---|---|"]
+    lines += [f"| {k} | {v} |" for k, v in rows]
+    (out / "report.md").write_text("\n".join(lines), encoding="utf-8")
+    (out / "report.json").write_text(json.dumps(result, indent=1), encoding="utf-8")
+    print("\n".join(lines))
+
+
 MEMO_STAGES = ("queued", "transcribing", "researching", "outlining", "review", "voicing", "scoring", "mixing", "saving")
 
 
@@ -398,6 +654,11 @@ async def main_async(minutes_list: list[int], out: Path, args: argparse.Namespac
         opts["first_callin"] = args.first_callin
         cookies = {"producer": producer.cookies.get("gp_session"), "guest": guest.cookies.get("gp_session")}
         assert me_g["uid"]
+        if args.cohost:
+            try:
+                return [await run_cohost(producer, cookies["producer"], opts, out)], []
+            except Exception as exc:
+                return [{"crashed": f"{type(exc).__name__}: {exc}", "saved": False}], []
         tasks = []
         for i, m in enumerate(minutes_list):
             async def one(m=m, delay=i * 20):
@@ -500,6 +761,7 @@ def main() -> int:
     ap.add_argument("--music", default="auto", help="auto (the library), generate (Lyria, extra credits) or none")
     ap.add_argument("--review", action="store_true", help="stop at the outline, then press Produce")
     ap.add_argument("--gemini-base-url", help="a Gemini stub to use instead of the real API (spends nothing)")
+    ap.add_argument("--cohost", action="store_true", help="a co-host call (Gemini Live) instead of pods")
     args = ap.parse_args()
     for p in args.memo:
         if not p.is_file():
@@ -527,7 +789,10 @@ def main() -> int:
     finally:
         srv.terminate()
         srv.wait(timeout=15)
-    report(results, memos, out, log_path.read_text(encoding="utf-8", errors="replace"))
+    if args.cohost:
+        cohost_report(results[0], out)
+    else:
+        report(results, memos, out, log_path.read_text(encoding="utf-8", errors="replace"))
     print(f"\nTranscripts, MP3s and the app log are in {out}")
     ok = all(r.get("saved") for r in results) and all(m.get("status") == "finished" for m in memos)
     return 0 if ok else 1

@@ -34,6 +34,7 @@ BUCKET="${PROJECT_ID}-podcasts"
 RUN_SA_NAME="podcasts-run"
 RUN_SA="${RUN_SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
 IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/${SERVICE}:$(date +%Y%m%d-%H%M%S)"
+WAKE_QUEUE_NAME="briefings-wake"
 
 cd "$(dirname "$0")/.."
 
@@ -53,7 +54,7 @@ say "Enabling APIs (a minute or two the first time)"
 g services enable \
   run.googleapis.com artifactregistry.googleapis.com firestore.googleapis.com \
   storage.googleapis.com secretmanager.googleapis.com iamcredentials.googleapis.com \
-  identitytoolkit.googleapis.com firebaserules.googleapis.com
+  identitytoolkit.googleapis.com firebaserules.googleapis.com cloudtasks.googleapis.com
 
 say "Artifact Registry repository: $REPO"
 g artifacts repositories describe "$REPO" --location "$REGION" >/dev/null 2>&1 || \
@@ -96,6 +97,16 @@ gcloud storage buckets describe "gs://$BUCKET" --project "$PROJECT_ID" >/dev/nul
   gcloud storage buckets create "gs://$BUCKET" --project "$PROJECT_ID" --location "$REGION" \
     --uniform-bucket-level-access --public-access-prevention
 
+say "Cloud Tasks queue: $WAKE_QUEUE_NAME (wakes the service for scheduled briefings)"
+# Cloud Run scales to zero; a scheduled briefing books one task that calls /healthz at
+# its start time, so nothing has to stay warm in between (see app/wake.py).
+g tasks queues describe "$WAKE_QUEUE_NAME" --location "$REGION" >/dev/null 2>&1 || \
+  g tasks queues create "$WAKE_QUEUE_NAME" --location "$REGION" --max-attempts 3
+WAKE_QUEUE="projects/$PROJECT_ID/locations/$REGION/queues/$WAKE_QUEUE_NAME"
+# The service's deterministic address, known before the first deploy.
+PROJECT_NUMBER="$(g projects describe "$PROJECT_ID" --format='value(projectNumber)')"
+PUBLIC_URL="https://${SERVICE}-${PROJECT_NUMBER}.${REGION}.run.app"
+
 say "Runtime service account: $RUN_SA"
 g iam service-accounts describe "$RUN_SA" >/dev/null 2>&1 || \
   g iam service-accounts create "$RUN_SA_NAME" --display-name "Gemini Podcasts (Cloud Run)"
@@ -122,6 +133,8 @@ fi
 say "Permissions for $RUN_SA"
 g projects add-iam-policy-binding "$PROJECT_ID" --member "serviceAccount:$RUN_SA" \
   --role roles/datastore.user --condition=None >/dev/null
+g projects add-iam-policy-binding "$PROJECT_ID" --member "serviceAccount:$RUN_SA" \
+  --role roles/cloudtasks.enqueuer --condition=None >/dev/null
 gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" --project "$PROJECT_ID" \
   --member "serviceAccount:$RUN_SA" --role roles/storage.objectAdmin >/dev/null
 for secret in gemini-api-key session-secret; do
@@ -145,6 +158,7 @@ say "Deploying Cloud Run service: $SERVICE ($REGION)"
 ENV_VARS="^|^STORAGE_BACKEND=gcp|GCS_BUCKET=$BUCKET|GCP_PROJECT=$PROJECT_ID|COOKIE_SECURE=true"
 ENV_VARS+="|AUTH_MODE=firebase|FIREBASE_PROJECT_ID=$PROJECT_ID|FIREBASE_API_KEY=$FIREBASE_API_KEY"
 ENV_VARS+="|FIREBASE_AUTH_DOMAIN=$FIREBASE_AUTH_DOMAIN|ADMIN_EMAILS=$ADMIN_EMAILS|SIGNUP_CREDITS=$SIGNUP_CREDITS"
+ENV_VARS+="|PUBLIC_URL=$PUBLIC_URL|WAKE_QUEUE=$WAKE_QUEUE"
 g run deploy "$SERVICE" \
   --image "$IMAGE" --region "$REGION" --service-account "$RUN_SA" \
   --allow-unauthenticated --execution-environment gen2 \

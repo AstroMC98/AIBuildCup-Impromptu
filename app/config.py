@@ -15,6 +15,11 @@ class Settings(BaseSettings):
     # Writes the episode plan and every dialogue segment, and describes photos.
     script_model: str = "gemini-3.8-flash"
     script_thinking_level: str = "low"  # low keeps segment latency down
+    # Answers to an interruption. gemini-3.8-flash rejects "minimal" (HTTP 400), so "low"
+    # is the fastest it allows; a model that accepts "minimal" could answer sooner.
+    interjection_thinking_level: str = "low"
+    max_interrupts: int = 30            # per show
+    stinger_delay_seconds: float = 6.0  # voice the interruption reactions once the cold open is going
     # Voices the dialogue. gemini-3.8-flash-lite-tts is faster and cheaper.
     tts_model: str = "gemini-3.8-flash-tts"
 
@@ -50,6 +55,8 @@ class Settings(BaseSettings):
     # ---- credits --------------------------------------------------------------
     # Pods cost credits to create; listening, calling in and connecting are free.
     credits_per_minute: float = 1.0
+    # Extra per minute for a pod with Research on (the hosts look things up live).
+    research_credits_per_minute: float = 0.5
     # Credits every new account starts with. 0 = new accounts are free accounts.
     signup_credits: int = 0
 
@@ -59,7 +66,7 @@ class Settings(BaseSettings):
     memo_max_seconds: int = 600
     memo_model: str = ""              # "" = script_model
     max_research_queries: int = 5
-    research_timeout_seconds: float = 120.0
+    memo_research_timeout_seconds: float = 120.0
     # Memo pods render one at a time next to the live rooms; raise once TTS
     # throughput is measured (tests/live_test.py --memo).
     max_renders: int = 1
@@ -77,6 +84,19 @@ class Settings(BaseSettings):
     music_model: str = "lyria-3-clip-preview"
     music_credits: int = 2
     music_timeout_seconds: float = 120.0
+    # ---- personal briefings (see briefing.py) ---------------------------------
+    briefing_minutes_per_credit: int = 5   # a 5-minute briefing costs 1 credit
+    briefing_keep_hours: float = 48.0      # then it's deleted
+    # A scheduled briefing starts rendering this long before the time it's wanted.
+    briefing_lead_minutes: float = 30.0
+    # How often scheduled briefings and expired ones are looked for.
+    briefing_poll_seconds: float = 60.0
+    # This app's public address: named in the watch fetcher's User-Agent, and what
+    # wake-ups call. Blank = the address the last request came in on.
+    public_url: str = ""
+    # Cloud Tasks queue (projects/P/locations/R/queues/Q) that wakes the server for
+    # scheduled briefings on Cloud Run. Blank (local) = no wake-ups needed.
+    wake_queue: str = ""
 
     # ---- storage ------------------------------------------------------------
     storage_backend: Literal["local", "gcp"] = "local"
@@ -101,6 +121,28 @@ class Settings(BaseSettings):
     max_conns_per_ip: int = 5
     max_show_hours: float = 3.0
     mp3_kbps: int = 48
+
+    # ---- research (pods with Research on; see show.py) ---------------------------
+    # Google Search lookups per pod: for call-ins the source can't answer, and for
+    # chapters the planner found thin. One per call-in.
+    research_max_per_show: int = 6
+    research_max_beats: int = 3          # of those, at most this many for chapters
+    # A lookup taking longer is abandoned; the hosts answer with what they know.
+    research_timeout_seconds: float = 30.0
+
+    # ---- co-hosting (you talk live with an AI co-host; see cohost.py) ----------
+    # A Gemini Live native-audio model: speech in, speech out, with barge-in.
+    cohost_model: str = "gemini-3.1-flash-live-preview"
+    # How long you pause before the co-host answers. Lower is snappier but
+    # interrupts slow talkers mid-thought.
+    cohost_silence_ms: int = 500
+    # A call whose phone drops off is saved as an episode after this long.
+    cohost_reconnect_seconds: float = 30.0
+    # Your notes for the co-host, trimmed to this many characters.
+    cohost_source_chars: int = 20_000
+    # Hang-up to saved episode: past this, the editor's notes are skipped and the
+    # episode is saved with the mechanical edits only.
+    cohost_edit_timeout_seconds: float = 40.0
 
     @property
     def admins(self) -> set[str]:

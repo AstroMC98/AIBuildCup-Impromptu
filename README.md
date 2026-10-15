@@ -56,9 +56,9 @@ accounts at once in different browsers. Grant yourself credits on the **Admin** 
   was heard, what the research found (untick anything), edit the chapters, then Produce.
   See [How a voice memo becomes a pod](#how-a-voice-memo-becomes-a-pod).
 - **Every pod opens with an intro**: a few seconds of theme music, then the hosts welcome
-  listeners, introduce themselves and say what's coming. Save a **show intro** (`/intro`:
-  your show's name, a line of your own, a theme) and every pod you make opens with it;
-  switch it off for any one pod.
+  listeners, introduce themselves and say what's coming (briefings get the spoken intro
+  without the music). Save a **show intro** (`/intro`: your show's name, a line of your
+  own, a theme) and every pod you make opens with it; switch it off for any one pod.
 - **Templates**: Science deep-dive (one expert host, long-form), Married couple chat,
   Inspirational talk, Girl talk, Masculine talk, Debate night, Idea breakdown. Each sets
   the style, the hosts (names, personas, voices) and a length; change anything before going live.
@@ -82,12 +82,42 @@ accounts at once in different browsers. Grant yourself credits on the **Admin** 
   playing view with the live transcript.
 - **Call in**: type a message; the hosts read it out with your name and react in
   character. Rude call-ins are skipped. Attach a file, link or photo and they use it too.
+  If the hosts say they'll come back to a call-in, they do: it's kept as *promised* and
+  handed back to every segment until they answer it (the sign-off answers whatever's
+  left), even when the writers marked it answered while saying "we'll get to that".
+- **Research** (optional when creating, +`RESEARCH_CREDITS_PER_MINUTE`): when a call-in
+  or a chapter needs facts the source doesn't have (latest stats, recent news), the hosts
+  look them up with Google Search while they keep talking ("let me pull up his numbers"),
+  then answer and name the outlet. Lookups show in the context list with their sources
+  and Google's Search Suggestions. Without Research, the hosts answer from what they know.
+- **Seek**: click or drag the progress bar, or tap a chapter, to jump there (a live
+  pod: back as far as your browser holds, about 5 minutes); arrow keys move 10 s.
 - **Add context**: text, a file, a link or a photo, used **right now**, at the **next
   chapter**, or as **background only**, credited on air or not.
 - **Restyle** (creator): switch the vibe mid-show; the hosts switch within a couple of
   lines and the whole screen re-tints.
+- **Interrupt** (creator): hold to talk or type, and the show stops where you are. A
+  host reacts at once (pre-voiced), answers your question, then picks the thread back
+  up. **Go deeper** gives the current chapter more time, **Move on** skips ahead, and
+  **Steer** ("argue the other side") re-plans the rest of the episode. Audio that was
+  voiced but never heard is dropped, so the recording is exactly what was heard.
+- **Briefings**: a private pod made just for you from your **watchlist**: sites to
+  monitor (new posts, via their RSS/Atom feed or new headline links), links to watch
+  (what was added or removed on a pricing page, a status page, an agenda), and
+  **searches** to follow in the news (Gemini with Google Search). Pick a premade
+  **briefing template** (Morning roundup, Five-minute focus, Weekend deep-dive, Industry
+  watch) or make your own: hosts, style, your topics, and what's in it. Make one on
+  demand (it goes live, so you can interrupt it), or set a time and days and one is
+  waiting for you, made ahead with nobody listening. 1 credit per 5 minutes, unused
+  5-minute blocks refunded. Briefings are never shared or listed with your pods, and
+  are deleted after 48 hours.
 - **Your pods / Shared / Discover**: every pod is saved (audio, transcript, call-ins,
   context) to replay or download.
+- **Co-host live**: talk into your phone and an AI co-host (one of your personas, or a
+  premade one) banters with you, interviews you or debates you in real time. Switch
+  modes mid-call. Hang up and it's edited into an episode in seconds: dead air
+  tightened, flubs and crosstalk cut, levelled, titled, with show notes and chapters.
+  See [Co-host live](#co-host-live).
 
 ## How a live pod runs
 
@@ -146,7 +176,8 @@ if a rewrite still fits, else the one after) and moves it when the timeline shif
 POST /api/memos (recording + options) ─▶ MemoJob (app/memo.py)                          Gemini
                                           transcribing  analyze_memo(): the recording ─▶ gemini-3.8-flash
                                                         as recorded, back as a brief        (audio in, JSON out)
-                                          researching   research(): Google Search ─────▶ gemini-3.8-flash
+                                          researching   research_memo(): Google ───────▶ gemini-3.8-flash
+                                                        Search
                                                         grounding; findings, cited pages   + google_search
                                           outlining     plan_show() with the memo's
                                                         direction and the research
@@ -209,6 +240,64 @@ kept in the owner's account to reuse as "Your theme", or as their show intro's t
 Live pods stream the theme's opening while the episode is planned; memo pods get the
 full intro, stings and outro. Lyria music carries a SynthID watermark, noted in the
 show notes.
+## Co-host live
+
+A call is you and one AI co-host, solo (no live audience); the finished episode gets
+the usual visibility. It costs like a pod: the length you pick (5, 10 or 15 minutes)
+is reserved when the call starts and unused minutes come back when it's saved.
+
+```
+phone                                  server: one CohostSession per call             Gemini Live
+─────                                  ──────────────────────────────────             ───────────
+mic → AudioWorklet → 16 kHz, 40 ms ─WS─▶ forwarded at once ───────────────────────────▶ gemini-3.1-flash-live
+  frames, sent the whole call            + recorded: the call's clock                    (server VAD, barge-in,
+speaker ◀── played on arrival ◀─────── <turn><24 kHz PCM> ◀── its voice ◀───────────────  transcripts both ways)
+  (flushed when you cut in)              + recorded where it started playing
+captions ◀─────────────────────────── both sides' words, live
+hang up ─────────────────────────────▶ editor's notes (gemini-3.8-flash: title, show notes, chapters, cuts)
+                                       + numpy edit → MP3 → saved as a normal pod (kind "cohost")
+```
+
+What keeps it quick:
+
+- **Nothing waits on the way through.** Mic frames go straight to the Live session and
+  its voice straight to the phone; recording is in memory. The phone plays the
+  co-host as each chunk lands (a ~60 ms cushion), on an `interactive` AudioContext.
+- **The co-host opens the show** the moment you join, so there's no dead air at the start.
+- **Cutting in.** Gemini stops an answer when it hears you over it. Its audio arrives
+  faster than it plays, though, so the phone listens too: talk over the co-host and it
+  ducks at once; keep talking (0.4 s) and the phone stops it and tells the server.
+- **Turn-taking** is Gemini's voice activity detection; `COHOST_SILENCE_MS` is how long
+  you pause before it answers.
+- **Connections are recycled** by Gemini every few minutes (GoAway); the server
+  reconnects with a resumption handle, so the co-host keeps the whole conversation.
+  If the phone drops off, the call waits `COHOST_RECONNECT_SECONDS`, then saves.
+
+What hanging up does (`app/editing.py`, then `app/cohost.py`):
+
+1. Your mic is one continuous track (the phone sends silence too, so it's the call's
+   clock); each co-host turn sits where it started playing.
+2. **Crosstalk**: your mic is muted while the co-host talks unless you cut in (that's
+   speaker echo or an "mm-hm"); an answer you cut into ends where you did, and one cut
+   off in its first 1.5 s goes.
+3. **Dead air**: silence before and after every turn is trimmed; pauses over 1.2 s
+   become 0.6 s.
+4. **Flubs**: your talking is split into phrases at the pauses and matched to the live
+   transcript; the editor (a Gemini call) marks false starts, mic checks and hang-up
+   chatter, plus answers to them, and those are cut at the pauses around them.
+5. **Polish**: every turn is levelled to the same loudness, peaks are softly limited,
+   every cut gets a short fade, and a chime opens and closes the episode.
+6. Saved as an ordinary pod: one segment per turn (so replay captions are exact), the
+   editor's title, show notes and chapters, `episode.mp3`, and `raw.mp3`, the call
+   before editing, which its owner can download from the More menu.
+
+If the editor's call fails or takes longer than `COHOST_EDIT_TIMEOUT_SECONDS`, the
+episode is saved with the mechanical edits only. A call where nothing was said leaves
+no pod and refunds everything.
+
+The mic needs a secure page: `localhost` works, a phone on your LAN over plain `http://`
+doesn't (use the Cloud Run URL or a tunnel). Headphones keep the co-host from hearing
+itself; echo cancellation is on, but phone speakers vary.
 
 ## Deploy to Google Cloud
 
@@ -249,12 +338,13 @@ What the script sets up:
 | Piece | What | Why |
 |---|---|---|
 | Cloud Run `podcasts` | the app, 1 instance, 2 vCPU, 2 GiB, 60-min request timeout | WebSockets + the live pod loop |
-| Firestore (native) | `shows/{id}` (+ segments, comments, context, sessions), `users/{uid}` (+ ledger, personas, styles, connections), `albums/{id}`, `subscriptions/{id}` | accounts, credits, library, transcripts, albums, following, listening stats |
+| Firestore (native) | `shows/{id}` (+ segments, comments, context, sessions), `users/{uid}` (+ ledger, personas, styles, connections, watches, watch_pages, briefing_templates), `albums/{id}`, `subscriptions/{id}` | accounts, credits, library, transcripts, albums, following, listening stats, briefings |
+| Cloud Tasks `briefings-wake` | one task per scheduled briefing start, calling `/healthz` | wakes the scaled-to-zero service to make a scheduled briefing |
 | Firestore security rules | deny all browser access (`deploy/firestore.rules`, released on every run) | the app only uses Firestore from the server; the Firebase web key is public |
-| Cloud Storage `gs://PROJECT-podcasts` | source text, context text, `episode.mp3`, voice memo recordings (`shows/{id}/files/`), music made for a user (`users/{uid}/files/`) | replays and downloads (served by signed URL) |
+| Cloud Storage `gs://PROJECT-podcasts` | source text, context text, `episode.mp3`, `raw.mp3` (co-hosted calls), voice memo recordings (`shows/{id}/files/`), music made for a user (`users/{uid}/files/`) | replays and downloads (served by signed URL) |
 | Secret Manager | `gemini-api-key`, `session-secret` | injected as env vars |
 | Firebase Authentication | Google + email sign-in | accounts; the server verifies ID tokens itself |
-| Service account `podcasts-run` | Firestore user, bucket object admin, secret accessor, token creator on itself | least privilege; the last one signs replay URLs |
+| Service account `podcasts-run` | Firestore user, bucket object admin, secret accessor, token creator on itself, Cloud Tasks enqueuer | least privilege; token creator signs replay URLs, enqueuer books wake-ups |
 | Artifact Registry `podcasts` | container images | |
 
 To change a setting later (admins, signup credits), re-run the script with new values.
@@ -273,7 +363,7 @@ own access control.
 
 - **One instance, on purpose.** Live rooms (listeners, the clock, audio being voiced)
   live in that instance's memory, so every listener of a pod must reach the same
-  process. `MAX_LIVE_SHOWS` (default 3) caps concurrent pods. To go beyond one
+  process. `MAX_LIVE_SHOWS` (default 3) caps concurrent pods and co-host calls together. To go beyond one
   instance, keep a Firestore lease saying which instance owns each live pod and fan
   events out through Memorystore (Redis) pub/sub; nothing else needs to change.
 - **Deploy between pods.** A new revision ends pods that are live at that moment;
@@ -290,6 +380,15 @@ own access control.
   sort in the app, so Firestore needs no composite indexes. Past a few thousand pods per
   list, add an index on (visibility, created_at) and page the queries.
 - Gemini TTS voices at most two speakers per request, so pods have one or two hosts.
+- **Scheduled briefings wake the service.** Cloud Run scales to zero, so saving a
+  schedule books a Cloud Task (queue `briefings-wake`, made by `deploy.sh`) that calls
+  `/healthz` at the start time; that starts an instance, whose briefing loop makes the
+  briefing headless and books the next day's wake-up. Nothing stays warm in between:
+  with `--no-cpu-throttling` an idle instance is billed, so pinging every few minutes
+  would cost far more. Expired briefings are deleted by the same loop.
+- **Search watches cost real Google Search grounding.** Each check of a search is one
+  grounded Gemini call (it may run a few Google queries), made only when a briefing
+  needs fresh results or you press Check now; each person keeps at most 5 searches.
 
 ## Security notes
 
@@ -323,6 +422,17 @@ own access control.
   visibility. Uploads are recognized by their bytes, capped in size, and rate limited per
   user. Research sources are kept only if they're `http(s)` pages, and Google's Search
   Suggestions are shown in a sandboxed frame without scripts.
+- Watched sites and links go through the same public-address guard as listener links,
+  name the app in the User-Agent, honor robots.txt, use conditional requests, and space
+  out requests to a host. Feeds are parsed with `defusedxml` (no entity tricks). What
+  they say reaches the writers fenced as material to report on, never as instructions,
+  and the hosts summarize and name the source rather than read articles out.
+- Search watches use Grounding with Google Search. Google asks apps to show the Search
+  Suggestions that come with grounded results: they're shown on the watch and on each
+  briefing that used them, rendered from Google's HTML in a sandboxed iframe (no
+  scripts; links open in a new tab).
+- Briefings are always private: they can't be re-shared or put in albums, they're left
+  out of every list, and they're deleted after `BRIEFING_KEEP_HOURS`.
 - Looking someone up by email tells you whether they have an account. Fine for a demo;
   for a public launch, send requests by invite link only.
 
@@ -331,6 +441,10 @@ own access control.
 | Env var | Default | Effect |
 |---|---|---|
 | `CREDITS_PER_MINUTE` | `1` | what a pod costs per minute of requested length |
+| `RESEARCH_CREDITS_PER_MINUTE` | `0.5` | extra per minute for a pod with Research on |
+| `RESEARCH_MAX_PER_SHOW` | `6` | Google lookups per Research pod (one per call-in) |
+| `RESEARCH_MAX_BEATS` | `3` | of those, at most this many for chapters the planner found thin |
+| `RESEARCH_TIMEOUT_SECONDS` | `30` | a slower lookup is dropped; the hosts answer with what they know |
 | `SIGNUP_CREDITS` | `0` | credits new accounts start with |
 | `ADMIN_EMAILS` | | who can grant credits and delete any pod |
 | `TTS_MODEL` | `gemini-3.8-flash-tts` | `gemini-3.8-flash-lite-tts` is faster and cheaper |
@@ -340,7 +454,10 @@ own access control.
 | `LINES_PER_SEGMENT` | `5` | the most lines in one segment |
 | `LOW_WATER_SECONDS` | `8` | lower = faster replies, more risk of silent gaps |
 | `MAX_REWRITES` | `2` | caps redo loops when input pours in |
-| `MAX_LIVE_SHOWS` | `3` | live pods at once |
+| `INTERJECTION_THINKING_LEVEL` | `low` | answers to an interruption (`gemini-3.8-flash` rejects `minimal`) |
+| `MAX_INTERRUPTS` | `30` | interruptions per show (also one per 10 s) |
+| `STINGER_DELAY_SECONDS` | `6` | when the hosts' interruption reactions are voiced, after the cold open starts |
+| `MAX_LIVE_SHOWS` | `3` | live pods and co-host calls at once |
 | `MAX_LISTENERS` | `50` | listeners per pod |
 | `IDLE_END_SECONDS` | `300` | nobody connected this long: the hosts sign off and it's saved |
 | `MAX_RENDERS` | `1` | memo pods voiced at once; raise once `live_test --memo` shows the TTS keeps up |
@@ -351,6 +468,17 @@ own access control.
 | `MUSIC_DIR` | `music` | the music library every pod's theme comes from |
 | `MUSIC_MODEL` | `lyria-3-clip-preview` | original music for memo pods; empty turns it off |
 | `MUSIC_CREDITS` | `2` | what original music costs on top of the minutes |
+| `COHOST_MODEL` | `gemini-3.1-flash-live-preview` | the Live (native audio) model your co-host talks with |
+| `COHOST_SILENCE_MS` | `500` | how long you pause before the co-host answers; lower is snappier but cuts slow talkers off |
+| `COHOST_RECONNECT_SECONDS` | `30` | a call whose phone drops off is saved after this long |
+| `COHOST_SOURCE_CHARS` | `20000` | notes for the co-host are trimmed to this |
+| `COHOST_EDIT_TIMEOUT_SECONDS` | `40` | past this, the episode is saved without the editor's notes |
+| `BRIEFING_MINUTES_PER_CREDIT` | `5` | a briefing costs 1 credit per this many minutes |
+| `BRIEFING_KEEP_HOURS` | `48` | briefings are deleted after this long |
+| `BRIEFING_LEAD_MINUTES` | `30` | a scheduled briefing starts being made this long before its time |
+| `BRIEFING_POLL_SECONDS` | `60` | how often due schedules and expired briefings are checked |
+| `PUBLIC_URL` | | the app's address: in the watch fetcher's User-Agent, and what wake-ups call (`deploy.sh` sets it) |
+| `WAKE_QUEUE` | | Cloud Tasks queue that wakes Cloud Run for scheduled briefings (`deploy.sh` sets it; blank locally) |
 
 If you hit 429s from the TTS model, raise `SEGMENT_SECONDS` (fewer, longer calls) or
 switch to the lite TTS model.
@@ -361,6 +489,10 @@ switch to the lite TTS model.
 python -m tests.unit_test      # clock, limits, sessions, Firebase checks, credits, connections,
                                # access rules, SSRF guard, audio, store, show loop, prompts
 python -m tests.smoke_test     # full pods over real sockets against a Gemini stub
+python -m tests.briefing_test  # watchlist (a fake web: feeds, page diffs, robots.txt, search),
+                               # run of show, schedules, wake-ups, expiry
+python -m tests.briefing_smoke # briefings end to end: on demand, private, refunds, a search,
+                               # a scheduled one made with nobody listening
 python -m tests.store_contract # LocalStore; with FIRESTORE_EMULATOR_HOST set, GcpStore too
 ```
 
@@ -392,7 +524,19 @@ restyle, reactions, a late joiner, a reconnect, saving and replay with Range req
 publishing, a public live pod with a visitor, drafts, and a pod that ends itself. Then
 voice memos: a show intro, refused uploads, a one-shot memo hidden until it's made and
 timed to the sample, a reviewed one made with the owner's edits while Lyria fails, and a
-memo pod deleted mid-way.
+memo pod deleted mid-way. Then it co-hosts a call against the stub's Live API, streaming
+mic audio in real time: the co-host opening the show, transcripts, cutting in (by Gemini
+and by the phone), a mode switch, a recycled Live connection, hanging up, the edit (cuts,
+dropped answers, chapters), downloads, refunds, and a call nobody joined.
+`SMOKE_PORT=18765` moves it off the default ports.
+
+With a real API key (spends credits):
+
+```bash
+python -m tests.live_test --cohost   # a ~2-minute call: your lines voiced by TTS and streamed in
+                                     # real time; reports answer latency, cut-in, mode switch,
+                                     # hang-up to saved; keeps the episode and the unedited call
+```
 
 To click around the UI offline:
 
@@ -417,6 +561,8 @@ app/
   render.py    RenderRoom / RenderClock: the show loop with nobody listening
   mixer.py     music around a rendered show (intro, stings, outro, ducking), timestamp shifts
   music.py     the music library, theme picking (theme_for), Lyria prompts
+  cohost.py    CohostSession: a live call with an AI co-host (the /ws/cohost/{id} protocol); Cohosts
+  editing.py   a recorded call -> an edited episode (crosstalk, dead air, flubs, levels, chapters)
   clock.py     LiveClock: the server-side live playhead
   audio.py     incremental MP3 encoder and the rolling PCM window
   llm.py       the only module that talks to Gemini (incl. memos, grounded research, Lyria)
@@ -426,24 +572,30 @@ app/
   limits.py    rate limits and size caps
   store/       Store interface; local.py (JSON on disk), gcp.py (Firestore + GCS)
   stats.py     listening stats from listening sessions
+  briefing.py  personal briefings: templates, run of show, source, schedules, expiry
+  watch.py     the watchlist: feeds, page changes, headline links, news searches; polite fetching
+  wake.py      Cloud Tasks wake-ups for scheduled briefings on Cloud Run
   catalog.py   voices (with gender), vocal tags, style presets, templates, premade personas
   config.py    settings from env / .env
 static/        no build step: index.html, css/, js/ (ES modules)
   js/firebase.js   Firebase sign-in (loaded only in firebase mode)
   js/live/         socket, store (selectors by playhead), controller
   js/audio/        timeline, live player (WebAudio pull scheduler), replay player, listen tracker,
-                   recorder (voice memos)
+                   recorder (the producer's spoken questions, voice memos)
+  js/cohost/       mic worklet (16 kHz frames), call audio + player, socket, controller (cut-in)
   js/personas.js   persona fields (gender-matched voices, traits, private notes)
   js/pod-options.js  choices every new pod has: who can listen, albums, theme music, show intro
   js/social.js     subscribe button, creator chip, album cards
   js/views/        login, library (home, Following, header, account menu), create, memo (record or
                    upload), memo-status (being made, review, failed), intro (your show intro), show
                    (phone: live-mobile + now-playing; desktop: studio), saved (personas, styles),
-                   albums, creator, stats, connections, admin
+                   albums, creator, stats, connections, admin, cohost-setup, cohost-call (co-host
+                   live), briefings (make, schedule, watchlist, templates)
 music/           the music library: manifest.json + themes (built by tools/build_music_library.py)
 tools/           build_music_library.py, probe_memo_apis.py (checks the real API for memo pods)
 deploy/deploy.sh   one-command Cloud Run setup
 deploy/firestore.rules  deny-all browser access, released by deploy.sh
-tests/           fake_gemini.py (Interactions API stub), smoke_test.py, unit_test.py,
-                 store_contract.py (LocalStore vs Firestore emulator), live_test.py (real Gemini)
+tests/           fake_gemini.py (Interactions + Live API stub), smoke_test.py, unit_test.py,
+                 store_contract.py (LocalStore vs Firestore emulator), live_test.py (real Gemini;
+                 --cohost for a co-host call), briefing_test.py, briefing_smoke.py
 ```

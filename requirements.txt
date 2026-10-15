@@ -6,11 +6,18 @@ python-multipart>=0.0.9
 httpx>=0.27
 pypdf>=4.0
 lameenc>=1.8
-# Voice-memo pods: decoding and mixing the music (self-contained wheels, no ffmpeg)
+# IANA time zones for scheduled briefings (Windows and slim images ship none)
+tzdata>=2024.1
+# Parsing watched sites' RSS/Atom feeds without entity-expansion or external-entity attacks
+defusedxml>=0.7
+# Editing co-hosted calls into episodes (app/editing.py) and mixing voice-memo pods (app/mixer.py)
 numpy>=2.1
+# Decoding the music library (self-contained wheels, no ffmpeg)
 miniaudio>=1.61
 # Only imported with STORAGE_BACKEND=gcp
 google-cloud-firestore>=2.20
 google-cloud-storage>=2.18
+# Only imported with WAKE_QUEUE set: wakes Cloud Run for scheduled briefings (app/wake.py)
+google-cloud-tasks>=2.16
 # Tests (tests/smoke_test.py)
 websockets>=13

@@ -57,6 +57,7 @@ export class ShowStore {
   applySnapshot(s) {
     this.mode = "live";
     this.role = s.role;
+    this.canInterrupt = Boolean(s.can_interrupt);
     if (s.share_url) this.shareUrl = s.share_url;
     this.rate = s.rate || this.rate;
     this.show = s.show;
@@ -116,6 +117,7 @@ export class ShowStore {
         break;
       }
       case "chapter": this.chapterStarts.set(e.i, e.start); break;
+      case "truncate": this._truncate(e); break;
       case "comment": this.comments.set(e.id, { ...this.comments.get(e.id), ...e }); break;
       case "context": this.context.set(e.id, { ...this.context.get(e.id), ...e }); break;
       case "restyle":
@@ -145,6 +147,16 @@ export class ShowStore {
 
   _clock(c) {
     this.clock = { live: c.live, audio_end: c.audio_end, playing: c.playing, speed: c.speed || 1, at: performance.now() };
+  }
+
+  /** The producer interrupted at e.at: audio after it was never heard. */
+  _truncate(e) {
+    for (const seg of this.segments) if (seg.seq > e.keep_seq) this.segBySeq.delete(seg.seq);
+    this.segments = this.segments.filter((seg) => seg.seq <= e.keep_seq);
+    const cut = e.cut && this.segBySeq.get(e.cut.seq);
+    if (cut) this._addSegment({ ...cut, lines: e.cut.lines, samples: e.cut.samples });
+    for (const [i, start] of this.chapterStarts) if (start >= e.at) this.chapterStarts.delete(i);
+    this.clock = { ...this.clock, audio_end: e.at, live: Math.min(this.clock.live, e.at), at: performance.now() };
   }
 
   _addSegment(seg) {
@@ -259,6 +271,23 @@ export class ShowStore {
     });
   }
 
+  /** The sample under a point on the chapter bar (0..1 across it), with the same
+   *  widths chapterBar() draws. Infinity: a chapter that hasn't happened yet. */
+  sampleAtBar(fraction) {
+    const parts = this.chapterBar(0);
+    if (!parts.length) return fraction * (this.clock.audio_end || 0);
+    const total = parts.reduce((a, p) => a + p.flex, 0) || 1;
+    let target = Math.min(1, Math.max(0, fraction)) * total;
+    for (const p of parts) {
+      if (target <= p.flex || p === parts[parts.length - 1]) {
+        if (p.start === undefined) return Infinity;
+        return p.start + Math.min(target, p.flex);
+      }
+      target -= p.flex;
+    }
+    return Infinity;
+  }
+
   accentAt(pos) {
     const at = this.lineAt(pos);
     const rev = at ? at.seg.style_rev || 0 : 0;
@@ -273,9 +302,10 @@ export class ShowStore {
 
   /** The call-in a line is reading out, if any. */
   callinFor(seg, idx) {
-    if (!seg?.addressed?.length) return null;
+    const ids = [...(seg?.addressed || []), ...(seg?.promised || [])];
+    if (!ids.length) return null;
     const text = (seg.lines[idx]?.text || "").toLowerCase();
-    for (const id of seg.addressed) {
+    for (const id of ids) {
       const c = this.comments.get(id);
       if (!c) continue;
       const first = (c.name || "").split(/\s+/)[0].toLowerCase();
@@ -303,6 +333,14 @@ export class ShowStore {
       case "declined": return { label: "Not aired", tone: "done" };
       case "removed": return { label: "Removed", tone: "done" };
       case "too_late": return { label: "Came in after the sign-off", tone: "done" };
+      case "missed": return { label: "The hosts didn't get back to it", tone: "done" };
+      case "promised": {
+        // Read out at promised_seq, answered later. Before that segment plays, it's up next.
+        const said = c.promised_seq ? this.segBySeq.get(c.promised_seq) : null;
+        if (said && pos < said.start) return { label: `Up next · ${onAirIn((said.start - pos) / this.rate)}`, tone: "next" };
+        if (c.research === "pending") return { label: "Read out · looking it up…", tone: "wait" };
+        return { label: "Read out · they're coming back to it", tone: "wait" };
+      }
       case "on_deck":
         if (!seg) return { label: "Up next", tone: "next" };
         if (pos < seg.start) {
@@ -316,6 +354,10 @@ export class ShowStore {
 
   contextView(x, pos) {
     if (x.status === "background") return { label: "Background, always on", pill: "Background", tone: "bg" };
+    if (x.kind === "research" && x.status === "pending" && x.for_beat !== null && x.for_beat !== undefined) {
+      const beat = this.beats()[x.for_beat];
+      return { label: `Looked up for “${beat?.title || `chapter ${x.for_beat + 1}`}”`, pill: "For later", tone: "wait" };
+    }
     if (x.status === "dropped") return { label: "Not used", pill: "Not used", tone: "done" };
     if (x.status === "used") {
       const seg = this.segBySeq.get(x.used_seq);
@@ -343,9 +385,23 @@ export class ShowStore {
     const lines = [`# ${p.title || "Episode"}`, "", p.tagline || "", ""];
     for (const h of p.hosts || []) lines.push(`- **${h.name}**: ${h.persona || ""}`);
     lines.push("");
-    for (const s of this.segments) for (const l of s.lines) lines.push(`**${l.speaker}:** ${l.text}`, "");
+    let detour = null;
+    for (const s of this.segments) {
+      if (s.interrupt && s.interrupt !== detour && JSON.stringify(s.interrupt) !== JSON.stringify(detour)) {
+        lines.push(`> ↳ ${detourLabel(s.interrupt)}`, "");
+      }
+      detour = s.interrupt || null;
+      for (const l of s.lines) lines.push(`**${l.speaker}:** ${l.text}`, "");
+    }
     return lines.join("\n");
   }
+}
+
+/** How a detour is labelled in the transcript and on screen. */
+export function detourLabel(it) {
+  if (!it) return "";
+  return { ask: `You asked: "${it.text}"`, deeper: "You asked to go deeper", steer: `You steered: "${it.text}"`,
+           move_on: "You skipped ahead" }[it.kind] || "Interruption";
 }
 
 /** "On air in about 25 s" while it's a guess; exact once its segment is written. */

@@ -104,7 +104,7 @@
 .chart .area { fill: color-mix(in srgb, var(--accent) 55%, transparent); stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; }
 .bars { display: flex; align-items: flex-end; gap: 4px; height: 150px; margin-top: 12px; padding-bottom: 18px; }
 .bar-col { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; position: relative; min-width: 0; }
-.bar {
+.bars .bar {   /* scoped: the call-in form's "bar" variant shares the class name */
   width: 100%; max-width: 36px; height: var(--h); min-height: 2px; border-radius: 6px 6px 2px 2px;
   background: color-mix(in srgb, var(--accent) 70%, var(--white)); position: relative;
 }

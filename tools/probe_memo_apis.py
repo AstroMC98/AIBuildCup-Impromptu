@@ -87,23 +87,23 @@ async def probe_research(g: Gemini, brief: MemoBrief, out: Path) -> None:
     n = settings.max_research_queries
     started = time.monotonic()
     try:
-        one = await g._create(system=prompts.research_system(n), user=prompts.research_input(brief),
-                              schema=prompts.research_schema(), tools=GOOGLE_SEARCH)
+        one = await g._create(system=prompts.memo_research_system(n), user=prompts.memo_research_input(brief),
+                              schema=prompts.memo_research_schema(), tools=GOOGLE_SEARCH)
         save(out, "research-one-call", one)
         d = _dossier(_parse_json(one.output_text), one, time.time())
         say(f"- one call (search + JSON) WORKS: {time.monotonic() - started:.1f}s, {len(d.findings)} findings")
     except Exception as exc:
         say(f"- one call (search + JSON) refused: {getattr(exc, 'status_code', '')} {exc}")
     started = time.monotonic()
-    notes = await g._create(system=prompts.research_system(n, notes=True), user=prompts.research_input(brief),
-                            tools=GOOGLE_SEARCH)
+    notes = await g._create(system=prompts.memo_research_system(n, notes=True),
+                            user=prompts.memo_research_input(brief), tools=GOOGLE_SEARCH)
     save(out, "research-notes", notes)
     queries, sources, suggestions = grounding(notes.model_dump(mode="json"))
     say(f"- two calls, the search half: {time.monotonic() - started:.1f}s")
     say(f"- searched: {queries}")
     for s in sources[:8]:
-        say(f"- cites: {s.domain} | {s.title} | {s.url[:90]}")
-    redirects = sum("vertexaisearch" in s.url for s in sources)
+        say(f"- cites: {s['domain']} | {s['title']} | {s['url'][:90]}")
+    redirects = sum("vertexaisearch" in s["url"] for s in sources)
     say(f"- {len(sources)} cited pages, {redirects} of them redirect links; {len(suggestions)} Search Suggestions")
 
 

@@ -33,6 +33,7 @@
 @media (max-width: 1300px) { .pl-captions .cap.now p { font-size: 26px; } .pl-captions .cap.prev p { font-size: 17px; } }
 .pl-bottom { position: absolute; left: 0; right: 0; bottom: 0; padding: 0 16px 10px; background: rgba(23, 18, 42, .55); }
 .pl-bottom .chapter-bar { padding-top: 12px; height: auto; }
+.pl-bottom .chapter-bar.seekable { padding-top: 0; height: 28px; }
 .pl-controls { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; color: var(--white); }
 .pl-time { font-size: 14px; font-weight: 650; margin: 0 8px 0 6px; font-variant-numeric: tabular-nums; }
 .pl-controls .behind-pill { height: 30px; font-size: 13px; }

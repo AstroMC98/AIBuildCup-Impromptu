@@ -102,6 +102,12 @@
 .live-m .chapter-bar { margin: 0 12px 4px; }
 .cb-part { position: relative; flex: 1; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, .28); }
 .chapter-bar.thin .cb-part { height: 3px; }
+/* click or drag to jump: a taller hit area than the 4 px bar */
+.chapter-bar.seekable { height: 28px; cursor: pointer; touch-action: none; }
+.chapter-bar.seekable:hover .cb-part { height: 6px; }
+.chapter-bar.seekable:focus-visible { outline-offset: 0; border-radius: 4px; }
+.chapter.jump { cursor: pointer; transition: transform .12s var(--ease); }
+.chapter.jump:hover { transform: translateY(-1px); }
 .cb-part.done { background: var(--text); }
 .cb-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 2px; background: var(--text); transition: width .2s linear; }
 .cb-knob {
@@ -151,6 +157,12 @@
 .ctx-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .ctx-name { font-size: 15px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ctx-meta { font-size: 13px; color: var(--muted); }
+.ctx-item.research { align-items: flex-start; padding-top: 8px; }
+.ctx-sources { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 4px; font-size: 12px; }
+.ctx-sources a { color: var(--soft); text-underline-offset: 2px; }
+.search-suggestions {
+  display: block; width: 100%; height: 52px; margin-top: 6px; border: 0; border-radius: 8px; background: var(--white);
+}
 
 .chapter-cards { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
 .chapter-cards::-webkit-scrollbar { display: none; }
@@ -230,3 +242,19 @@
 .np-chapters { margin: 16px 0 0; padding: 16px 0 0 16px; display: flex; flex-direction: column; gap: 12px; }
 .np-chapters .chapter-cards { padding-right: 16px; }
 .btn.outline.block { height: 48px; margin-top: 4px; }
+
+/* interrupting the show (the producer) */
+.interrupt { display: flex; flex-direction: column; gap: 14px; align-items: stretch; }
+.talk-btn {
+  align-self: center; width: 132px; height: 132px; border-radius: 50%; border: 0; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  background: var(--white); color: var(--ink); font: inherit; font-weight: 750; font-size: 13px;
+  touch-action: none; user-select: none; -webkit-user-select: none;
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 35%, transparent);
+  transition: transform .12s var(--ease), box-shadow .2s;
+}
+.talk-btn:active, .talk-btn.on { transform: scale(.96); }
+.talk-btn.on { background: var(--live); color: var(--white); box-shadow: 0 0 0 10px rgba(201, 56, 31, .35); animation: pulse 1.4s ease-in-out infinite; }
+.talk-btn:disabled { opacity: .7; cursor: progress; }
+.int-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.int-actions .btn { flex: 1 1 auto; }

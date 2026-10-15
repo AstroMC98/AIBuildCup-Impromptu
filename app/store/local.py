@@ -1,7 +1,7 @@
 """Everything on local disk under DATA_DIR, in the same shape as Firestore + GCS.
 
     shows/{id}/show.json, segments/00001.json, comments/1.json, context/1.json,
-              context/1.txt, source.txt, episode.mp3
+              context/1.txt, source.txt, episode.mp3, raw.mp3 (co-hosted calls)
               sessions/{id}.json, files/{name}
     users/{uid}/user.json, ledger/{id}.json, personas/{id}.json, styles/{id}.json,
               connections/{other_uid}.json, files/{name}
@@ -141,6 +141,10 @@ class LocalStore:
         path = self._dir(show_id) / "segments" / f"{seg['seq']:05d}.json"
         await asyncio.to_thread(_atomic_write, path, _dump(seg))
 
+    async def delete_segment(self, show_id: str, seq: int) -> None:
+        path = self._dir(show_id) / "segments" / f"{int(seq):05d}.json"
+        await asyncio.to_thread(lambda: path.unlink(missing_ok=True))
+
     async def put_comment(self, show_id: str, comment: dict) -> None:
         path = self._dir(show_id) / "comments" / f"{comment['id']}.json"
         await asyncio.to_thread(_atomic_write, path, _dump(comment))
@@ -175,12 +179,13 @@ class LocalStore:
         except FileNotFoundError:
             return None
 
-    async def put_audio(self, show_id: str, data: bytes) -> dict:
-        await asyncio.to_thread(_atomic_write, self._dir(show_id) / "episode.mp3", data)
-        return {"path": "episode.mp3", "bytes": len(data), "mime": "audio/mpeg"}
+    async def put_audio(self, show_id: str, data: bytes, name: str = "episode.mp3") -> dict:
+        await asyncio.to_thread(_atomic_write, self._dir(show_id) / name, data)
+        return {"path": name, "bytes": len(data), "mime": "audio/mpeg"}
 
-    async def audio_response(self, show_id: str, doc: dict, download: bool, filename: str) -> Response:
-        path = self._dir(show_id) / "episode.mp3"
+    async def audio_response(self, show_id: str, doc: dict, download: bool, filename: str,
+                             name: str = "episode.mp3") -> Response:
+        path = self._dir(show_id) / name
         if not path.exists():
             return Response("No audio saved for this show.", status_code=404)
         return FileResponse(
@@ -193,7 +198,8 @@ class LocalStore:
     async def mark_interrupted(self, keep: set[str]) -> int:
         count = 0
         for doc in await self.list_shows(limit=100_000):
-            if doc.get("status") == "live" and doc["id"] not in keep:
+            # editing: a co-hosted call that was being turned into an episode
+            if doc.get("status") in ("live", "editing") and doc["id"] not in keep:
                 await self.update_show(doc["id"], {"status": "interrupted", "ended_reason": "restart"})
                 count += 1
         return count
@@ -324,6 +330,21 @@ class LocalStore:
             users = [d for p in self.users.glob("*/user.json") if (d := _read_json(p))]
             users.sort(key=lambda u: u.get("created_at", 0), reverse=True)
             return users[:limit]
+        return await asyncio.to_thread(run)
+
+    # ---- briefings ---------------------------------------------------------------------------
+
+    async def users_due_for_briefing(self, before: float, limit: int = 50) -> list[dict]:
+        due = [u for u in await self.list_users(limit=100_000)
+               if isinstance(u.get("briefing_due_at"), (int, float)) and u["briefing_due_at"] <= before]
+        due.sort(key=lambda u: u["briefing_due_at"])
+        return due[:limit]
+
+    async def expired_shows(self, before: float, limit: int = 100) -> list[dict]:
+        def run() -> list[dict]:
+            return [d for p in self.root.glob("*/show.json")
+                    if (d := _read_json(p)) and isinstance(d.get("expires_at"), (int, float))
+                    and d["expires_at"] <= before][:limit]
         return await asyncio.to_thread(run)
 
     async def adjust_credits(self, uid: str, amount: int, *, reason: str, show_id: str | None = None,

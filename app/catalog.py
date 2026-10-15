@@ -330,6 +330,39 @@ PERSONA_PRESETS = [
 ]
 PERSONA_PRESETS_BY_ID = {p["id"]: p for p in PERSONA_PRESETS}
 
+# How the AI co-host plays it when you co-host live. Switchable mid-call.
+COHOST_MODES = [
+    {
+        "id": "banter",
+        "label": "Banter",
+        "blurb": "Riff, joke and trade stories with you.",
+        "accent": "#B8336A",
+        "prompt": "Banter. You're two friends with mics: riff on what they say, share your own takes "
+        "and stories in character, tease a little, laugh at good lines, and toss it back with a quick "
+        "question or a 'wait, but' now and then. Keep it moving and fun.",
+    },
+    {
+        "id": "interview",
+        "label": "Interview me",
+        "blurb": "Asks you sharp questions and digs into your answers.",
+        "accent": "#2F6BD0",
+        "prompt": "Interview. You're the host and they're the guest. Ask one sharp, open question at a "
+        "time, then follow up on the most interesting specific thing they said: a detail, a story, a "
+        "contradiction. Keep your own lines short; the guest does most of the talking. Never answer "
+        "your own questions.",
+    },
+    {
+        "id": "debate",
+        "label": "Debate me",
+        "blurb": "Takes the other side and pushes back.",
+        "accent": "#B5521C",
+        "prompt": "Debate. Take the opposite side of whatever position they argue and steelman it: push "
+        "back with reasons, examples and evidence, press on weak spots, and concede a genuinely good "
+        "point before coming back with a better one. Stay civil, sharp and fun, and on the topic.",
+    },
+]
+COHOST_MODES_BY_ID = {m["id"]: m for m in COHOST_MODES}
+
 # Custom styles get a stable accent picked from this set by hashing the text.
 CUSTOM_ACCENTS = ["#2F6BD0", "#B8336A", "#1F7F6A", "#B5521C", "#6A4FB0", "#2E6F9E"]
 

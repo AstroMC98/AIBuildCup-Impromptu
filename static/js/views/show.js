@@ -32,6 +32,10 @@ export async function showView(root, { params }) {
       ? "This pod doesn't exist, or it isn't shared with you. Ask its creator to share it with you as a connection."
       : err.message);
   }
+  if (data.call) {   // a co-hosted call still going (or being edited): back to the call
+    navigate(data.call, { replace: true });
+    return null;
+  }
   if (data.show.status === "draft") return draftScreen(root, data);
   // A voice-memo pod being made, waiting for review, or failed: only its owner sees these.
   if (data.show.kind === "memo" && ["rendering", "review", "failed"].includes(data.show.status) && !data.show.has_audio) {
@@ -117,7 +121,7 @@ function errorScreen(root, message) {
 
 function draftScreen(root, data) {
   const s = data.show;
-  const cost = session.cost(s.minutes);
+  const cost = session.cost(s.minutes, Boolean(s.request?.research));
   applyAccent(document.documentElement, s.accent);
   setHtml(root, html`
     <div class="page narrow">
