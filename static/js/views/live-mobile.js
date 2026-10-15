@@ -3,8 +3,8 @@
 // (the one talking glows with their voice), and a bar to call in, react or, for the
 // producer, interrupt. Replays go straight to Now playing.
 import {
-  bubbles, callinsKey, captions, captionsKey, captionTick, chapterBar, chapterBarKey, chapterLabel, hostChips,
-  hostChipsKey, liveBadge, liveBadgeKey, myCallin,
+  callinLines, callinsKey, captions, captionsKey, captionTick, chapterBar, chapterBarKey, chapterLabel, hostChips,
+  hostChipsKey, liveBadge, liveBadgeKey, myCallinNews,
 } from "../components.js";
 import { html, setHtml } from "../html.js";
 import { icon } from "../icons.js";
@@ -43,10 +43,10 @@ export function mountMobile(root, ctl) {
       <span class="lm-ep-up" aria-hidden="true">${icon("chevronUp", 18, 2.2)}</span>
     </button>
     <section class="lm-captions" data-r="captions" aria-live="polite"></section>
-    <div class="lm-bubbles" data-r="bubbles"></div>
+    <div class="lm-lines" data-r="lines" aria-label="Call-ins"></div>
+    <p class="sr-only" data-r="news" aria-live="polite"></p>
     <div class="lm-behind" data-r="behind"></div>
     <div class="chapter-bar thin" data-r="chapters" aria-hidden="true"></div>
-    <div class="lm-mine" data-r="mine" aria-live="polite"></div>
     <div class="lm-hosts" data-r="hosts"></div>
     <div class="lm-bar">
       ${callinForm(ctl, { id: "lm-callin" })}
@@ -100,7 +100,9 @@ export function mountMobile(root, ctl) {
       r.set("captions", captionsKey(s, ctl, pos), () => captions(s, ctl, pos, { big: 30 }));
       captionTick(r.el("captions"), s, pos, { calm });
       r.set("chapters", chapterBarKey(s, pos), () => chapterBar(s, pos));
-      r.set("mine", callinsKey(s, pos), () => myCallin(s, pos));
+      r.set("lines", callinsKey(s, pos), () => callinLines(s, pos));
+      const news = myCallinNews(s, pos);
+      r.set("news", news, () => news);
       r.set("hosts", hostChipsKey(s, pos), () => hostChips(s, pos));
       // The key light and the talking host's ring follow the voices.
       const lv = calm ? 0 : Math.min(1, (ctl.player.level?.() || 0) * 6);
@@ -112,7 +114,6 @@ export function mountMobile(root, ctl) {
       np?.frame(pos);
     },
     onEvent(e) {
-      r.set("bubbles", `${s.version}`, () => bubbles(s));
       r.set("listeners", `${s.listeners}`, () => (s.listeners > 1 ? `${s.listeners} listening` : ""));
       if (e.type === "react" && e.burst) floatHearts(el.querySelector("[data-heart]"), e.burst);
       r.set("hearts", s.hearts, () => (s.hearts ? String(s.hearts) : ""));

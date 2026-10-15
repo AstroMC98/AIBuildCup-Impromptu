@@ -128,7 +128,7 @@ export function captions(store, ctl, pos, { big = 30 } = {}) {
     <div class="cap now" style="--cap:${size}px">
       <span class="cap-who-row">
         <span class="cap-who" style="color:${label(curHost)}">${cur.line.speaker}</span>
-        ${caller ? html`<span class="pill pink">${store.isMine(caller) ? "Reading your call-in" : "Reading a call-in"}</span>` : ""}
+        ${caller ? html`<span class="pill pink">${store.isMine(caller) ? "Reading your call-in" : `Reading ${caller.name}'s call-in`}</span>` : ""}
       </span>
       <p>${renderSpoken(piece.text, curHost ? 0 : 1)}</p>
     </div>
@@ -308,20 +308,11 @@ export function callinRow(store, c, pos, { status = true, producer = false } = {
         <span class="callin-text">${c.text}</span>
         ${att ? html`<span class="attach">${icon(KIND_ICON[att.kind] || "file", 14)}${att.name}, added as context</span>` : ""}
         ${found ? html`<span class="attach">${icon("search", 14)}Looked up: ${(found.sources || []).slice(0, 3).map((s) => s.domain || s.title).join(", ") || found.name}</span>` : ""}
-        ${status && view.label ? html`<span class="pill ${view.tone}">${view.label}</span>` : ""}
+        ${status && view.label ? lineState(lineView(store, c, pos), "callin-state") : ""}
       </div>
       ${producer && c.status === "queued" ? html`
         <button class="icon-btn small" data-action="remove-comment" data-id="${c.id}" aria-label="Remove this call-in">${icon("close", 16)}</button>` : ""}
     </div>`;
-}
-
-/** Your own latest call-in while it's on its way or on air (phones, where the full
- *  list lives in Now playing). Keyed with callinsKey. */
-export function myCallin(store, pos) {
-  const latest = [...store.comments.values()].filter((c) => store.isMine(c)).sort((a, b) => b.id - a.id)[0];
-  const view = latest && store.commentView(latest, pos);
-  if (!view || !["wait", "next", "live"].includes(view.tone)) return "";
-  return html`<span class="my-callin pill ${view.tone}">${icon("chat", 14)}Your call-in: ${view.label}</span>`;
 }
 
 export function callinsKey(store, pos) {
@@ -329,6 +320,10 @@ export function callinsKey(store, pos) {
   // While a call-in is still on its way, re-render every second so its countdown moves.
   const waiting = [...store.comments.values()].some((c) => {
     if (c.status === "queued") return true;
+    if (c.status === "promised") {
+      const said = c.promised_seq ? store.segBySeq.get(c.promised_seq) : null;
+      return !!said && pos < said.start;
+    }
     const at = c.status === "on_deck" ? store.segBySeq.get(c.seq) : null;
     return c.status === "on_deck" && (!at || pos < at.start);
   });
@@ -336,20 +331,78 @@ export function callinsKey(store, pos) {
   return `${store.version}|${seg ? seg.seq : 0}|${seg && pos >= seg.start + store.segLength(seg) ? 1 : 0}|${second}`;
 }
 
-/** Recent call-in bubbles over the live view. */
-export function bubbles(store) {
-  const list = [...store.comments.values()].filter((c) => c.status !== "removed" && c.status !== "declined")
-    .sort((a, b) => b.id - a.id).slice(0, 2).reverse();
-  return html`${list.map((c) => {
-    const att = c.context_id ? store.context.get(c.context_id) : null;
+// ---- call-in lines -------------------------------------------------------------------------
+// Call-ins wait on lit phone lines: a lamp that says where each one is (blinking amber:
+// waiting; steady amber: up next or coming back; a chasing ring: being looked up; red: on
+// air; off: done), with a few of its words and an honest ETA.
+
+/** Where a call-in is: its lamp, and what its line says. */
+export function lineView(store, c, pos) {
+  const v = store.commentView(c, pos);
+  const left = (start) => fmtTime(Math.max(0, (start - pos) / store.rate));
+  switch (c.status) {
+    case "queued": {
+      if (c.eta == null) return { state: "wait", lamp: "amber blink", says: "Waiting for a gap" };
+      const sec = (c.eta - pos) / store.rate;
+      return { state: "wait", lamp: "amber blink", says: sec <= 1 ? "Any moment" : `About ${Math.ceil(sec / 5) * 5} s` };
+    }
+    case "promised": {
+      const said = c.promised_seq ? store.segBySeq.get(c.promised_seq) : null;
+      if (said && pos < said.start) return { state: "next", lamp: "amber", says: `Up next, ${left(said.start)}` };
+      if (c.research === "pending") return { state: "look", lamp: "chase", says: "Looking it up" };
+      return { state: "back", lamp: "amber", says: "Coming back", back: true };
+    }
+    case "on_deck": {
+      if (v.tone === "live") return { state: "air", lamp: "red", says: "On air" };
+      if (v.tone === "next") {
+        const seg = c.seq ? store.segBySeq.get(c.seq) : null;
+        return { state: "next", lamp: "amber", says: seg ? `Up next, ${left(seg.start)}` : "Up next" };
+      }
+      return { state: "done", lamp: "", says: v.label };
+    }
+    case "missed": return { state: "missed", lamp: "", says: "Not answered" };
+    default: return { state: "done", lamp: "", says: v.label };
+  }
+}
+
+function lineState(lv, cls) {
+  return html`<span class="${cls} ${lv.state}"><span class="lamp ${lv.lamp}" aria-hidden="true"></span>${lv.back ? icon("ret", 14, 2.4) : ""}${lv.says}</span>`;
+}
+
+const ACTIVE = { air: 0, next: 1, back: 2, look: 2, wait: 3 };
+const linesSeen = new WeakMap();
+
+/** The live call-ins as phone lines (phones), on air first. Your own unanswered one stays,
+ *  struck through, until you call in again. Keyed with callinsKey. */
+export function callinLines(store, pos, { limit = 3 } = {}) {
+  const all = [...store.comments.values()].filter((c) => c.status !== "removed");
+  const mine = all.filter((c) => store.isMine(c)).sort((a, b) => b.id - a.id)[0];
+  const rows = all.map((c) => ({ c, lv: lineView(store, c, pos) }))
+    .filter(({ c, lv }) => lv.state in ACTIVE || (c === mine && lv.state === "missed"))
+    .sort((a, b) => (ACTIVE[a.lv.state] ?? 4) - (ACTIVE[b.lv.state] ?? 4) || a.c.id - b.c.id)
+    .slice(0, limit);
+  const seen = linesSeen.get(store) || new Set();
+  linesSeen.set(store, seen);
+  return html`${rows.map(({ c, lv }) => {
+    const arrive = !seen.has(c.id);
+    seen.add(c.id);
     return html`
-      <div class="bubble">
-        ${avatar(c.name, callerColor(c.name), 26)}
-        <span class="bubble-body"><span><strong>${c.name}</strong> ${c.text}</span>
-          ${att ? html`<span class="attach light">${icon(KIND_ICON[att.kind] || "file", 14)}${att.name}, added as context</span>` : ""}
-        </span>
+      <div class="callin-line ${lv.state} ${arrive ? "arrive" : ""}">
+        <span class="lamp ${lv.lamp}" aria-hidden="true"></span>
+        <span class="line-msg"><strong>${store.isMine(c) ? "You" : c.name}</strong>${c.text}</span>
+        <span class="line-says">${lv.back ? icon("ret", 14, 2.4) : ""}${lv.says}</span>
       </div>`;
   })}`;
+}
+
+/** What a screen reader hears about your own call-in: once per change of state, never per second. */
+export function myCallinNews(store, pos) {
+  const mine = [...store.comments.values()].filter((c) => store.isMine(c)).sort((a, b) => b.id - a.id)[0];
+  if (!mine) return "";
+  const said = { wait: "Your call-in is waiting for a gap.", next: "Your call-in is up next.", air: "Your call-in is on air.",
+                 back: "The hosts read your call-in and are coming back to it.", look: "The hosts are looking up your call-in.",
+                 missed: "The hosts didn't get to your call-in." };
+  return said[lineView(store, mine, pos).state] || "";
 }
 
 /** Context the hosts are using: the main source, then everything added mid-show. */
@@ -395,9 +448,15 @@ function researchSources(x) {
   return html`
     ${sources.length ? html`<span class="ctx-sources">${sources.map((s) => html`
       <a href="${s.url}" target="_blank" rel="noopener noreferrer nofollow">${s.domain || s.title}</a>`)}</span>` : ""}
-    ${(x.search_suggestions || []).slice(0, 1).map((h) => html`
-      <iframe class="search-suggestions" title="Google Search suggestions" sandbox="allow-popups allow-popups-to-escape-sandbox"
-        srcdoc="${h}" loading="lazy"></iframe>`)}`;
+    ${(x.search_suggestions || []).slice(0, 1).map(searchSuggestions)}`;
+}
+
+/** Google's Search Suggestions, exactly as Google sends them (sandboxed, links open in a
+ *  new tab). The design only frames them: a dashed box with a label, on their own row. */
+export function searchSuggestions(markup) {
+  return html`<figure class="g-frame"><figcaption>Google Search suggestions</figcaption>
+    <iframe class="search-suggestions" title="Google Search suggestions" loading="lazy" referrerpolicy="no-referrer"
+      sandbox="allow-popups allow-popups-to-escape-sandbox" srcdoc="${`<base target="_blank">${markup}`}"></iframe></figure>`;
 }
 
 function cap(s) {

@@ -4,6 +4,7 @@
 // you can hear them; they're never listed with your pods and are deleted after 48 h.
 import { api } from "../api.js";
 import { unlockAudio } from "../audio/context.js";
+import { searchSuggestions } from "../components.js";
 import { html, setHtml } from "../html.js";
 import { icon } from "../icons.js";
 import { navigate } from "../router.js";
@@ -34,11 +35,8 @@ const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 const safeUrl = (u) => (/^https?:\/\//i.test(u || "") ? u : "");
 const hostOf = (u) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return u || ""; } };
 const when = (epoch) => new Date(epoch * 1000).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" });
-// Google asks apps to show the Search Suggestions that come with grounded results. They're
-// Google's own HTML, so they render sandboxed: no scripts, links open in a new tab.
-const suggestions = (markup) => html`<iframe class="g-suggest" title="Google Search suggestions" loading="lazy"
-  sandbox="allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer"
-  srcdoc="${`<base target="_blank">${markup}`}"></iframe>`;
+// Google asks apps to show the Search Suggestions that come with grounded results.
+const suggestions = searchSuggestions;
 
 export async function briefingsView(root) {
   if (!session.signedIn) {

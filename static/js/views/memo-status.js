@@ -2,7 +2,7 @@
 // for the owner to review the outline, or failed. Once it's finished, /show/{id}
 // is an ordinary replay.
 import { api } from "../api.js";
-import { webSources } from "../components.js";
+import { searchSuggestions, webSources } from "../components.js";
 import { html, setHtml } from "../html.js";
 import { icon } from "../icons.js";
 import { lengthChip, musicCards } from "../pod-options.js";
@@ -203,8 +203,7 @@ function reviewScreen(root, data) {
             <p class="field-label">Sources</p>
             <ul class="sources">${webSources(research.sources).slice(0, 12).map((src) => html`
               <li><a href="${src.url}" target="_blank" rel="noopener noreferrer">${src.title}</a> <span class="faint small">${src.domain}</span></li>`)}</ul>` : ""}
-          ${(research.search_suggestions || []).map((sug) => html`
-            <iframe class="search-suggestions" title="Google Search suggestions" sandbox="allow-popups allow-popups-to-escape-sandbox" srcdoc="${sug}"></iframe>`)}`
+          ${(research.search_suggestions || []).map(searchSuggestions)}`
           : html`<p class="muted">The research didn't come back. The hosts will stick to your memo and what's well established.</p>`}
       </section>
 

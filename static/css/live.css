@@ -106,23 +106,32 @@
   }
   .lm-count:empty { display: none; }
 
-  .lm-bubbles { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; padding: 0 16px 10px; }
-  .lm-bubbles:empty { display: none; }
-  .bubble {
-    display: flex; gap: 8px; align-items: flex-start; max-width: 100%; padding: 8px 12px 8px 8px; border-radius: 14px;
-    background: rgba(8, 9, 14, .5); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
-    box-shadow: inset 0 0 0 1px var(--line); animation: bubble-in var(--dur-bouncy) var(--spring-bouncy) both;
+  /* call-ins wait on lit phone lines */
+  .lm-lines { display: flex; flex-direction: column; gap: 6px; padding: 0 12px 8px; }
+  .lm-lines:empty { display: none; }
+  .callin-line {
+    display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; align-items: center; gap: 10px;
+    min-height: 40px; padding: 7px 12px; border-radius: 12px; background: var(--surface); font-size: 13.5px;
+    transition: background .3s, box-shadow .3s;
   }
-  @keyframes bubble-in { from { opacity: 0; transform: translateY(14px) scale(.9); } }
-  .bubble-body { display: flex; flex-direction: column; gap: 6px; font-size: 14px; line-height: 1.3; min-width: 0; }
-  .bubble-body strong { color: var(--fg-2); font-weight: 750; }
+  .callin-line.arrive { animation: line-in var(--dur-bouncy) var(--spring-bouncy) both; }
+  @keyframes line-in { from { opacity: 0; transform: translateY(12px) scale(.96); } }
+  .callin-line.air { background: color-mix(in oklch, var(--tally) 20%, var(--surface)); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--tally) 50%, transparent); }
+  .line-msg { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .line-msg strong { font-weight: 800; margin-right: 6px; }
+  .line-says, .callin-state { display: inline-flex; align-items: center; gap: 5px; font-weight: 750; color: var(--fg-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .line-says svg, .callin-state svg { color: var(--amber); flex: none; }
+  .callin-line.air .line-says { color: #fff; }
+  .callin-line.missed { opacity: .6; }
+  .callin-line.missed .line-msg { text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--fg) 45%, transparent); }
+  .callin-state { align-self: flex-start; gap: 7px; margin-top: 2px; font-size: 12.5px; white-space: normal; }
+  .callin-state.air { color: var(--live-text); }
+  .callin-state.missed { text-decoration: line-through; }
 
   .attach { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; background: var(--surface-2); border-radius: 7px; padding: 4px 8px; font-size: 12px; font-weight: 650; }
-  .attach.light { background: var(--surface-2); }
 
-  .lm-behind, .lm-mine { display: flex; justify-content: center; padding: 0 12px 8px; }
-  .lm-behind:empty, .lm-mine:empty { display: none; }
-  .my-callin { font-size: 13px; padding: 6px 12px; align-self: center; }
+  .lm-behind { display: flex; justify-content: center; padding: 0 12px 8px; }
+  .lm-behind:empty { display: none; }
   .behind-pill {
     display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 14px; border: 0; border-radius: var(--pill);
     background: var(--pri); color: var(--on-pri); font-weight: 800; font-size: 14px; cursor: pointer;
@@ -197,8 +206,6 @@
   .ctx-sources { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; font-size: 12px; }
   .ctx-sources a { display: inline-flex; align-items: center; height: 24px; padding: 0 8px; border-radius: 7px; background: var(--surface-2); color: var(--fg-2); text-decoration: none; font-weight: 700; }
   .ctx-sources a:hover { color: var(--fg); }
-  /* Google's Search Suggestions render as Google sends them: we only give them a frame. */
-  .search-suggestions { display: block; width: 100%; height: 52px; margin-top: 6px; border: 0; border-radius: 8px; background: #fff; }
 
   .chapter-cards { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 6px; scrollbar-width: none; }
   .chapter-cards::-webkit-scrollbar { display: none; }
@@ -296,4 +303,12 @@
   .talk-btn:disabled { opacity: .7; cursor: progress; }
   .int-actions { display: flex; flex-wrap: wrap; gap: 8px; }
   .int-actions .btn { flex: 1 1 auto; }
+
+  /* reduced motion: arrivals fade in place; nothing travels, breathes or bounces */
+  @media (prefers-reduced-motion: reduce) {
+    .cap.now, .gr-rundown li.drop, .callin-line.arrive, .np-overlay, .np-cover, .behind-pill { animation: fade-in .2s ease both; }
+    .gr-title.arrive, .gr-theme i, .tune-play { animation: none; }
+    .cap.now p.kinetic .w { transition: none; }
+  }
+  @keyframes fade-in { from { opacity: 0; } }
 }
