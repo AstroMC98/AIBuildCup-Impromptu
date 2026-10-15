@@ -1,5 +1,6 @@
 // /admin — grant demo credits. Admins are the emails in ADMIN_EMAILS.
 import { api } from "../api.js";
+import { waiting } from "../components.js";
 import { html, setHtml } from "../html.js";
 import { navigate } from "../router.js";
 import { loginPath, session } from "../session.js";
@@ -29,7 +30,7 @@ export async function adminView(root) {
         <p class="muted">Grant credits for the demo. One credit is about ${1 / session.options.credits_per_minute} minute of pod.</p></div>
       <label class="sr-only" for="a-q">Search users</label>
       <input id="a-q" class="field" type="search" placeholder="Search by name or email">
-      <div data-users></div>
+      <div data-users>${waiting()}</div>
     </main>`);
   root.append(el);
   const offHead = bindHeader(el);

@@ -2,6 +2,7 @@
 // albums; each album is private, for connections, or public, and anyone who can
 // see an album sees only the pods in it they're allowed to hear.
 import { api } from "../api.js";
+import { waiting } from "../components.js";
 import { html, setHtml } from "../html.js";
 import { icon, VISIBILITY_ICON, VISIBILITY_LABEL } from "../icons.js";
 import { navigate } from "../router.js";
@@ -92,7 +93,7 @@ export async function albumsView(root) {
           <p class="muted">Group your pods into albums, like playlists or series. Make one public and people can subscribe to it.</p></div>
         <button class="btn white" type="button" data-new>${icon("plus", 16, 2.6)}New album</button>
       </div>
-      <div data-list><p class="empty">Loading…</p></div>
+      <div data-list>${waiting()}</div>
     </main>`);
   root.append(el);
   const offHead = bindHeader(el);
@@ -114,6 +115,7 @@ export async function albumsView(root) {
 export async function albumView(root, { params: [albumId] }) {
   const el = document.createElement("div");
   el.className = "page-wrap";
+  setHtml(el, html`${appHeader({ search: false })}<main class="page">${waiting()}</main>`);
   root.append(el);
   let data;
   try {

@@ -1,6 +1,7 @@
 // /creator/{uid}: a creator's page. Their albums and pods you're allowed to see,
 // how many people subscribe, and the Subscribe button.
 import { api } from "../api.js";
+import { waiting } from "../components.js";
 import { html, setHtml } from "../html.js";
 import { session } from "../session.js";
 import { albumCard, bindSubscribe, personAvatar, subscribeButton } from "../social.js";
@@ -11,6 +12,7 @@ export async function creatorView(root, { params: [uid] }) {
   applyAccent(document.documentElement, "#B8336A");
   const el = document.createElement("div");
   el.className = "page-wrap";
+  setHtml(el, html`${appHeader({ search: false })}<main class="page">${waiting()}</main>`);
   root.append(el);
   let data;
   try {

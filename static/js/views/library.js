@@ -1,6 +1,7 @@
 // The app shell (header, the tab bar on phones and the rail on desktop), sleeves, the
 // pod lists, and the house screens: Home, Discover, Library and You.
 import { api } from "../api.js";
+import { waiting } from "../components.js";
 import { html, setHtml } from "../html.js";
 import { icon, VISIBILITY_ICON, VISIBILITY_LABEL, wordmark } from "../icons.js";
 import { flipById, slideIndicator, stagger } from "../motion.js";
@@ -496,7 +497,7 @@ export async function youView(root) {
         <span class="col grow"><strong class="credit-num">${me.credits} credits</strong>
           <span class="muted small">${me.credits ? `About ${Math.round(me.credits / perMin)} minutes of pods, at ${perMin} credit a minute.` : "A free account: listen, call in and connect for free."}</span></span>
       </section>
-      <ul class="ledger" data-ledger><li class="faint small">Loading your credit history…</li></ul>
+      <ul class="ledger" data-ledger><li>${waiting("", { inline: true })}</li></ul>
       <nav class="menu" aria-label="Your things">
         <a class="menu-item" href="/briefings" data-link>${icon("sparkle", 20)}Briefings<span class="faint">made just for you</span>${icon("chevronRight", 16)}</a>
         <a class="menu-item" href="/intro" data-link>${icon("mic", 20)}Show intro${icon("chevronRight", 16)}</a>

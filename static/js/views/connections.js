@@ -1,6 +1,7 @@
 // /connections and /invite/{uid}: mutual connections. Pods shared with
 // "Connections" (or with you by name) show up under Shared on your home screen.
 import { api } from "../api.js";
+import { waiting } from "../components.js";
 import { html, setHtml } from "../html.js";
 import { icon } from "../icons.js";
 import { navigate } from "../router.js";
@@ -51,7 +52,7 @@ export async function connectionsView(root) {
   const offHead = bindHeader(el);
 
   const render = () => {
-    if (!data) return setHtml(el.querySelector("[data-lists]"), html`<p class="empty">Loading…</p>`);
+    if (!data) return setHtml(el.querySelector("[data-lists]"), waiting());
     el.querySelector("[data-invite]").value = new URL(data.invite_path, location.origin).toString();
     setHtml(el.querySelector("[data-lists]"), html`
       ${data.incoming.length ? html`

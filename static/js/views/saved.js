@@ -1,5 +1,6 @@
 // /personas and /styles: the speakers and styles you keep for your pods.
 import { api } from "../api.js";
+import { waiting } from "../components.js";
 import { html, setHtml } from "../html.js";
 import { icon } from "../icons.js";
 import { bindPersonaForm, personaCard, personaFields, readPersona } from "../personas.js";
@@ -71,7 +72,7 @@ export async function savedView(root, { url }) {
   root.append(el);
   const offHead = bindHeader(el);
 
-  const renderList = () => setHtml(el.querySelector("[data-list]"), items === null ? html`<p class="empty">Loading…</p>`
+  const renderList = () => setHtml(el.querySelector("[data-list]"), items === null ? waiting()
     : items.length ? html`<div class="saved-grid">${items.map((it) => html`
         <div class="saved-card">${k.card(it)}
           <span class="row saved-actions">

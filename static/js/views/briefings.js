@@ -4,7 +4,7 @@
 // you can hear them; they're never listed with your pods and are deleted after 48 h.
 import { api } from "../api.js";
 import { unlockAudio } from "../audio/context.js";
-import { searchSuggestions } from "../components.js";
+import { searchSuggestions, waiting } from "../components.js";
 import { html, setHtml } from "../html.js";
 import { icon } from "../icons.js";
 import { navigate } from "../router.js";
@@ -56,7 +56,7 @@ export async function briefingsView(root) {
             them, and they're deleted after two days.</p></div>
       </div>
       <div class="brief-grid">
-        <section class="card brief-make" data-make aria-label="Make a briefing"><p class="empty">Loading…</p></section>
+        <section class="card brief-make" data-make aria-label="Make a briefing">${waiting()}</section>
         <section class="card brief-sched" data-schedule aria-label="Every morning"></section>
       </div>
       <h2 class="section-h">Your briefings</h2>

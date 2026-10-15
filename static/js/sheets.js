@@ -1,6 +1,6 @@
 // The sheets that open over a show: Add context, Restyle, Share, Hosts, More.
 import { api } from "./api.js";
-import { avatar, contextList } from "./components.js";
+import { avatar, contextList, waiting } from "./components.js";
 import { html, setHtml } from "./html.js";
 import { icon, VISIBILITY_ICON } from "./icons.js";
 import { session } from "./session.js";
@@ -252,7 +252,7 @@ export async function openShareSheet(ctl) {
               <span class="radio-text"><span class="radio-title">${icon(VISIBILITY_ICON[id], 16)} ${title}</span><span class="radio-desc">${desc}</span></span>
             </button>`)}
         </div>
-        ${state.visibility === "private" ? connections === null ? html`<p class="faint small">Loading connections…</p>`
+        ${state.visibility === "private" ? connections === null ? waiting("", { inline: true })
           : connections.length ? html`
             <p class="field-label">Share with</p>
             <div class="chips">${connections.map((c) => html`
@@ -407,7 +407,7 @@ export async function openOrganizeSheet(ctl) {
   let albums = null;
   const draw = () => setHtml(div, html`
     <p class="field-label">Albums</p>
-    ${albums === null ? html`<p class="faint small">Loading your albums…</p>` : albums.length ? html`
+    ${albums === null ? waiting("", { inline: true }) : albums.length ? html`
       <div class="chips">${albums.map((a) => html`
         <button type="button" class="chip" data-album="${a.id}" aria-pressed="${chosen.has(a.id)}">${a.title}</button>`)}</div>`
       : html`<p class="faint small">No albums yet. <a href="/albums" data-link>Make one</a>, then file pods into it.</p>`}

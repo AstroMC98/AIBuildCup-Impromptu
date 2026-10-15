@@ -36,6 +36,13 @@ export function loader(text, { title = "" } = {}) {
   return html`<div class="splash stage">${ring({ chase: true })}${title ? html`<p class="splash-title">${title}</p>` : ""}<p>${text}</p></div>`;
 }
 
+/** The house's wait: a small studio clock chasing. It only shows once the wait passes
+ *  300 ms (CSS), so a quick load never flashes it. inline: a line inside a card or sheet. */
+export function waiting(label = "", { inline = false } = {}) {
+  return html`<div class="waiting ${inline ? "inline" : ""}" role="status" aria-label="${label || "Getting it ready"}">
+    ${ring({ chase: true, cls: "waiting-ring", r: 42, dot: 3.4 })}${label ? html`<span>${label}</span>` : ""}</div>`;
+}
+
 /** The hosts as chips; the one talking is lit, and its ring follows their voice (--lv). */
 export function hostChips(store, pos) {
   const hosts = store.plan?.hosts || store.show.hosts || [];

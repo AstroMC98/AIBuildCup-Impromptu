@@ -2,6 +2,7 @@
 // long, when people left, replays, and who listened. Names are shown for signed-in
 // listeners only, and only to the pod's creator; anonymous listeners are counted.
 import { api } from "../api.js";
+import { waiting } from "../components.js";
 import { html, raw, setHtml } from "../html.js";
 import { icon } from "../icons.js";
 import { navigate } from "../router.js";
@@ -85,7 +86,7 @@ export async function showStatsView(root, { params: [showId] }) {
   const el = document.createElement("div");
   el.className = "page-wrap";
   root.append(el);
-  setHtml(el, html`${appHeader({ search: false })}<main class="page wide" data-body><p class="empty">Loading…</p></main>`);
+  setHtml(el, html`${appHeader({ search: false })}<main class="page wide" data-body>${waiting()}</main>`);
   const offHead = bindHeader(el);
   let timer = 0;
 
@@ -144,7 +145,7 @@ export async function statsView(root) {
   const el = document.createElement("div");
   el.className = "page-wrap";
   root.append(el);
-  setHtml(el, html`${appHeader({ search: false })}<main class="page wide" data-body><p class="empty">Loading…</p></main>`);
+  setHtml(el, html`${appHeader({ search: false })}<main class="page wide" data-body>${waiting()}</main>`);
   const offHead = bindHeader(el);
   const data = await api.myStats().catch((err) => ({ error: err.message }));
   if (data.error) {
