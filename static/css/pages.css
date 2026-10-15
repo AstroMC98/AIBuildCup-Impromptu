@@ -1,0 +1,43 @@
+/* Account pages: personas, styles, connections, invite, admin. */
+
+.page-wrap { min-height: 100dvh; }
+.page.wide { max-width: 1000px; }
+.page-title { margin: 8px 0 20px; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+.page-title h1 { font-size: 30px; font-weight: 800; letter-spacing: -0.02em; }
+.page-title p { margin-top: 6px; max-width: 60ch; }
+.page .card { margin-bottom: 16px; }
+
+.saved-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.saved-card {
+  position: relative; display: flex; gap: 12px; align-items: flex-start; padding: 14px; padding-right: 76px;
+  background: var(--panel); border-radius: 14px; min-height: 84px;
+}
+.saved-card .col { gap: 3px; }
+.saved-card .muted.small { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.saved-actions { position: absolute; top: 8px; right: 8px; gap: 2px; }
+.saved-card { flex-wrap: wrap; }
+.saved-card .from { flex-basis: 100%; margin: -4px 0 0 56px; }
+.small-btn { height: 32px; padding: 0 12px; font-size: 13px; }
+.style-swatch { width: 44px; height: 44px; flex: none; border-radius: 10px; background: var(--tile); }
+.swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+.swatch { width: 36px; height: 36px; border-radius: 50%; border: 0; background: var(--tile); cursor: pointer; }
+.swatch[aria-checked="true"] { box-shadow: 0 0 0 3px var(--panel), 0 0 0 5px var(--white); }
+
+.people { display: flex; flex-direction: column; gap: 4px; }
+.person { display: flex; align-items: center; gap: 12px; min-height: 56px; }
+.person .col { min-width: 0; }
+.person .muted.small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-h .faint { font-weight: 600; font-size: 14px; margin-left: 4px; }
+.card form.row .field { flex: 1; }
+
+.splash-card {
+  margin-top: 40px; background: var(--panel); border-radius: 22px; padding: 28px 22px;
+  display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center;
+}
+.splash-card h1 { font-size: 24px; font-weight: 800; letter-spacing: -0.015em; }
+
+.credit-pill {
+  min-width: 44px; height: 30px; padding: 0 10px; border-radius: var(--pill); background: var(--panel-2);
+  display: grid; place-items: center; font-weight: 800; color: #F2C14E;
+}
+.page #a-q { margin-bottom: 14px; }

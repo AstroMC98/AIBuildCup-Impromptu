@@ -1,0 +1,13 @@
+fastapi>=0.115
+uvicorn[standard]>=0.30
+google-genai>=2.25.0
+pydantic-settings>=2.3
+python-multipart>=0.0.9
+httpx>=0.27
+pypdf>=4.0
+lameenc>=1.8
+# Only imported with STORAGE_BACKEND=gcp
+google-cloud-firestore>=2.20
+google-cloud-storage>=2.18
+# Tests (tests/smoke_test.py)
+websockets>=13

@@ -1,0 +1,11 @@
+.env
+.venv/
+data/
+tests/
+deploy/
+.playwright-mcp/
+__pycache__/
+*.pyc
+.git/
+Gemini Podcasts Player.html
+README.md

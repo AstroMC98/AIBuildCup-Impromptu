@@ -1,0 +1,73 @@
+/* Design tokens from the board. The app is dark by design: every episode is
+   tinted by its vibe's accent, mixed into the base ink (see js/theme.js). */
+:root {
+  --ink: #17122A;          /* page background, text on white */
+  --panel: #241D3D;        /* cards, sheets */
+  --panel-2: #1B1531;      /* inputs inside panels */
+  --panel-3: #1D1733;      /* desktop side panes */
+  --chip: #30284F;         /* chips, secondary buttons */
+  --chip-2: #3A3160;
+  --line: #3E3563;         /* outlines */
+  --line-2: #5A5088;       /* dashed / stronger outlines */
+  --rule: #2B2446;
+  --grabber: #4A4170;
+  --text: #F4F1FB;
+  --muted: #C3BCDA;
+  --faint: #A49DBE;
+  --dimtext: #B3A9C9;
+  --soft: #E4DFF4;
+  --live: #C9381F;
+  --live-dot: #FF6A4D;
+  --pink: #FFD7E6;
+  --white: #FFFFFF;
+
+  /* per episode, set by applyAccent() */
+  --accent: #B8336A;
+  --deep: #3E1A3E;
+  --ring: #6E2852;
+  --dim: #22101F;
+
+  --font: "Bricolage Grotesque", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --radius: 14px;
+  --radius-s: 10px;
+  --pill: 999px;
+  --gutter: 16px;
+  --ease: cubic-bezier(.2, .8, .2, 1);
+}
+
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background: var(--ink);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+body.sheet-open { overflow: hidden; }
+
+[hidden] { display: none !important; }
+
+h1, h2, h3, p { margin: 0; }
+button, input, select, textarea { font: inherit; color: inherit; }
+a { color: var(--text); }
+a:hover { color: var(--white); }
+img, svg { display: block; }
+ol, ul { margin: 0; padding: 0; list-style: none; }
+
+::placeholder { color: var(--faint); opacity: 1; }
+
+:focus-visible { outline: 2px solid var(--white); outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; }
+}
