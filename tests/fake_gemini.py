@@ -3,11 +3,26 @@
 Run:  uvicorn tests.fake_gemini:app --port 8765
 Then: GEMINI_API_KEY=fake GEMINI_BASE_URL=http://127.0.0.1:8765 uvicorn app.main:app
 
-Planner calls get a fixed plan. Writer calls get canned dialogue that answers any
-"[#id]" comments in the prompt, uses any "[Cn]" context it is told to bring in,
-acknowledges a STYLE CHANGED, and declines comments containing DECLINE_ME. Image
-calls get a canned description. TTS calls stream a sine tone as PCM.
-GET /_seen returns the writer system instructions received, for assertions.
+Planner calls get a fixed plan (with Research on, chapter 3 asks for a lookup).
+Writer calls get canned dialogue that answers any "[#id]" comments in the prompt,
+uses any "[Cn]" context it is told to bring in, acknowledges a STYLE CHANGED, and
+declines comments containing DECLINE_ME. Comments containing DEFER_ME are promised
+for later ("we'll get to that in a second", deferred); SNEAKY_DEFER does the same
+but marks it answered (the bug the runner guards against); RESEARCH_ME asks for a
+lookup when the schema allows it. PROMISED call-ins are answered. Google Search
+calls get a grounded answer: search steps, Search Suggestions, url_citation notes.
+Image calls get a canned description. TTS calls stream a sine tone as PCM. Editor
+calls (co-hosted calls) cut "can you hear me" phrases and drop "Loud and clear" answers.
+
+The Live API (co-hosting) is a WebSocket that answers speech: loud mic audio
+followed by 0.4 s of quiet is an utterance, transcribed as "Mic check, can you hear
+me?" the first time and "Point number N about bread." after that, and answered
+with a 3 s tone streamed at twice real time. Loud audio while it's answering
+interrupts it. Producer cues get a short spoken reply; after replying to a mode
+switch it recycles the connection (GoAway), as Gemini does every few minutes.
+
+GET /_seen returns the writer system instructions, Live setups and Live text
+received, for assertions.
 """
 import asyncio
 import base64
@@ -17,8 +32,9 @@ import math
 import os
 import re
 import struct
+import traceback
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, WebSocket
 from fastapi.responses import JSONResponse, StreamingResponse
 
 app = FastAPI()
@@ -29,6 +45,10 @@ _calls = itertools.count(1)
 _writer_calls = itertools.count(1)
 requests_seen: list[dict] = []
 writer_systems: list[str] = []
+live_setups: list[dict] = []
+live_texts: list[str] = []
+_live_sessions = itertools.count(1)
+_utterances = itertools.count(1)
 
 
 def _tone(seconds: float, freq: float, rate: int = 24_000) -> bytes:
@@ -51,9 +71,35 @@ def _section(prompt: str, header: str) -> str:
     return prompt[start:end if end > 0 else None]
 
 
+writer_schemas: list[list[str]] = []      # the properties each writer call's schema offered
+research_asked: list[str] = []
+SUGGESTIONS = '<div class="container"><a class="chip" href="https://www.google.com/search?q=zion">zion</a></div>'
+
+
 @app.get("/_seen")
 async def seen() -> dict:
-    return {"writer_systems": writer_systems, "count": len(requests_seen)}
+    return {"writer_systems": writer_systems, "count": len(requests_seen),
+            "live_setups": live_setups, "live_texts": live_texts,
+            "writer_schemas": writer_schemas, "research": research_asked}
+
+
+def _grounded(question: str) -> JSONResponse:
+    research_asked.append(question)
+    return JSONResponse({
+        "id": f"t{next(_calls)}", "status": "completed",
+        "steps": [
+            {"type": "google_search_call", "id": "s1", "arguments": {"queries": [question[:60]]}},
+            {"type": "google_search_result", "call_id": "s1", "result": [{"search_suggestions": SUGGESTIONS}]},
+            {"type": "model_output", "content": [{
+                "type": "text", "text": "RESEARCH FINDINGS: Zion Williamson averaged 24 points per game (ESPN).",
+                "annotations": [
+                    {"type": "url_citation", "url": "https://www.espn.com/nba/player/_/id/zion", "title": "ESPN",
+                     "start_index": 0, "end_index": 20},
+                    {"type": "url_citation", "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/X",
+                     "title": "nbcsports.com", "start_index": 21, "end_index": 40},
+                ]}]},
+        ],
+    })
 
 
 @app.post("/v1beta/interactions")
@@ -90,7 +136,8 @@ async def interactions(req: Request):
     if '"type": "audio"' in json.dumps(body.get("input")):
         return _reply("FAKE TRANSCRIPT: why did the serpent talk?")
 
-    if any(t.get("type") == "google_search" for t in body.get("tools") or []):   # a briefing's news search
+    news = "items" in body.get("response_format", {}).get("schema", {}).get("properties", {})
+    if news and any(t.get("type") == "google_search" for t in body.get("tools") or []):   # a briefing's news search
         asked = re.search(r"about: (.+)", str(body.get("input", "")))
         topic = asked.group(1).strip() if asked else "the news"
         items = [{"title": f"{topic} story {i}", "source": f"Outlet {i}", "url": f"https://outlet{i}.example/{i}",
@@ -109,6 +156,23 @@ async def interactions(req: Request):
             {"title": "STEERED: the other side", "notes": "...", "minutes": 0.5},
             {"title": "STEERED: sign-off", "notes": "...", "minutes": 0.3},
         ]}))
+    if any(t.get("type") == "google_search" for t in body.get("tools") or []):
+        return _grounded(str(body.get("input", "")))
+
+    if "cut_phrases" in props:   # the editor of a co-hosted call
+        prompt = body.get("input", "")
+        cut = [int(p) for p in re.findall(r"\[p(\d+)\][^\n]*can you hear me", prompt, re.I)]
+        drop = [int(t) for t in re.findall(r"^T(\d+) [^\n:]*: Loud and clear", prompt, re.M)]
+        turns = [int(t) for t in re.findall(r"^T(\d+) ", prompt, re.M)]
+        return _reply(json.dumps({
+            "title": "Fake Edited Episode",
+            "tagline": "Bread, debated.",
+            "about": "A co-hosted chat about bread.",
+            "chapters": [{"title": "Opening", "notes": "Hello.", "start_turn": 0},
+                         {"title": "The middle", "notes": "Bread.", "start_turn": turns[len(turns) // 2] if turns else 0}],
+            "cut_phrases": cut,
+            "drop_turns": drop,
+        }))
 
     if "beats" in props:
         n = props["hosts"]["minItems"]
@@ -118,21 +182,27 @@ async def interactions(req: Request):
         given = re.findall(r"^\d+\. (.+?) \| [\d.]+ min \|", str(body.get("input", "")), re.MULTILINE)
         beats = [(t, 0.4) for t in given] or [("Cold open", 0.3), ("The garden", 0.6), ("The fallout", 0.6),
                                              ("Sign-off", 0.5)]
+        research = "research" in props["beats"]["items"]["properties"]   # Research on
         return _reply(json.dumps({
             "title": "Genesis, But Make It Messy",
             "tagline": "The first family had the first group chat.",
             "about": "Kayla and Brit spill everything from Genesis 1 to 3.",
             "hosts": hosts,
-            "beats": [{"title": t, "notes": "...", "minutes": m} for t, m in beats],
+            "beats": [{"title": t, "notes": "...", "minutes": m,
+                       **({"research": "garden of eden location theories"} if research and t == "The fallout" else {})}
+                      for t, m in beats],
             "cold_open": [{"speaker": h["name"], "text": f"COLD OPEN from {h['name']}."} for h in hosts * 2][:3],
             "reactions": [{"speaker": hosts[i % n]["name"], "kind": k, "text": f"REACTION {k}!"}
                           for i, k in enumerate(("ask", "deeper", "steer", "move_on"))],
         }))
 
     writer_systems.append(body.get("system_instruction", ""))
+    writer_schemas.append(sorted(props))
     names = props["lines"]["items"]["properties"]["speaker"]["enum"]
     prompt = body.get("input", "")
-    comments = re.findall(r"\[#(\d+)\] ([^:]+): \"([^\"]*)\"", prompt)
+    comment_re = r"\[#(\d+)\] ([^:]+): \"([^\"]*)\""
+    comments = re.findall(comment_re, _section(prompt, "LISTENER COMMENTS"))
+    owed = re.findall(comment_re, _section(prompt, "CALL-INS YOU PROMISED"))
     bring = [int(x) for x in re.findall(r"\[C(\d+)\]", _section(prompt, "BRING IN NOW"))]
     chapter = [int(x) for x in re.findall(r"\[C(\d+)\]", _section(prompt, "THIS CHAPTER"))]
     attached = [int(x) for x in re.findall(r"attached \[C(\d+)\]", prompt)]
@@ -150,12 +220,25 @@ async def interactions(req: Request):
             "addressed_comment_ids": [], "declined_comment_ids": [], "used_context_ids": [], "beat_complete": False,
         }))
 
-    lines, addressed, declined = [], [], []
+    lines, addressed, declined, deferred, lookups = [], [], [], [], []
     if "STYLE CHANGED" in prompt:
         lines.append({"speaker": names[0], "text": "Okay, STYLE SWITCH ACKNOWLEDGED, new vibe!", "style": ""})
+    for cid, who, _text in owed:
+        addressed.append(int(cid))
+        found = "with the research" if "research came back" in prompt else "from memory"
+        lines.append({"speaker": names[0], "text": f"As promised, back to {who}'s question {cid}, answered {found}.",
+                      "style": ""})
     for cid, who, text in comments:
         if "DECLINE_ME" in text:
             declined.append(int(cid))
+            continue
+        if "DEFER_ME" in text or "SNEAKY_DEFER" in text:
+            (addressed if "SNEAKY_DEFER" in text else deferred).append(int(cid))
+            lines.append({"speaker": names[0], "text": f"Ooh {who}, we'll get to that in a second!", "style": ""})
+            continue
+        if "RESEARCH_ME" in text and "research_requests" in props:
+            lookups.append({"comment_id": int(cid), "query": "Zion Williamson fantasy outlook"})
+            lines.append({"speaker": names[0], "text": f"{who}, let me pull up those numbers.", "style": ""})
             continue
         addressed.append(int(cid))
         lines.append({"speaker": names[0], "text": f"Okay wait, {who} called in <gasp> with comment number {cid}!",
@@ -170,5 +253,115 @@ async def interactions(req: Request):
         lines.append({"speaker": names[0], "text": "That's the show, bye!", "style": ""})
     return _reply(json.dumps({
         "lines": lines, "addressed_comment_ids": addressed, "declined_comment_ids": declined,
+        "deferred_comment_ids": deferred, "research_requests": lookups,
         "used_context_ids": used, "beat_complete": n % BEAT_EVERY == 0 or final,
     }))
+
+
+# ---- the Live API (co-hosting) ----------------------------------------------------------
+
+LIVE_PATH = "/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent"
+MIC_RATE = 16_000
+REPLY_SECONDS = 3.0
+PACE = 0.5            # send the reply at twice real time, as Gemini does (faster than playback)
+
+
+def _cue_reply(text: str) -> str:
+    if "Open the show" in text:
+        return "Welcome to the show! Great to have you here."
+    if "switch it up" in text:
+        return "Switching it up, gloves off!"
+    if "wrapping up" in text:
+        return "That's our time, thanks everyone!"
+    if "line dropped" in text:
+        return "And we're back!"
+    return "Mm-hm."
+
+
+@app.websocket(LIVE_PATH)
+async def live(ws: WebSocket) -> None:
+    await ws.accept()
+    setup = json.loads(await ws.receive_text())
+    live_setups.append(setup)
+    session = next(_live_sessions)
+    lock = asyncio.Lock()
+
+    async def send(obj: dict) -> None:
+        async with lock:
+            await ws.send_text(json.dumps(obj))
+
+    await send({"setupComplete": {}})
+    await send({"sessionResumptionUpdate": {"newHandle": f"handle-{session}", "resumable": True}})
+
+    stop = {"now": False}
+    speaking: list[asyncio.Task] = []
+
+    async def respond(text: str, then_goaway: bool = False) -> None:
+        pcm = _tone(REPLY_SECONDS, 440)
+        step = 4801  # odd on purpose: the server must keep samples whole
+        for i, off in enumerate(range(0, len(pcm), step)):
+            if stop["now"]:
+                return
+            chunk = pcm[off:off + step]
+            await send({"serverContent": {"modelTurn": {"parts": [
+                {"inlineData": {"mimeType": "audio/pcm;rate=24000", "data": base64.b64encode(chunk).decode()}}]}}})
+            if i == 0:
+                await send({"serverContent": {"outputTranscription": {"text": text}}})
+            await asyncio.sleep(len(chunk) / 2 / 24_000 * PACE)
+        await send({"serverContent": {"turnComplete": True}})
+        if then_goaway:
+            await send({"goAway": {"timeLeft": "1s"}})
+            await asyncio.sleep(0.5)
+            await ws.close()
+
+    async def reply(text: str, then_goaway: bool = False) -> None:
+        await interrupt(quietly=True)
+        stop["now"] = False
+        speaking.append(asyncio.create_task(respond(text, then_goaway)))
+
+    async def interrupt(quietly: bool = False) -> None:
+        running = [t for t in speaking if not t.done()]
+        if running:
+            stop["now"] = True
+            await asyncio.gather(*running, return_exceptions=True)
+            if not quietly:
+                await send({"serverContent": {"interrupted": True}})
+        speaking.clear()
+
+    loud = quiet = 0
+    try:
+        while True:
+            message = await ws.receive()
+            if message["type"] == "websocket.disconnect":
+                break
+            raw = message.get("text") or (message.get("bytes") or b"").decode()
+            data = json.loads(raw)
+            rt = data.get("realtime_input") or data.get("realtimeInput") or {}
+            if "text" in rt:
+                live_texts.append(rt["text"])
+                await reply(_cue_reply(rt["text"]), then_goaway="switch it up" in rt["text"])
+            if rt.get("audioStreamEnd"):
+                loud = quiet = 0
+            audio = rt.get("audio")
+            if audio:
+                b64 = audio["data"]   # the SDK sends URL-safe base64 without padding
+                pcm = base64.urlsafe_b64decode(b64 + "=" * (-len(b64) % 4))
+                samples = struct.unpack(f"<{len(pcm) // 2}h", pcm[: len(pcm) // 2 * 2])
+                rms = math.sqrt(sum(s * s for s in samples) / max(1, len(samples)))
+                if rms > 500:
+                    if loud == 0:
+                        await interrupt()          # barge-in
+                    loud += len(samples)
+                    quiet = 0
+                elif loud:
+                    quiet += len(samples)
+                    if loud >= 0.2 * MIC_RATE and quiet >= 0.4 * MIC_RATE:
+                        n = next(_utterances)
+                        said = "Mic check, can you hear me?" if n == 1 else f"Point number {n} about bread."
+                        await send({"serverContent": {"inputTranscription": {"text": said}}})
+                        await reply("Loud and clear!" if n == 1 else f"Reply {n}: great point about bread.")
+                        loud = quiet = 0
+    except Exception:
+        traceback.print_exc()
+    finally:
+        stop["now"] = True

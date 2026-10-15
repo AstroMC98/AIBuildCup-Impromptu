@@ -1,7 +1,7 @@
 """Everything on local disk under DATA_DIR, in the same shape as Firestore + GCS.
 
     shows/{id}/show.json, segments/00001.json, comments/1.json, context/1.json,
-              context/1.txt, source.txt, episode.mp3
+              context/1.txt, source.txt, episode.mp3, raw.mp3 (co-hosted calls)
               sessions/{id}.json
     users/{uid}/user.json, ledger/{id}.json, personas/{id}.json, styles/{id}.json,
               connections/{other_uid}.json
@@ -169,12 +169,13 @@ class LocalStore:
         except FileNotFoundError:
             return None
 
-    async def put_audio(self, show_id: str, data: bytes) -> dict:
-        await asyncio.to_thread(_atomic_write, self._dir(show_id) / "episode.mp3", data)
-        return {"path": "episode.mp3", "bytes": len(data), "mime": "audio/mpeg"}
+    async def put_audio(self, show_id: str, data: bytes, name: str = "episode.mp3") -> dict:
+        await asyncio.to_thread(_atomic_write, self._dir(show_id) / name, data)
+        return {"path": name, "bytes": len(data), "mime": "audio/mpeg"}
 
-    async def audio_response(self, show_id: str, doc: dict, download: bool, filename: str) -> Response:
-        path = self._dir(show_id) / "episode.mp3"
+    async def audio_response(self, show_id: str, doc: dict, download: bool, filename: str,
+                             name: str = "episode.mp3") -> Response:
+        path = self._dir(show_id) / name
         if not path.exists():
             return Response("No audio saved for this show.", status_code=404)
         return FileResponse(
@@ -187,7 +188,8 @@ class LocalStore:
     async def mark_interrupted(self, keep: set[str]) -> int:
         count = 0
         for doc in await self.list_shows(limit=100_000):
-            if doc.get("status") == "live" and doc["id"] not in keep:
+            # editing: a co-hosted call that was being turned into an episode
+            if doc.get("status") in ("live", "editing") and doc["id"] not in keep:
                 await self.update_show(doc["id"], {"status": "interrupted", "ended_reason": "restart"})
                 count += 1
         return count

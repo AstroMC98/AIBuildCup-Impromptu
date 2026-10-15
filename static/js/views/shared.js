@@ -29,7 +29,61 @@ export function showActions(ctl, extra = {}) {
     "download-audio": () => { location.href = ctl.audioDownloadUrl(); },
     "download-transcript": () => downloadTranscript(ctl),
     "remove-comment": (el) => ctl.removeComment(Number(el.dataset.id)),
+    "seek-chapter": (el) => ctl.seekTo(Number(el.dataset.start)),
     ...extra,
+  };
+}
+
+const SEEK_STEP_SECONDS = 10;
+
+/** Click or drag the chapter bar to jump there; arrow keys move 10 s. */
+export function bindSeekBar(bar, ctl) {
+  if (!bar) return () => {};
+  const rate = ctl.store.rate;
+  bar.classList.add("seekable");
+  bar.removeAttribute("aria-hidden");
+  bar.setAttribute("role", "slider");
+  bar.setAttribute("tabindex", "0");
+  bar.setAttribute("aria-label", "Seek: click or drag to jump, arrow keys move 10 seconds");
+  let dragging = false;
+  let last = 0;
+  const seekAt = (e) => {
+    const r = bar.getBoundingClientRect();
+    const sample = ctl.store.sampleAtBar((e.clientX - r.left) / r.width);
+    ctl.seekTo(Number.isFinite(sample) ? sample : Infinity);
+  };
+  const down = (e) => {
+    dragging = true;
+    bar.setPointerCapture?.(e.pointerId);
+    seekAt(e);
+  };
+  const move = (e) => {
+    const now = performance.now();
+    if (dragging && now - last > 120) {   // the live player reschedules on every seek
+      last = now;
+      seekAt(e);
+    }
+  };
+  const up = (e) => {
+    if (dragging) seekAt(e);
+    dragging = false;
+  };
+  const key = (e) => {
+    const step = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+    if (!step) return;
+    e.preventDefault();
+    ctl.seekTo(Math.max(ctl.heldFrom(), ctl.player.position() + step * SEEK_STEP_SECONDS * rate));
+  };
+  bar.addEventListener("pointerdown", down);
+  bar.addEventListener("pointermove", move);
+  bar.addEventListener("pointerup", up);
+  bar.addEventListener("pointercancel", () => { dragging = false; });
+  bar.addEventListener("keydown", key);
+  return () => {
+    bar.removeEventListener("pointerdown", down);
+    bar.removeEventListener("pointermove", move);
+    bar.removeEventListener("pointerup", up);
+    bar.removeEventListener("keydown", key);
   };
 }
 

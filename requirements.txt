@@ -10,6 +10,8 @@ lameenc>=1.8
 tzdata>=2024.1
 # Parsing watched sites' RSS/Atom feeds without entity-expansion or external-entity attacks
 defusedxml>=0.7
+# Editing co-hosted calls into episodes (app/editing.py)
+numpy>=2.1
 # Only imported with STORAGE_BACKEND=gcp
 google-cloud-firestore>=2.20
 google-cloud-storage>=2.18

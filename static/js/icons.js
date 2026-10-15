@@ -35,6 +35,9 @@ const P = {
   expand: ["M14 4h6v6", "M10 20H4v-6", "M20 4l-7 7", "M4 20l7-7"],
   logo: ["M6 15v-6", "M10 18V6", "M14 15V9", "M18 13v-2"],
   mic: ["M12 4a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0V7a3 3 0 0 0-3-3z", "M6 11a6 6 0 0 0 12 0", "M12 17v3"],
+  micOff: ["M12 4a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0V7a3 3 0 0 0-3-3z", "M6 11a6 6 0 0 0 12 0", "M12 17v3", "M4 4l16 16"],
+  phoneOff: ["M2.5 14.5c2.5-2.4 5.8-3.7 9.5-3.7s7 1.3 9.5 3.7l-1.8 3a1 1 0 0 1-1.2.4l-3-1.2a1 1 0 0 1-.6-.9v-2.1a12 12 0 0 0-5.8 0v2.1a1 1 0 0 1-.6.9l-3 1.2a1 1 0 0 1-1.2-.4z"],
+  headphones: ["M4 15v-3a8 8 0 0 1 16 0v3", "M4 15h3v5H5a1 1 0 0 1-1-1z", "M20 15h-3v5h2a1 1 0 0 0 1-1z"],
   copy: ["M8 8h12v12H8z", "M4 16V4h12"],
   trash: ["M5 7h14", "M10 11v6", "M14 11v6", "M6 7l1 13h10l1-13", "M9 7V4h6v3"],
   stop: ["M6 6h12v12H6z"],
@@ -65,4 +68,4 @@ export function icon(name, size = 24, stroke = 2) {
   );
 }
 
-export const KIND_ICON = { text: "note", file: "file", link: "link", photo: "photo", source: "file" };
+export const KIND_ICON = { text: "note", file: "file", link: "link", photo: "photo", source: "file", research: "search" };

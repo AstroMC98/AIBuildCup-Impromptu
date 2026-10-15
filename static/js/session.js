@@ -41,8 +41,10 @@ export const session = {
   get credits() { return this.me?.credits ?? 0; },
   get creator() { return this.signedIn; },
 
-  cost(minutes) {
-    return Math.max(1, Math.ceil(minutes * (this.options?.credits_per_minute ?? 1)));
+  /** What a pod costs; Research on (the hosts look things up live) costs more per minute. */
+  cost(minutes, research = false) {
+    const rate = (this.options?.credits_per_minute ?? 1) + (research ? this.options?.research_credits_per_minute ?? 0 : 0);
+    return Math.max(1, Math.ceil(minutes * rate));
   },
 
   preset(id) {

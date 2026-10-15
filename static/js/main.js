@@ -5,6 +5,8 @@ import { session } from "./session.js";
 import { adminView } from "./views/admin.js";
 import { albumsView, albumView } from "./views/albums.js";
 import { briefingsView } from "./views/briefings.js";
+import { cohostCallView } from "./views/cohost-call.js";
+import { cohostSetupView } from "./views/cohost-setup.js";
 import { connectionsView, inviteView } from "./views/connections.js";
 import { createView } from "./views/create.js";
 import { creatorView } from "./views/creator.js";
@@ -34,6 +36,8 @@ async function boot() {
     [/^\/stats$/, statsView],
     [/^\/show\/([\w-]+)\/stats$/, showStatsView],
     [/^\/new$/, createView],
+    [/^\/cohost$/, cohostSetupView],
+    [/^\/cohost\/([\w-]+)$/, cohostCallView],
     [/^\/login$/, loginView],
     [/^\/personas$/, savedView],
     [/^\/styles$/, savedView],

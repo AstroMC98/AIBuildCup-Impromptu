@@ -20,6 +20,13 @@ the thread back up, goes deeper, skips ahead, or follows a new plan.
 The runner only generates. It never touches a socket or the database: events
 and audio go to a RoomPort (app/room.py), which caches, fans out and persists
 them, so a slow listener or a slow write can never stall the show.
+
+Call-ins the hosts promise to come back to ("we'll get to that in a second") are
+kept as promised and offered to every segment after it until one answers them;
+the sign-off answers whatever is left. With Research on, the writers can ask for
+a Google lookup for a call-in the source can't answer, and the planner for
+chapters it can't fill: lookups run in the background while the show goes on,
+and come back as cited context (the call-in is answered once its lookup is in).
 """
 from __future__ import annotations
 
@@ -53,6 +60,15 @@ OVERTIME_FACTOR = 1.1           # force the sign-off past 110% of the target len
 EXTRA_SECONDS = 10.0            # ...plus this much for each call-in, context item or restyle it has to work in
 WORDS_PER_SECOND = 2.5          # starting guess for speaking pace (real pods run 2.2-2.7); measured as audio arrives
 VOCAL_TAG = re.compile(r"<[^>]*>")  # <laugh>, <short pause>: sounds, not words
+# A call-in the writers marked answered, but the hosts said they'd come back to: it
+# stays promised. Only checked around the lines that name the caller.
+PROMISE = re.compile(
+    r"\b(?:get|come|circle|loop|swing)\s+(?:right\s+)?back\b"
+    r"|\bget\s+(?:to|into)\s+(?:that|this|it|him|her|his|their|your)\b[^.!?]{0,40}"
+    r"\b(?:in a (?:sec|second|minute|bit)|later|soon|shortly|after)\b"
+    r"|\bhold (?:that|this) thought\b|\bin (?:just )?a (?:sec|second|minute|bit)\b|\bmore on (?:that|this) later\b",
+    re.IGNORECASE,
+)
 HEARTS_TO_MENTION = 3           # tell the writers about reactions once there are this many...
 HEARTS_EVERY_SEGMENTS = 4       # ...and no more often than this
 WRITE_RETRY_DELAYS = (2.0, 5.0) # transient API failures get two more tries
@@ -95,10 +111,15 @@ class Comment:
     role: str                   # producer | guest
     at: int                     # live playhead (samples) when it came in
     client_id: str = ""
-    status: str = "queued"      # queued -> on_deck | declined | removed | too_late
+    # queued -> on_deck | declined | removed | too_late, or
+    # queued -> promised (the hosts said they'd come back to it) -> on_deck | missed
+    status: str = "queued"
     seq: int | None = None      # the segment that answers (or declines) it
     context_id: int | None = None
     eta: int | None = None      # while queued: where on the timeline (samples) it should be heard
+    promised_seq: int | None = None   # the segment where the hosts promised to come back to it
+    research: str | None = None       # pending | ready | failed: a lookup for it (Research on)
+    research_id: int | None = None    # the research context item it came back as
 
     def public(self) -> dict:
         return asdict(self)
@@ -127,6 +148,7 @@ class Draft:
     lines: list[Line] = field(default_factory=list)
     addressed: list[int] = field(default_factory=list)
     declined: list[int] = field(default_factory=list)
+    promised: list[int] = field(default_factory=list)
     used_context: list[int] = field(default_factory=list)
     prev_style_acked: int = 0
     held: bool = False          # input arrived too late to rewrite this one
@@ -196,6 +218,8 @@ class ShowRunner:
         self._next_context_id = 1
         self.hearts_since = 0
         self._hearts_seq = -HEARTS_EVERY_SEGMENTS
+        self._lookups = 0                         # research started (Research on)
+        self._research_tasks: set[asyncio.Task] = set()
 
         self.sec_per_line = SECONDS_PER_LINE[min(2, len(request.hosts))]
         self.words_per_sec = WORDS_PER_SECOND
@@ -327,6 +351,7 @@ class ShowRunner:
             log.info("planned in %.1fs", time.monotonic() - started)
             self._publish_plan()
             self.room.publish({"type": "status", "state": "writing"})
+            self._research_thin_beats()
 
             self._pending = self._cold_open() or self._start_writing()
             self._stinger_task = asyncio.create_task(self._voice_stingers())
@@ -375,8 +400,8 @@ class ShowRunner:
             if self._stopped:
                 return "stopped"
             for c in self.comments.values():
-                if c.status == "queued":
-                    c.status = "too_late"
+                if c.status in {"queued", "promised"}:
+                    c.status = "too_late" if c.status == "queued" else "missed"
                     self._publish_comment(c)
             return "signed_off"
         except asyncio.CancelledError:
@@ -389,12 +414,34 @@ class ShowRunner:
             for task in (self._pending, self._speaking, self._stinger_task):
                 if task is not None and not task.done():
                     task.cancel()
+            for task in list(self._research_tasks):
+                task.cancel()
 
     # ---- writing ----------------------------------------------------------------
 
     def _queued_comments(self) -> list[Comment]:
         queued = [c for c in self.comments.values() if c.status == "queued"]
         return sorted(queued, key=lambda c: c.id)[:MAX_COMMENTS_PER_SEGMENT]
+
+    def _promised_due(self, *, last_chance: bool = False) -> list[Comment]:
+        """Promised call-ins ready to be answered: no lookup still running for them
+        (at the sign-off they're all due, looked up or not)."""
+        due = [c for c in self.comments.values()
+               if c.status == "promised" and (last_chance or c.research != "pending")]
+        return sorted(due, key=lambda c: c.id)
+
+    def _listener_comment(self, c: Comment, offered_context: set[int]) -> ListenerComment:
+        attachment = self.context.get(c.context_id) if c.context_id else None
+        research = self.context.get(c.research_id) if c.research_id else None
+        for x in (attachment, research):
+            if x:
+                offered_context.add(x.id)
+        return ListenerComment(
+            id=c.id, name=c.name, text=c.text,
+            attachment=self._brief(attachment) if attachment else None,
+            research=self._brief(research) if research else None,
+            research_failed=c.research == "failed" or (c.research == "pending" and c.status == "promised"),
+        )
 
     def _due_context(self) -> tuple[list[ContextItem], list[ContextItem]]:
         """(bring in now, work in this chapter). Items attached to a call-in ride
@@ -406,6 +453,10 @@ class ShowRunner:
         chapter: list[ContextItem] = []
         for x in sorted(self.context.values(), key=lambda x: x.id):
             if x.status != "pending" or x.comment_id is not None:
+                continue
+            if x.for_beat is not None:   # research looked up for a chapter waits for it
+                if self.beat >= x.for_beat:
+                    (now if self.beat > x.for_beat else chapter).append(x)
                 continue
             if x.when == "now" or self.beat > x.beat_at_add + 1:
                 now.append(x)
@@ -459,17 +510,11 @@ class ShowRunner:
             if self.hearts_since >= HEARTS_TO_MENTION and self.seq - self._hearts_seq >= HEARTS_EVERY_SEGMENTS
             else 0
         )
-        listed = []
         offered_context = {x.id for x in now + chapter}
-        for c in comments:
-            attachment = self.context.get(c.context_id) if c.context_id else None
-            if attachment:
-                offered_context.add(attachment.id)
-            listed.append(ListenerComment(
-                id=c.id, name=c.name, text=c.text,
-                attachment=self._brief(attachment) if attachment else None,
-            ))
-        extra = (2 if comments else 0) + (1 if now else 0) + (1 if style_change else 0)
+        listed = [self._listener_comment(c, offered_context) for c in comments]
+        promised = self._promised_due(last_chance=must_end)
+        owed = [self._listener_comment(c, offered_context) for c in promised]
+        extra = (2 if comments or promised else 0) + (1 if now else 0) + (1 if style_change else 0)
         ctx = SegmentContext(
             transcript=list(self.transcript),
             beat_index=min(self.beat, total_beats - 1),
@@ -478,6 +523,9 @@ class ShowRunner:
             elapsed_minutes=elapsed,
             target_minutes=self.req.minutes,
             comments=listed,
+            promised=owed,
+            research_on=self.req.research,
+            research_left=self._lookups_left(),
             must_end=must_end,
             # give busy segments a little extra room so the plan still moves
             lines_wanted=segment_lines + min(4, extra),
@@ -492,7 +540,7 @@ class ShowRunner:
             planned_minutes_left=sum(b.minutes for b in beats_left),
             bridge=self._bridge,
         )
-        return ctx, frozenset(c.id for c in comments), frozenset(offered_context), hearts
+        return ctx, frozenset(c.id for c in comments + promised), frozenset(offered_context), hearts
 
     def _cold_open(self) -> asyncio.Task[Draft] | None:
         """The planner writes the first lines along with the plan, so they're voiced
@@ -568,6 +616,8 @@ class ShowRunner:
         """A draft is stale if input is waiting that it never saw."""
         if any(c.id not in draft.offered_comments for c in self._queued_comments()):
             return True
+        if any(c.id not in draft.offered_comments for c in self._promised_due(last_chance=draft.must_end)):
+            return True   # a lookup came back: answer it now, not a segment later
         now, _ = self._due_context()
         if any(x.id not in draft.offered_context for x in now):
             return True
@@ -663,15 +713,40 @@ class ShowRunner:
             self.room.publish({"type": "chapter", "i": draft.beat, "start": draft.start})
 
         seg = draft.segment
+        offered = draft.offered_comments
+        looked_up = {r.comment_id for r in seg.research_requests}
+        # Promised, not answered: what the writers deferred or sent to research, and any
+        # new call-in they marked answered while the hosts said they'd come back to it.
+        deferred = {cid for cid in [*seg.deferred_comment_ids, *looked_up]
+                    if (c := self.comments.get(cid)) and c.status == "queued" and cid in offered}
         for cid in seg.addressed_comment_ids:
             c = self.comments.get(cid)
-            if c and c.status == "queued" and cid in draft.offered_comments:
+            if c and c.status == "queued" and cid in offered and self._sounds_deferred(draft, c):
+                log.info("call-in %d was marked answered, but the hosts said they'd come back to it", cid)
+                deferred.add(cid)
+        for cid in seg.addressed_comment_ids:
+            c = self.comments.get(cid)
+            if c and c.status in {"queued", "promised"} and cid in offered and cid not in deferred:
                 c.status, c.seq = "on_deck", draft.seq
                 draft.addressed.append(cid)
                 self._publish_comment(c)
-                attached = self.context.get(c.context_id) if c.context_id else None
-                if attached and attached.status == "pending":
-                    self._mark_used(attached, draft)
+                for xid in (c.context_id, c.research_id):
+                    attached = self.context.get(xid) if xid else None
+                    if attached and attached.status == "pending":
+                        self._mark_used(attached, draft)
+        for cid in sorted(deferred):
+            c = self.comments[cid]
+            c.status, c.promised_seq = "promised", draft.seq
+            draft.promised.append(cid)
+            self._publish_comment(c)
+        for r in seg.research_requests:
+            c = self.comments.get(r.comment_id)
+            if c and c.status == "promised" and c.research is None and r.comment_id in offered:
+                if self._lookups_left():
+                    self._start_research(r.query.strip()[:200] or c.text, comment=c)
+                else:
+                    c.research = "failed"
+                    self._publish_comment(c)
         for cid in seg.declined_comment_ids:
             c = self.comments.get(cid)
             if c and c.status == "queued" and cid in draft.offered_comments:
@@ -740,6 +815,7 @@ class ShowRunner:
             "lines": [ln.model_dump() for ln in draft.lines],
             "addressed": draft.addressed,
             "declined": draft.declined,
+            "promised": draft.promised,
             "used_context": draft.used_context,
             "branch": draft.branch,
             "interrupt": draft.interrupt,
@@ -1030,7 +1106,11 @@ class ShowRunner:
         """Nobody heard this segment: give its call-ins, context and restyle another chance."""
         for c in self.comments.values():
             if c.seq == draft.seq and c.status in {"on_deck", "declined"}:
-                c.status, c.seq = "queued", None
+                # one promised earlier is still owed; any other was never heard at all
+                c.status, c.seq = ("promised" if c.promised_seq and c.promised_seq != draft.seq else "queued"), None
+                self._publish_comment(c)
+            elif c.promised_seq == draft.seq and c.status == "promised":
+                c.status, c.promised_seq = "queued", None   # nobody heard the promise either
                 self._publish_comment(c)
         for x in self.context.values():
             if x.used_seq == draft.seq:
@@ -1038,6 +1118,77 @@ class ShowRunner:
                 self._publish_context(x)
         self.style_acked = draft.prev_style_acked
         self.hearts_since += draft.hearts
+
+    # ---- promises and research ------------------------------------------------------
+
+    def _sounds_deferred(self, draft: Draft, c: Comment) -> bool:
+        """The hosts said they'd come back to this call-in ("we'll get to that in a
+        second"): the lines from where they name the caller, or the whole segment if
+        they never do."""
+        lines = [VOCAL_TAG.sub("", ln.text) for ln in draft.segment.lines]
+        first = (c.name.split() or [""])[0].casefold()
+        at = next((i for i, text in enumerate(lines) if first and first in text.casefold()), None)
+        window = lines if at is None else lines[at:at + 3]
+        return any(PROMISE.search(text) for text in window)
+
+    def _lookups_left(self) -> int:
+        if not self.req.research:
+            return 0
+        return max(0, self.settings.research_max_per_show - self._lookups)
+
+    def _research_thin_beats(self) -> None:
+        """Look up, in the background, what the planner said the source lacks for
+        later chapters, so it's in by the time they come round."""
+        assert self.plan is not None
+        if not self.req.research:
+            return
+        started = 0
+        for i, beat in enumerate(self.plan.beats):
+            if i == 0 or not beat.research.strip():
+                continue
+            if started >= self.settings.research_max_beats or not self._lookups_left():
+                break
+            self._start_research(beat.research.strip()[:200], beat=i)
+            started += 1
+
+    def _start_research(self, query: str, *, comment: Comment | None = None, beat: int | None = None) -> None:
+        self._lookups += 1
+        if comment is not None:
+            comment.research = "pending"
+            self._publish_comment(comment)
+        task = asyncio.create_task(self._research(query, comment, beat))
+        self._research_tasks.add(task)
+        task.add_done_callback(self._research_tasks.discard)
+
+    async def _research(self, query: str, comment: Comment | None, beat: int | None) -> None:
+        assert self.plan is not None
+        started = time.monotonic()
+        try:
+            found = await asyncio.wait_for(
+                self.gemini.research(query, show=f"{self.plan.title}. {self.plan.tagline}",
+                                     asked_by=comment.name if comment else "", language=self.req.language),
+                self.settings.research_timeout_seconds,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            log.warning("research for %r failed after %.0fs: %s", query, time.monotonic() - started, exc)
+            if comment is not None and comment.research == "pending":
+                comment.research = "failed"
+                self._publish_comment(comment)
+                self.room.wake.set()
+            return
+        log.info("research for %r came back in %.1fs, %d sources", query, time.monotonic() - started,
+                 len(found.sources))
+        item = ContextItem(
+            kind="research", name=query[:120], text=found.text, when="now", cite=True,
+            added_by="the research desk", for_beat=beat, comment_id=comment.id if comment else None,
+            sources=found.sources, queries=found.queries, search_suggestions=found.suggestions,
+        )
+        self.add_context(item)            # numbers it, publishes it and wakes the loop
+        if comment is not None:
+            comment.research, comment.research_id = "ready", item.id
+            self._publish_comment(comment)
 
     # ---- events -------------------------------------------------------------------
 

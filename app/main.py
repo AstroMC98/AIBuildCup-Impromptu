@@ -3,6 +3,7 @@
 Pages (all serve the single-page UI)
 GET  /  /discover  /following  /new  /login  /personas  /styles  /connections  /admin  /briefings
 GET  /albums  /stats  /show/{id}  /show/{id}/stats  /album/{id}  /creator/{uid}  /invite/{uid}
+GET  /cohost  /cohost/{id}               co-host live: set up a call, then the call itself
 
 API ("you" = the signed-in user; pods are visible per accounts.can_view)
 GET    /healthz
@@ -35,7 +36,9 @@ GET    /api/me/stats                     your pods' listening at a glance, subsc
 POST   /api/shows/{id}/start             owner: take a draft live (charges credits)
 DELETE /api/shows/{id}                   owner or admin
 POST   /api/shows/{id}/context           signed-in listeners: text|file|link|photo (+ optional call-in)
-GET    /api/shows/{id}/audio             the MP3 (so far, while live)
+GET    /api/shows/{id}/audio             the MP3 (so far, while live); ?raw=1 owner: a co-hosted
+                                         call before it was edited
+POST   /api/cohost {request, visibility, shared_with}   start a call with an AI co-host (credits)
 GET    /api/admin/users?q=               admin
 POST   /api/admin/users/{uid}/credits {amount, note}   admin
 GET    /api/briefings                    your briefings (private, kept 48 h), schedule, templates
@@ -45,6 +48,7 @@ GET|POST /api/briefing-templates  PUT|DELETE /api/briefing-templates/{id}   your
 GET|POST /api/watches  PATCH|DELETE /api/watches/{id}  POST /api/watches/{id}/check
                                          sites to monitor and links to watch, for briefings
 WS     /ws/show/{id}                     one connection per listener of a live pod
+WS     /ws/cohost/{id}                   the owner's phone on a co-host call (protocol: cohost.py)
 
 WebSocket protocol
   close codes: 4401 sign in, 4403 no access, 4404 no such show,
@@ -100,13 +104,16 @@ from . import briefing
 from . import wake as wake_mod
 from . import watch as watch_mod
 from .catalog import (
-    GENDERS, HOST_COLORS, PERSONA_PRESETS, STYLE_PRESETS, TEMPLATES, TEMPLATES_BY_ID, VOICE_GENDER, VOICE_INFO,
-    VOICES, accent_for, style_label,
+    COHOST_MODES, COHOST_MODES_BY_ID, GENDERS, HOST_COLORS, PERSONA_PRESETS, STYLE_PRESETS, TEMPLATES,
+    TEMPLATES_BY_ID, VOICE_GENDER, VOICE_INFO, VOICES, accent_for, style_label,
 )
+from .cohost import FRAME_BYTES, CohostSession, Cohosts, cast_cohost, mic_bucket
 from .config import settings
 from .limits import COMMENT_CHARS, GUEST_CONTEXT, NAME_CHARS, PRODUCER_CONTEXT, WS_MESSAGE_BYTES, Limiter
 from .llm import Gemini
-from .models import AlbumIn, ContextItem, NewShow, Organize, PersonaIn, ShareSettings, ShowRequest, StyleIn
+from .models import (
+    AlbumIn, ContextItem, NewCohost, NewShow, Organize, PersonaIn, ShareSettings, ShowRequest, StyleIn,
+)
 from .room import Conn, Rooms, ShowRoom, style_revisions
 from .sources import IMAGE_EXTENSIONS, SUPPORTED, SourceError
 from .store import InsufficientCredits, make_store
@@ -134,6 +141,7 @@ store = make_store(settings)
 auth = Auth(settings)
 accounts = Accounts(store, settings.admins, settings.signup_credits)
 rooms = Rooms()
+cohosts = Cohosts()
 _gemini: Gemini | None = None
 
 
@@ -159,7 +167,7 @@ async def lifespan(_: FastAPI):
     briefings = asyncio.create_task(_briefing_loop())
     yield
     briefings.cancel()
-    await rooms.shutdown(timeout=6.0)
+    await asyncio.gather(rooms.shutdown(timeout=6.0), cohosts.shutdown(timeout=6.0))
 
 
 app = FastAPI(title="Gemini Podcasts", lifespan=lifespan)
@@ -197,13 +205,19 @@ def _ip(request: Request) -> str:
     return client_ip(request.headers, request.client.host if request.client else None)
 
 
-def _cost(minutes: int) -> int:
-    return max(1, math.ceil(minutes * settings.credits_per_minute))
+def _rate(research: bool = False) -> float:
+    """Credits per minute: Research on (the hosts look things up live) costs more."""
+    return settings.credits_per_minute + (settings.research_credits_per_minute if research else 0.0)
+
+
+def _cost(minutes: int, research: bool = False) -> int:
+    return max(1, math.ceil(minutes * _rate(research)))
 
 
 async def _show_doc(show_id: str) -> tuple[dict, ShowRoom | None]:
     room = rooms.get(show_id)
-    doc = room.doc if room else await store.get_show(show_id)
+    call = cohosts.get(show_id)
+    doc = room.doc if room else call.doc if call else await store.get_show(show_id)
     if not doc:
         raise HTTPException(status_code=404, detail="No such pod.")
     return doc, room
@@ -249,9 +263,12 @@ def _clean_tags(tags: list[str]) -> list[str]:
 def _public_request(req: dict) -> dict:
     """What a pod was asked for, minus anything private: a persona's own notes stay
     with its owner and the writers."""
-    hosts = [{**{k: v for k, v in h.items() if k != "context"}, "has_notes": bool(h.get("context"))}
-             for h in req.get("hosts", [])]
-    return {**req, "hosts": hosts}
+    def public(h: dict) -> dict:
+        return {**{k: v for k, v in h.items() if k != "context"}, "has_notes": bool(h.get("context"))}
+    out = {**req, "hosts": [public(h) for h in req.get("hosts", [])]}
+    if isinstance(req.get("host"), dict):   # a co-hosted call's co-host
+        out["host"] = public(req["host"])
+    return out
 
 
 def _token(value) -> str | None:
@@ -260,15 +277,23 @@ def _token(value) -> str | None:
 
 
 def _fresh(doc: dict) -> dict:
-    """A live pod's room has the up-to-date document."""
-    room = rooms.get(doc["id"])
-    return room.doc if room else doc
+    """A live pod's room (or a call's session) has the up-to-date document."""
+    live = rooms.get(doc["id"]) or cohosts.get(doc["id"])
+    return live.doc if live else doc
+
+
+def _recording(doc: dict) -> bool:
+    """A co-hosted call that isn't an episode yet: only its owner sees it."""
+    return doc.get("kind") == "cohost" and doc.get("status") in {"live", "editing"}
 
 
 async def _visible(user: User | None, docs: list[dict], *, drafts: bool = False) -> list[dict]:
     out = []
     for d in docs:
         d = _fresh(d)
+        mine = user is not None and d.get("owner_uid") == user.uid
+        if _recording(d) and not mine:
+            continue
         if (drafts or d.get("status") != "draft") and await accounts.can_view(user, d):
             out.append(d)
     return out
@@ -349,6 +374,10 @@ def _public_doc(doc: dict) -> dict:
         "kind": doc.get("kind", "pod"),
         "expires_at": doc.get("expires_at"),
         "briefing": doc.get("briefing"),
+        # co-hosted calls: how the editing went, and whether the unedited call is kept
+        "edit": doc.get("edit"),
+        "call_s": doc.get("call_s"),
+        "has_raw_audio": bool(doc.get("raw_audio")),
     }
 
 
@@ -383,7 +412,8 @@ def _start_room(doc: dict, req: ShowRequest, source: str, model: Gemini) -> Show
 
 
 def _check_capacity() -> Gemini:
-    if rooms.live_count() >= settings.max_live_shows:
+    """Live pods and co-host calls share MAX_LIVE_SHOWS: each holds model sessions open."""
+    if rooms.live_count() + cohosts.live_count() >= settings.max_live_shows:
         raise HTTPException(status_code=429, detail="Too many pods are live right now. Try again soon.")
     try:
         return gemini()
@@ -426,6 +456,7 @@ def _index() -> FileResponse:
 @app.get("/albums")
 @app.get("/stats")
 @app.get("/new")
+@app.get("/cohost")
 @app.get("/login")
 @app.get("/personas")
 @app.get("/styles")
@@ -437,6 +468,7 @@ async def page() -> FileResponse:
 
 @app.get("/show/{show_id}")
 @app.get("/show/{show_id}/stats")
+@app.get("/cohost/{show_id}")
 @app.get("/album/{album_id}")
 @app.get("/creator/{uid}")
 @app.get("/invite/{uid}")
@@ -446,7 +478,7 @@ async def page_with_id(show_id: str = "", uid: str = "", album_id: str = "") -> 
 
 @app.get("/healthz")
 async def healthz() -> dict:
-    return {"ok": True, "live_shows": rooms.live_count()}
+    return {"ok": True, "live_shows": rooms.live_count(), "calls": cohosts.live_count()}
 
 
 # ---- accounts --------------------------------------------------------------------
@@ -460,6 +492,8 @@ async def options(request: Request) -> dict:
         "presets": STYLE_PRESETS,
         "templates": TEMPLATES,
         "persona_presets": PERSONA_PRESETS,
+        "cohost_modes": [{k: m[k] for k in ("id", "label", "blurb", "accent")} for m in COHOST_MODES],
+        "cohost_source_chars": settings.cohost_source_chars,
         "host_colors": HOST_COLORS,
         "file_types": SUPPORTED,
         "image_types": IMAGE_EXTENSIONS,
@@ -467,6 +501,8 @@ async def options(request: Request) -> dict:
         "api_key_set": bool(settings.gemini_api_key),
         "models": {"script": settings.script_model, "tts": settings.tts_model},
         "credits_per_minute": settings.credits_per_minute,
+        "research_credits_per_minute": settings.research_credits_per_minute,
+        "research_max_per_show": settings.research_max_per_show,
         "auth": {
             "mode": auth.mode,
             "firebase": {
@@ -1169,7 +1205,7 @@ async def create_show(body: NewShow, request: Request) -> dict:
     _require_origin(request)
     user = await require_user(request)
     req = body.request
-    cost = _cost(req.minutes)
+    cost = _cost(req.minutes, req.research)
     if user.credits < cost:
         raise HTTPException(status_code=402, detail=(
             f"Creating pods uses credits: this one needs {cost} and you have {user.credits}. "
@@ -1183,6 +1219,7 @@ async def create_show(body: NewShow, request: Request) -> dict:
         "id": show_id,
         "owner_uid": user.uid,
         "owner_name": user.name,
+        "credits_per_minute": _rate(req.research),   # what unused minutes are refunded at
         "visibility": body.visibility,
         "shared_with": await _clean_share_list(user, body.shared_with),
         "template": body.template if body.template in TEMPLATES_BY_ID else None,
@@ -1230,6 +1267,89 @@ async def create_show(body: NewShow, request: Request) -> dict:
             "credits": (await accounts.get(user.uid)).credits}  # type: ignore[union-attr]
 
 
+@app.post("/api/cohost")
+async def create_cohost(body: NewCohost, request: Request) -> dict:
+    """Start a call with an AI co-host. The length asked for is charged now; what
+    isn't used comes back when the episode is saved. The phone joins /ws/cohost/{id}."""
+    _require_origin(request)
+    user = await require_user(request)
+    req = body.request
+    cost = _cost(req.minutes)
+    if user.credits < cost:
+        raise HTTPException(status_code=402, detail=(
+            f"Co-hosting uses credits: this call needs {cost} and you have {user.credits}. "
+            "Listening, calling in and connecting are free."
+        ))
+    if cohosts.active_for(user.uid):
+        raise HTTPException(status_code=409, detail="You're already on a call. Hang that one up first.")
+    model = _check_capacity()
+    host = cast_cohost(req.host)
+    you = (req.your_name.strip() or user.name or "You")[:40]
+    if host.name.casefold() == you.casefold():
+        host.name = f"{host.name} 2"[:40]
+    notes = req.notes[: settings.cohost_source_chars]
+    mode = COHOST_MODES_BY_ID[req.mode]
+    label = f"Co-host · {mode['label']}"
+    topic = req.topic.strip()
+    title = topic.splitlines()[0] if topic else "Co-hosted episode"
+    title = title if len(title) <= 60 else title[:59].rstrip() + "…"
+    show_id = secrets.token_urlsafe(9)
+    now = time.time()
+    doc = {
+        "id": show_id,
+        "kind": "cohost",
+        "owner_uid": user.uid,
+        "owner_name": user.name,
+        "visibility": body.visibility,
+        "shared_with": await _clean_share_list(user, body.shared_with),
+        "template": None,
+        "album_ids": [],
+        "tags": [],
+        "status": "live",
+        "ended_reason": None,
+        "created_at": now,
+        "started_at": now,
+        "ended_at": None,
+        # vibe / style_label / accent: what style_revisions() reads for revision 0
+        "request": {**req.model_dump(exclude={"notes"}), "vibe": None, "style_label": label,
+                    "accent": mode["accent"]},
+        "source": {"chars": len(notes), "names": req.notes_names or [title]},
+        "title": title,
+        "tagline": "",
+        "about": "",
+        "accent": mode["accent"],
+        "vibe": None,
+        "style": mode["prompt"],
+        "style_label": label,
+        "style_history": [],
+        "hosts": [
+            {"name": you, "persona": "", "voice": "", "gender": "", "you": True},
+            {"name": host.name, "persona": host.persona, "voice": host.voice, "gender": host.gender},
+        ],
+        "beats": [],
+        "minutes": req.minutes,
+        "language": req.language,
+        "credits_charged": 0,
+        "samples": 0,
+        "duration_s": 0,
+        "audio": None,
+        "counts": {},
+    }
+    await _charge(user, cost, show_id)
+    doc["credits_charged"] = cost
+    try:
+        await store.create_show(doc)
+        await store.put_text(show_id, "source.txt", f"{topic}\n\n{notes}".strip())
+    except Exception:
+        await accounts.adjust_credits(user.uid, cost, reason="refund", show_id=show_id, note="Couldn't start")
+        raise
+    call = CohostSession(doc=doc, request=req, host=host, you=you, notes=notes, gemini=model,
+                         settings=settings, store=store, on_closed=cohosts.remove)
+    cohosts.add(call)
+    return {"id": show_id, "trimmed": len(req.notes) > settings.cohost_source_chars,
+            "credits": (await accounts.get(user.uid)).credits}  # type: ignore[union-attr]
+
+
 @app.get("/api/shows")
 async def list_shows(request: Request, scope: str = "mine") -> dict:
     user = await current_user(request)
@@ -1244,12 +1364,9 @@ async def list_shows(request: Request, scope: str = "mine") -> dict:
         docs = list({d["id"]: d for d in named + by_conns if d.get("owner_uid") != user.uid}.values())
     else:
         docs = _no_briefings(await store.list_shows(owner_uid=user.uid, limit=500))  # those are on /briefings
-    by_id = {d["id"]: d for d in docs}
-    for show_id in rooms.ids():  # live docs are fresher than the stored copies
-        room = rooms.get(show_id)
-        if room and show_id in by_id:
-            by_id[show_id] = room.doc
-    visible = [d for d in by_id.values() if scope == "mine" or d.get("status") != "draft"]
+    by_id = {d["id"]: _fresh(d) for d in docs}   # live docs are fresher than the stored copies
+    visible = [d for d in by_id.values()
+               if scope == "mine" or (d.get("status") != "draft" and not _recording(d))]
     visible.sort(key=lambda d: d.get("created_at", 0), reverse=True)
     return {"shows": [_list_item(d) for d in visible]}
 
@@ -1259,6 +1376,13 @@ async def get_show(show_id: str, request: Request) -> dict:
     doc, room, user = await _viewable(request, show_id)
     role = accounts.role(user, doc)
     share = f"/show/{show_id}"
+    if _recording(doc):
+        call = cohosts.get(show_id)
+        if role != "producer" or call is None:
+            raise HTTPException(status_code=409, detail=(
+                "This episode is still being recorded. Check back in a few minutes."))
+        return {"show": call.public_show(), "live": True, "role": role, "share_url": share,
+                "call": f"/cohost/{show_id}"}
     extras = await _show_extras(doc, user)
     if room and not room.finalized.is_set():
         return {"show": room.public_show(), "live": True, "role": role, "share_url": share, **extras}
@@ -1606,10 +1730,11 @@ async def start_draft(show_id: str, request: Request) -> dict:
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail="This draft can't be started: its source is missing.") from exc
     model = _check_capacity()
-    cost = _cost(req.minutes)
+    cost = _cost(req.minutes, req.research)
     await _charge(user, cost, show_id)
     now = time.time()
-    fields = {"status": "live", "started_at": now, "created_at": now, "credits_charged": cost}
+    fields = {"status": "live", "started_at": now, "created_at": now, "credits_charged": cost,
+              "credits_per_minute": _rate(req.research)}
     doc.update(fields)
     await store.update_show(show_id, fields)
     _start_room(doc, req, source, model)
@@ -1623,6 +1748,13 @@ async def delete_show(show_id: str, request: Request) -> dict:
     doc, room = await _show_doc(show_id)
     if doc.get("owner_uid") != user.uid and not user.admin:
         raise HTTPException(status_code=403, detail="Only the pod's creator can delete it.")
+    call = cohosts.get(show_id)
+    if call and not call.finalized.is_set():
+        call.end_now("deleted")
+        try:
+            await asyncio.wait_for(call.finalized.wait(), timeout=10)
+        except asyncio.TimeoutError:
+            pass
     if room:
         room.end_now("stopped")
         try:
@@ -1709,9 +1841,15 @@ async def transcribe_question(show_id: str, request: Request, audio: UploadFile 
 
 
 @app.get("/api/shows/{show_id}/audio")
-async def show_audio(show_id: str, request: Request, download: bool = False) -> Response:
-    doc, room, _ = await _viewable(request, show_id)
+async def show_audio(show_id: str, request: Request, download: bool = False, raw: bool = False) -> Response:
+    doc, room, user = await _viewable(request, show_id)
     filename = f"{_slug(doc.get('title', ''))}.mp3"
+    if raw:   # a co-hosted call before it was edited, for its owner
+        if user is None:
+            raise HTTPException(status_code=401, detail="Sign in first.")
+        _owner(doc, user)
+        return await store.audio_response(show_id, doc, download, filename.replace(".mp3", "-unedited.mp3"),
+                                          name="raw.mp3")
     if room and not room.finalized.is_set():
         disposition = "attachment" if download else "inline"
         return Response(
@@ -1780,3 +1918,60 @@ async def show_socket(ws: WebSocket, show_id: str) -> None:
         pass
     finally:
         room.leave(conn)
+
+
+@app.websocket("/ws/cohost/{show_id}")
+async def cohost_socket(ws: WebSocket, show_id: str) -> None:
+    """The owner's phone on a co-host call. Close codes as /ws/show, plus 4410: the
+    call was picked up on another connection (a newer tab or a reconnect)."""
+    await ws.accept()
+    if not same_origin(ws.headers):
+        return await ws.close(4403)
+    call = cohosts.get(show_id)
+    if call is None or call.finalized.is_set():
+        exists = await store.get_show(show_id)
+        return await ws.close(4409 if exists else 4404)
+    user = await current_user(ws)
+    if user is None:
+        return await ws.close(4401)
+    if user.uid != call.doc.get("owner_uid"):
+        return await ws.close(4403)
+    try:
+        first = json.loads(await asyncio.wait_for(ws.receive_text(), timeout=10))
+    except (asyncio.TimeoutError, WebSocketDisconnect, ValueError, KeyError, RuntimeError):
+        return
+    if not isinstance(first, dict) or first.get("type") != "join":
+        return await ws.close(4400)
+
+    ip = client_ip(ws.headers, ws.client.host if ws.client else None)
+    conn = Conn(ws, "producer", user.name, ip, uid=user.uid)
+    mic = mic_bucket()
+    call.attach(conn)
+    try:
+        while True:
+            message = await ws.receive()
+            if message["type"] == "websocket.disconnect":
+                break
+            data = message.get("bytes")
+            if data is not None:
+                if len(data) > FRAME_BYTES or not mic.take(len(data)):
+                    conn.close(4429)
+                    break
+                await call.on_audio(conn, data)
+                continue
+            raw = message.get("text")
+            if raw is None or len(raw) > WS_MESSAGE_BYTES:
+                continue
+            if not conn.messages.take():
+                conn.close(4429)
+                break
+            try:
+                msg = json.loads(raw)
+            except ValueError:
+                continue
+            if isinstance(msg, dict):
+                call.handle(conn, msg)
+    except (WebSocketDisconnect, RuntimeError):
+        pass
+    finally:
+        call.detach(conn)

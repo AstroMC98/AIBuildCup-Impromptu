@@ -55,6 +55,8 @@ class Settings(BaseSettings):
     # ---- credits --------------------------------------------------------------
     # Pods cost credits to create; listening, calling in and connecting are free.
     credits_per_minute: float = 1.0
+    # Extra per minute for a pod with Research on (the hosts look things up live).
+    research_credits_per_minute: float = 0.5
     # Credits every new account starts with. 0 = new accounts are free accounts.
     signup_credits: int = 0
 
@@ -95,6 +97,28 @@ class Settings(BaseSettings):
     max_conns_per_ip: int = 5
     max_show_hours: float = 3.0
     mp3_kbps: int = 48
+
+    # ---- research (pods with Research on; see show.py) ---------------------------
+    # Google Search lookups per pod: for call-ins the source can't answer, and for
+    # chapters the planner found thin. One per call-in.
+    research_max_per_show: int = 6
+    research_max_beats: int = 3          # of those, at most this many for chapters
+    # A lookup taking longer is abandoned; the hosts answer with what they know.
+    research_timeout_seconds: float = 30.0
+
+    # ---- co-hosting (you talk live with an AI co-host; see cohost.py) ----------
+    # A Gemini Live native-audio model: speech in, speech out, with barge-in.
+    cohost_model: str = "gemini-3.1-flash-live-preview"
+    # How long you pause before the co-host answers. Lower is snappier but
+    # interrupts slow talkers mid-thought.
+    cohost_silence_ms: int = 500
+    # A call whose phone drops off is saved as an episode after this long.
+    cohost_reconnect_seconds: float = 30.0
+    # Your notes for the co-host, trimmed to this many characters.
+    cohost_source_chars: int = 20_000
+    # Hang-up to saved episode: past this, the editor's notes are skipped and the
+    # episode is saved with the mechanical edits only.
+    cohost_edit_timeout_seconds: float = 40.0
 
     @property
     def admins(self) -> set[str]:

@@ -2,7 +2,7 @@
 // left, the 16:9 live player in the middle, call-ins / context / rundown on the right.
 import {
   callins, callinsKey, captions, captionsKey, chapterBar, chapterBarKey, chapterLabel, chapters, chaptersKey,
-  contextList, hostAvatars, liveBadge, liveBadgeKey,
+  contextKey, contextList, hostAvatars, liveBadge, liveBadgeKey,
 } from "../components.js";
 import { html, renderSpoken, setHtml } from "../html.js";
 import { icon, VISIBILITY_LABEL } from "../icons.js";
@@ -12,13 +12,17 @@ import { bindSubscribe, creatorBar, creatorBarKey } from "../social.js";
 import { Regions, bindActions } from "../ui.js";
 import { fmtTime, store as local } from "../util.js";
 import { appHeader, bindHeader, mountLibraryList } from "./library.js";
-import { bindCallin, callinForm, floatHearts, focusCallin, showActions, tuneInOverlay } from "./shared.js";
+import {
+  bindCallin, bindSeekBar, callinForm, floatHearts, focusCallin, showActions, tuneInOverlay,
+} from "./shared.js";
 
 const TABS = [["callins", "Call-ins"], ["context", "Context"], ["rundown", "Rundown"], ["transcript", "Transcript"]];
 
 export function mountStudio(root, ctl) {
   const s = ctl.store;
-  let tab = "callins";
+  const cohosted = s.show.kind === "cohost";   // a recorded call: nobody called in
+  const tabs = cohosted ? TABS.filter(([id]) => id !== "callins") : TABS;
+  let tab = tabs[0][0];
   let captionsOn = local.get("gp_captions", true);
   let muted = false;
 
@@ -86,14 +90,16 @@ export function mountStudio(root, ctl) {
       </main>
       <aside class="live-panel" aria-label="Live panel">
         <div class="tabs" role="tablist" aria-label="Live panel">
-          ${TABS.map(([id, label]) => html`<button role="tab" type="button" class="tab" data-tab="${id}" aria-selected="${id === tab}">${label}</button>`)}
+          ${tabs.map(([id, label]) => html`<button role="tab" type="button" class="tab" data-tab="${id}" aria-selected="${id === tab}">${label}</button>`)}
         </div>
         <div class="lp-body" data-r="panel" role="tabpanel"></div>
         ${ctl.live ? html`
           <div class="lp-foot">
             ${callinForm(ctl, { id: "d-callin", variant: "panel" })}
             <p class="faint small">The hosts read call-ins on air. Tap + to attach a file, link or photo and they'll use it too.</p>
-          </div>` : html`<div class="lp-foot"><p class="faint small">This pod has ended. Call-ins are shown as they aired.</p></div>`}
+          </div>` : html`<div class="lp-foot"><p class="faint small">${cohosted
+            ? "Recorded live with an AI co-host, then edited into this episode."
+            : "This pod has ended. Call-ins are shown as they aired."}</p></div>`}
       </aside>
     </div>`);
   root.append(el);
@@ -121,6 +127,7 @@ export function mountStudio(root, ctl) {
     },
   }));
   bindCallin(el, ctl);
+  const offSeek = bindSeekBar(r.el("chapters"), ctl);
   el.querySelector(".tabs").addEventListener("click", (e) => {
     const t = e.target.closest("[data-tab]");
     if (!t) return;
@@ -140,7 +147,8 @@ export function mountStudio(root, ctl) {
       <p class="t-line"><span class="t-who">${l.line.speaker}</span>${renderSpoken(l.line.text, s.hostIndex(l.line.speaker) ? 0 : 1)}</p>`)}</div>`;
   };
   const panelKey = (pos) => {
-    if (tab === "callins" || tab === "context") return `${tab}|${callinsKey(s, pos)}`;
+    if (tab === "callins") return `${tab}|${callinsKey(s, pos)}`;
+    if (tab === "context") return `${tab}|${contextKey(s, pos)}`;
     if (tab === "rundown") return `${tab}|${chaptersKey(s, pos)}`;
     const at = s.lineAt(pos);
     return `${tab}|${s.version}|${at ? at.seg.seq + ":" + at.idx : "-"}`;
@@ -176,7 +184,7 @@ export function mountStudio(root, ctl) {
         ? html`<button class="behind-pill" type="button" data-action="jump-live">${icon("jumpLive", 16)}Back to live</button>` : "");
       r.set("panel", panelKey(pos), () => panel(pos));
       r.set("chaptercards", chaptersKey(s, pos), () => chapters(s, pos));
-      r.set("contextgrid", callinsKey(s, pos), () => contextList(s, pos, { variant: "tile" }));
+      r.set("contextgrid", contextKey(s, pos), () => contextList(s, pos, { variant: "tile" }));
     },
     onEvent(e) {
       r.set("title", s.show.title, () => s.show.title || "Getting the studio ready");
@@ -200,6 +208,7 @@ export function mountStudio(root, ctl) {
       offActions();
       offHead();
       offSub();
+      offSeek();
       lib?.destroy();
       el.remove();
     },

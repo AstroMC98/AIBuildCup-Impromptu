@@ -47,6 +47,9 @@ class ShowRequest(BaseModel):
     source_names: list[str] = Field(default_factory=list, max_length=20)
     # A fixed run of show. Empty: the planner chooses the beats.
     outline: list[OutlineBeat] = Field(default_factory=list, max_length=8)
+    # Research: the hosts look things up (Google Search) when a call-in or a chapter
+    # needs facts the source doesn't have. Costs extra credits.
+    research: bool = False
 
     @field_validator("language")
     @classmethod
@@ -120,6 +123,7 @@ class Beat(BaseModel):
     title: str
     notes: str
     minutes: float = 0.0     # planned length; drives pacing and the chapter bar
+    research: str = ""       # with Research on: a search for what the source lacks here
 
 
 class ShowPlan(BaseModel):
@@ -161,17 +165,24 @@ class Line(BaseModel):
     style: str = ""
 
 
+class ResearchRequest(BaseModel):
+    comment_id: int
+    query: str
+
+
 class SegmentDraft(BaseModel):
     lines: list[Line]
-    addressed_comment_ids: list[int] = []
+    addressed_comment_ids: list[int] = []    # call-ins this segment actually answers
+    deferred_comment_ids: list[int] = []     # acknowledged on air, answered later
     used_context_ids: list[int] = []
     declined_comment_ids: list[int] = []
+    research_requests: list[ResearchRequest] = []
     beat_complete: bool = False
 
 
 # ---- Material handed to the hosts mid-show ----------------------------------
 
-ContextKind = Literal["text", "file", "link", "photo"]
+ContextKind = Literal["text", "file", "link", "photo", "research"]
 ContextWhen = Literal["now", "next", "background"]
 
 
@@ -191,6 +202,12 @@ class ContextItem(BaseModel):
     status: Literal["pending", "background", "used", "dropped"] = "pending"
     used_seq: int | None = None
     comment_id: int | None = None
+    # research: the chapter it was looked up for (it waits for that chapter), and
+    # what it rests on. Search suggestions are Google's chips, shown with the result.
+    for_beat: int | None = None
+    sources: list[dict] = []          # {title, url, domain}
+    queries: list[str] = []
+    search_suggestions: list[str] = []
 
     def public(self) -> dict:
         data = self.model_dump(exclude={"text"})
@@ -215,6 +232,8 @@ class ListenerComment(BaseModel):
     name: str
     text: str
     attachment: ContextBrief | None = None
+    research: ContextBrief | None = None     # what the research desk found for it
+    research_failed: bool = False            # it looked, and came back empty
 
 
 class SegmentContext(BaseModel):
@@ -225,6 +244,9 @@ class SegmentContext(BaseModel):
     elapsed_minutes: float
     target_minutes: int
     comments: list[ListenerComment]
+    promised: list[ListenerComment] = []     # call-ins the hosts said they'd come back to
+    research_on: bool = False                # the pod has Research on
+    research_left: int = 0                   # lookups still allowed
     must_end: bool
     lines_wanted: int
     words_wanted: int = 0               # the segment's length budget; 0 = lines only
@@ -236,3 +258,47 @@ class SegmentContext(BaseModel):
     planned_minutes_left: float = 0.0   # what the plan gives those beats
     interjection: InterruptNote | None = None   # answer this interruption now
     bridge: InterruptNote | None = None         # an interruption was just answered: pick the thread back up
+
+
+# ---- Co-hosting: you talk live with an AI co-host (see cohost.py) ------------
+
+CohostMode = Literal["banter", "interview", "debate"]
+
+
+class CohostRequest(BaseModel):
+    host: HostRequest                     # the AI co-host, usually one of your personas
+    mode: CohostMode = "banter"
+    topic: str = Field(min_length=1, max_length=2_000)
+    # Material for the co-host to draw on; trimmed to settings.cohost_source_chars.
+    notes: str = Field(default="", max_length=400_000)
+    notes_names: list[str] = Field(default_factory=list, max_length=20)
+    your_name: str = Field(default="", max_length=40)   # blank = your account name
+    minutes: Literal[5, 10, 15] = 10
+    language: str = Field(default="English", max_length=60)
+
+    @field_validator("language")
+    @classmethod
+    def _default_language(cls, v: str) -> str:
+        return v.strip() or "English"
+
+
+class NewCohost(BaseModel):
+    request: CohostRequest
+    visibility: Visibility = "private"
+    shared_with: list[str] = Field(default_factory=list, max_length=200)
+
+
+class EditChapter(BaseModel):
+    title: str
+    notes: str = ""
+    start_turn: int = 0
+
+
+class EditPlan(BaseModel):
+    """The editor's notes on a recorded call: what to call it, and what to cut."""
+    title: str
+    tagline: str = ""
+    about: str = ""
+    chapters: list[EditChapter] = []
+    cut_phrases: list[int] = []   # your phrases to cut (false starts, mic checks, ...)
+    drop_turns: list[int] = []    # co-host turns that only answered something cut

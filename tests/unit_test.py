@@ -11,10 +11,14 @@ import tempfile
 import traceback
 
 import httpx
+import numpy as np
 
 os.environ.setdefault("DATA_DIR", tempfile.mkdtemp(prefix="podcasts-unit-"))
 
+from app import editing as ed  # noqa: E402
 from app import prompts, sources  # noqa: E402
+from app.catalog import VOICE_GENDER  # noqa: E402
+from app.cohost import cast_cohost  # noqa: E402
 from app.accounts import Accounts  # noqa: E402
 from app.audio import Mp3Writer, PcmWindow  # noqa: E402
 from app.auth import Auth, AuthError  # noqa: E402
@@ -22,9 +26,11 @@ from app.store import InsufficientCredits  # noqa: E402
 from app.clock import LiveClock  # noqa: E402
 from app.config import Settings  # noqa: E402
 from app.limits import TokenBucket  # noqa: E402
+from app.llm import Lookup  # noqa: E402
 from app.models import (  # noqa: E402
-    Beat, ContextItem, Host, Line, SegmentDraft, ShowPlan, ShowRequest,
+    Beat, CohostRequest, ContextItem, Host, HostRequest, Line, ResearchRequest, SegmentDraft, ShowPlan, ShowRequest,
 )
+from app.room import refund_unused  # noqa: E402
 from app.show import Draft, ShowRunner  # noqa: E402
 from app.sources import SourceError, sniff_image  # noqa: E402
 from app.store.local import LocalStore  # noqa: E402
@@ -374,8 +380,8 @@ class StubRoom:
         self.clock.live = min(self.clock.live, float(at))
 
 
-def _runner() -> ShowRunner:
-    req = ShowRequest(source="x", style="calm", hosts=[{"name": "A"}], minutes=4)
+def _runner(research: bool = False) -> ShowRunner:
+    req = ShowRequest(source="x", style="calm", hosts=[{"name": "A"}], minutes=4, research=research)
     runner = ShowRunner(req, "x", gemini=None, settings=Settings(), room=StubRoom())
     runner.plan = ShowPlan(
         title="T", tagline="t", hosts=[Host(name="A", persona="", voice="Kore")],
@@ -412,6 +418,165 @@ async def _():
     r.request_end()
     assert r._is_stale(d)
     assert _draft(r).must_end
+
+
+# ---- call-ins the hosts promise to come back to, and research -------------------------
+
+def _seg(text: str, **kw) -> SegmentDraft:
+    return SegmentDraft(lines=[Line(speaker="A", text=text)], **kw)
+
+
+class ResearchDesk:
+    """Stands in for Gemini.research: answers, fails, or hangs."""
+
+    def __init__(self, mode: str = "ok"):
+        self.mode, self.asked = mode, []
+
+    async def research(self, question, *, show, asked_by="", language="English"):
+        self.asked.append(question)
+        if self.mode == "fail":
+            raise RuntimeError("search is down")
+        if self.mode == "hang":
+            await asyncio.sleep(3600)
+        return Lookup(text="Zion Williamson averaged 24 points.", queries=[question],
+                      sources=[{"title": "ESPN", "url": "https://espn.com/z", "domain": "espn.com"}],
+                      suggestions=['<div class="chips">zion</div>'])
+
+
+@check("call-ins: one the hosts promise to come back to stays owed until they answer it")
+def _():
+    r = _runner()
+    c, _ = r.add_comment("Marc Castro", "How about Zion Williams?", "producer")
+    d = _draft(r, segment=_seg("Ooh, Marc asks about Zion. Hold that thought!", deferred_comment_ids=[c.id]))
+    r._commit(d)
+    assert c.status == "promised" and c.promised_seq == d.seq and d.promised == [c.id]
+    ctx, offered, _, _ = r._context()
+    assert [p.id for p in ctx.promised] == [c.id] and c.id in offered and not ctx.comments
+    assert "CALL-INS YOU PROMISED TO COME BACK TO" in prompts.writer_input(ctx, r.plan)
+    d2 = _draft(r, segment=_seg("Back to Marc: Zion is a top-30 pick.", addressed_comment_ids=[c.id]))
+    r._commit(d2)
+    assert c.status == "on_deck" and c.seq == d2.seq and c.promised_seq == d.seq
+    assert not r._context()[0].promised
+
+
+@check("call-ins: marked answered while the hosts say they'll get to it later, it stays owed")
+def _():
+    r = _runner()
+    c, _ = r.add_comment("Marc Castro", "How about Zion Williams?", "producer")
+    said = _draft(r, segment=SegmentDraft(lines=[
+        Line(speaker="A", text="Oh wait, Marc Castro commented: How about Zion Williams?"),
+        Line(speaker="A", text="Marc, darling, we'll get to his frontcourt mess in a second!"),
+    ], addressed_comment_ids=[c.id]))
+    r._commit(said)                                   # the Fantasy Hoops pod, segment 6
+    assert c.status == "promised" and said.addressed == []
+    c2, _ = r.add_comment("Jo", "Is Maxey overrated?", "guest")
+    r._commit(_draft(r, segment=_seg("Jo, Maxey is overrated at his ADP, period.", addressed_comment_ids=[c2.id])))
+    assert c2.status == "on_deck"                     # a real answer is just answered
+
+
+@check("call-ins: whatever's still owed is offered to the sign-off, then marked missed if skipped")
+async def _():
+    r = _runner(research=True)
+    r.gemini = ResearchDesk("hang")
+    c, _ = r.add_comment("Jo", "Stats on Zion?", "guest")
+    r._commit(_draft(r, segment=_seg("Looking it up!", research_requests=[ResearchRequest(comment_id=c.id, query="zion")])))
+    assert c.research == "pending" and not r._context()[0].promised      # waits for its lookup
+    r.request_end()
+    ctx = r._context()[0]
+    assert ctx.must_end and [p.id for p in ctx.promised] == [c.id] and ctx.promised[0].research_failed
+    assert "Answer the promised call-ins below before signing off" in prompts.writer_input(ctx, r.plan)
+    for t in r._research_tasks:
+        t.cancel()
+
+
+@check("research: a call-in's lookup runs in the background and comes back as cited context")
+async def _():
+    r = _runner(research=True)
+    r.gemini = desk = ResearchDesk()
+    c, _ = r.add_comment("Marc Castro", "How about Zion Williams?", "producer")
+    assert r._context()[0].research_left == Settings().research_max_per_show
+    d = _draft(r, segment=_seg("Marc! Let me pull up Zion's numbers.",
+                               research_requests=[ResearchRequest(comment_id=c.id, query="Zion Williamson 2026-27 fantasy")]))
+    r._commit(d)
+    assert c.status == "promised" and c.research == "pending"
+    meanwhile = _draft(r)                              # written while the lookup runs
+    await asyncio.gather(*list(r._research_tasks))
+    x = r.context[c.research_id]
+    assert c.research == "ready" and x.kind == "research" and x.comment_id == c.id and x.cite
+    assert x.sources[0]["domain"] == "espn.com" and x.search_suggestions and desk.asked == ["Zion Williamson 2026-27 fantasy"]
+    assert r._is_stale(meanwhile)                      # the answer goes in now, not a segment later
+    ctx = r._context()[0]
+    assert ctx.promised[0].research.id == x.id and ctx.research_left == Settings().research_max_per_show - 1
+    assert "research came back" in prompts.writer_input(ctx, r.plan)
+    assert "research the show looked up; sources: espn.com" in prompts.format_context([x])
+    answer = _draft(r, segment=_seg("Marc, ESPN has Zion at 24 a night.", addressed_comment_ids=[c.id]))
+    r._commit(answer)
+    assert c.status == "on_deck" and x.status == "used" and x.used_seq == answer.seq
+
+
+@check("research: a lookup that fails lets the hosts answer from what they know")
+async def _():
+    r = _runner(research=True)
+    r.gemini = ResearchDesk("fail")
+    c, _ = r.add_comment("Jo", "Latest injury news?", "guest")
+    r._commit(_draft(r, segment=_seg("Checking!", research_requests=[ResearchRequest(comment_id=c.id, query="injury")])))
+    await asyncio.gather(*list(r._research_tasks))
+    assert c.research == "failed" and r._context()[0].promised[0].research_failed
+    assert "came back empty" in prompts.writer_input(r._context()[0], r.plan)
+
+
+@check("research: off, nothing is looked up, and the schemas don't offer it")
+def _():
+    r = _runner(research=False)
+    c, _ = r.add_comment("Jo", "Stats?", "guest")
+    r._commit(_draft(r, segment=_seg("Let me check!", research_requests=[ResearchRequest(comment_id=c.id, query="stats")])))
+    assert c.status == "promised" and c.research == "failed" and not r._research_tasks
+    assert r._context()[0].research_left == 0 and not r._context()[0].research_on
+    assert "research_requests" not in prompts.segment_schema(["A"], 5)["properties"]
+    assert "research_requests" in prompts.segment_schema(["A"], 5, research=True)["properties"]
+    assert "deferred_comment_ids" in prompts.segment_schema(["A"], 5)["properties"]
+    assert "research" not in prompts.plan_schema(1)["properties"]["beats"]["items"]["properties"]
+    assert "research" in prompts.plan_schema(1, research=True)["properties"]["beats"]["items"]["properties"]
+    on = ShowRequest(source="x", style="s", hosts=[{"name": "A"}], research=True)
+    assert "RESEARCH IS ON" in prompts.planner_system(on, "x", 3) and "RESEARCH IS ON" not in prompts.planner_system(r.req, "x", 3)
+
+
+@check("research: thin chapters are looked up ahead (not the first), capped, and wait for their chapter")
+async def _():
+    r = _runner(research=True)
+    r.gemini = ResearchDesk()
+    for i, b in enumerate(r.plan.beats):
+        b.research = f"query {i}"
+    r._research_thin_beats()
+    await asyncio.gather(*list(r._research_tasks))
+    found = sorted(r.context.values(), key=lambda x: x.for_beat)
+    assert [x.for_beat for x in found] == [1, 2, 3][:Settings().research_max_beats]
+    one = found[0]
+    assert r._due_context() == ([], [])              # beat 0: nothing for chapter 2 yet
+    r.beat = 1
+    assert one in r._due_context()[1]               # its chapter: work it in
+    r.beat = 2
+    assert one in r._due_context()[0]               # past it: bring it in now
+    r2 = _runner(research=True)
+    r2.gemini = ResearchDesk("hang")
+    r2._lookups = Settings().research_max_per_show
+    c, _ = r2.add_comment("Jo", "Q", "guest")
+    r2._commit(_draft(r2, segment=_seg("Hmm!", research_requests=[ResearchRequest(comment_id=c.id, query="q")])))
+    assert c.research == "failed" and not r2._research_tasks    # over the cap: no lookup
+
+
+@check("credits: a pod with Research on is refunded at the rate it paid")
+async def _():
+    calls = []
+
+    class Store:
+        async def adjust_credits(self, uid, amount, **kw):
+            calls.append(amount)
+
+    doc = {"id": "p", "owner_uid": "u", "credits_charged": 8, "credits_per_minute": 1.5}
+    assert await refund_unused(Store(), Settings(), doc, 120.0) == 8 - 3   # 2 minutes at 1.5
+    assert await refund_unused(Store(), Settings(), {**doc, "credits_per_minute": None}, 120.0) == 8 - 2
+    assert calls == [5, 6]
 
 
 @check("cold open follows renamed hosts; an unknown speaker drops it")
@@ -705,6 +870,256 @@ def _():
     s = prompts.writer_system(r.req, r.plan, "SOURCE TEXT", "THE STYLE", items)
     assert s.index("SOURCE TEXT") < s.index("TREE") < s.rindex("THE STYLE")
     assert "background: use silently" in s and s.rstrip().endswith("THE STYLE")
+
+
+# ---- co-hosting: recording a call and editing it into an episode ----------------------
+
+R, M = ed.RATE, ed.MIC_RATE
+
+
+def _tone(seconds: float, rate: int, amp: float = 0.3, f: float = 220.0) -> bytes:
+    t = np.arange(int(seconds * rate)) / rate
+    return ed.float_to_pcm((amp * np.sin(2 * np.pi * f * t)).astype(np.float32))
+
+
+def _quiet(seconds: float, rate: int) -> bytes:
+    return b"\x00\x00" * int(seconds * rate)
+
+
+def _conversation() -> ed.Take:
+    """You talk (1 s), the co-host answers (2 s) while you listen, you talk again (1 s)."""
+    take = ed.Take()
+    take.add_mic(_tone(1, M) + _quiet(1, M))
+    take.add_ai_audio(_tone(2, R, f=330))
+    take.add_ai_text("Great point. Tell me more!")
+    take.finish_turn()
+    take.add_mic(_quiet(2, M) + _tone(1, M) + _quiet(1, M))
+    return take
+
+
+@check("co-host: the mic is upsampled to 24 kHz without changing its length in time")
+def _():
+    x = ed.upsample_mic(np.zeros(M, np.float32))
+    assert len(x) == R
+    assert len(ed.upsample_mic(np.zeros(0, np.float32))) == 0
+
+
+@check("co-host: speech spans find talk between silences")
+def _():
+    x = ed.pcm_to_float(_quiet(1, R) + _tone(2, R) + _quiet(1, R))
+    spans = ed.speech_spans(x, -50.0)
+    assert len(spans) == 1
+    s, e = spans[0]
+    assert abs(s - R) <= ed.FRAME and abs(e - 3 * R) <= ed.FRAME
+
+
+@check("co-host: a take places each answer where it started playing, back to back")
+def _():
+    take = ed.Take()
+    take.add_mic(_quiet(2, M))
+    turn, pcm = take.add_ai_audio(_tone(1, R) + b"\x01")        # odd byte carried over
+    assert turn.start == 2 * R and len(pcm) == 2 * R
+    take.add_mic(_quiet(0.5, M))
+    turn2, _ = take.add_ai_audio(b"\x02" + _tone(1, R))
+    assert turn2 is turn and turn.end == 4 * R + 1                # one turn, no gap (+ the joined byte pair)
+    take.finish_turn()
+    nxt, _ = take.add_ai_audio(_tone(1, R))                       # the last one is still playing
+    assert nxt.id == 2 and nxt.start == turn.end
+
+
+@check("co-host: cutting in ends the answer where you did, even after it was all sent")
+def _():
+    take = ed.Take()
+    take.add_mic(_quiet(1, M))
+    take.add_ai_audio(_tone(3, R))
+    take.finish_turn()                                            # the model already finished sending
+    take.add_mic(_quiet(1, M))
+    cut = take.interrupt()
+    assert cut is not None and cut.cut_at == 2 * R and cut.samples == R and cut.end == 2 * R
+    take.add_mic(_quiet(5, M))
+    assert take.interrupt() is None                               # nothing playing any more
+
+
+@check("co-host: late words of a finished answer stay with it")
+def _():
+    take = ed.Take()
+    take.add_ai_audio(_tone(2, R))
+    take.add_ai_text("Hello ")
+    take.finish_turn()
+    take.add_ai_text("there.")
+    assert len(take.turns) == 1 and take.turns[0].text == "Hello there."
+
+
+@check("co-host: an answer cut off in its first 1.5 s is dropped")
+def _():
+    take = ed.Take()
+    take.add_mic(_quiet(1, M))
+    take.add_ai_audio(_tone(3, R))
+    take.add_mic(_tone(1, M))                                     # you cut in after 1 s
+    take.interrupt()
+    take.add_mic(_tone(1, M) + _quiet(0.5, M))
+    edit = ed.build_edit(take)
+    assert edit.dropped_cut_offs == 1
+    assert [t.you for t in edit.turns] == [True]
+
+
+@check("co-host: segments alternate speakers, sit back to back, and the chimes bracket them")
+def _():
+    edit = ed.build_edit(_conversation())
+    assert [t.you for t in edit.turns] == [True, False, True]
+    ep = ed.assemble(edit, ed.fallback_plan("Test"), "Marc", "Nova")
+    segs = ep.segments
+    assert [s["lines"][0]["speaker"] if s["lines"] else None for s in segs] == [None, "Nova", None]
+    assert segs[0]["start"] == len(ed.sting()) + len(ed.silence(0.35))
+    for a, b in zip(segs, segs[1:]):
+        assert b["start"] == a["start"] + a["samples"] + len(ed.silence(ed.TURN_GAP_S))
+    assert ep.samples == segs[-1]["start"] + segs[-1]["samples"] + len(ed.silence(0.5)) + len(ed.sting())
+    assert segs[-1]["final"] and not segs[0]["final"]
+    assert ep.beats[0]["start"] == 0 and ep.beats[-1]["end"] == ep.samples
+    assert ep.stats["call_s"] == 6.0 and ep.stats["tightened_s"] > 0
+
+
+@check("co-host: dead air is trimmed and long pauses inside a turn tightened")
+def _():
+    take = ed.Take()
+    take.add_mic(_quiet(2, M) + _tone(1.5, M) + _quiet(3, M) + _tone(1, M) + _quiet(2, M))
+    edit = ed.build_edit(take)
+    assert len(edit.turns) == 1 and len(edit.turns[0].phrases) == 2
+    seg = ed.assemble(edit, ed.fallback_plan("T"), "Marc", "Nova").segments[0]
+    pads = ed.PAD_BEFORE_S + ed.PAD_AFTER_S
+    assert seg["samples"] <= (1.5 + 1 + ed.TIGHT_PAUSE_S + 2 * pads + 0.05) * R
+    assert seg["samples"] >= (1.5 + 1 + ed.TIGHT_PAUSE_S) * R
+
+
+@check("co-host: the editor's cuts and dropped answers are applied")
+def _():
+    take = ed.Take()
+    take.add_mic(_tone(0.8, M) + _quiet(0.6, M))                 # "can you hear me?"
+    take.add_heard("Can you hear me?")
+    take.add_mic(_tone(1.5, M) + _quiet(1, M))
+    take.add_heard("So, sourdough.")
+    take.add_ai_audio(_tone(1, R, f=330))
+    take.add_ai_text("Loud and clear!")
+    take.finish_turn()
+    take.add_mic(_quiet(1, M) + _tone(1, M) + _quiet(1, M))
+    edit = ed.build_edit(take)
+    you = edit.turns[0]
+    assert len(you.phrases) == 2 and you.phrases[0].text == "Can you hear me?"
+    host_turn = edit.turns[1]
+    plan = ed.EditPlan(title="Bread", cut_phrases=[you.phrases[0].id], drop_turns=[host_turn.id],
+                       chapters=[ed.EditChapter(title="Intro", start_turn=0),
+                                 ed.EditChapter(title="More", start_turn=2)])
+    ep = ed.assemble(edit, plan, "Marc", "Nova")
+    assert ep.stats["flubs_cut"] == 1 and ep.stats["turns_dropped"] == 1
+    assert len(ep.segments) == 2 and ep.segments[0]["lines"][0]["text"] == "So, sourdough."
+    assert [b["title"] for b in ep.beats] == ["Intro", "More"]
+    assert ep.beats[1]["start"] == ep.segments[1]["start"] and ep.segments[1]["beat"] == 1
+
+
+@check("co-host: an answer you cut into stays in the episode, even if the editor drops it")
+def _():
+    take = ed.Take()
+    take.add_mic(_quiet(1, M))
+    take.add_ai_audio(_tone(3, R, f=330))
+    take.add_ai_text("Well, the thing about starters is")
+    take.add_mic(_quiet(1.6, M) + _tone(0.4, M))
+    take.interrupt()                                  # you cut in 2 s into its answer
+    take.add_mic(_tone(1, M) + _quiet(1, M))
+    edit = ed.build_edit(take)
+    ai = next(t for t in edit.turns if not t.you)
+    assert ai.cut_off
+    ep = ed.assemble(edit, ed.EditPlan(title="T", drop_turns=[ai.id]), "Marc", "Nova")
+    assert any(ln["speaker"] == "Nova" for s in ep.segments for ln in s["lines"]) and ep.stats["turns_dropped"] == 0
+
+
+@check("co-host: a cut only lands where the phrase's words fit its audio")
+def _():
+    assert not ed._fits(ed.Phrase(0, 0, int(0.4 * R), "All right, that's fair. Last"))  # a blip: misplaced text
+    assert ed._fits(ed.Phrase(0, 0, int(2.3 * R), "So, sourdough is great."))
+    assert ed._fits(ed.Phrase(0, 0, int(1.3 * R), "Um"))                                 # a drawn-out filler
+    assert not ed._fits(ed.Phrase(0, 0, int(8 * R), "Um"))                               # 8 s of speech isn't "um"
+
+
+@check("co-host: each turn is levelled to the same loudness")
+def _():
+    take = ed.Take()
+    take.add_mic(_tone(2, M, amp=0.05) + _quiet(1, M))
+    take.add_ai_audio(_tone(2, R, amp=0.5))
+    take.finish_turn()
+    take.add_mic(_quiet(3, M))
+    ep = ed.assemble(ed.build_edit(take), ed.fallback_plan("T"), "Marc", "Nova")
+    x = ed.pcm_to_float(ep.pcm)
+    for seg in ep.segments:
+        mid = x[seg["start"] + int(0.3 * R): seg["start"] + seg["samples"] - int(0.3 * R)]
+        db = 20 * math.log10(float(np.sqrt(np.mean(mid.astype(np.float64) ** 2))))
+        assert abs(db - ed.TARGET_DBFS) < 1.0, db
+
+
+@check("co-host: the live transcript is shared out across the phrases it covers")
+def _():
+    turns = [ed.Turn(id=0, you=True, phrases=[ed.Phrase(0, 0, R), ed.Phrase(1, int(1.5 * R), int(2.5 * R))])]
+    ed._attach_transcript(turns, [(int(0.6 * R), "Hi"), (int(0.9 * R), "there."),
+                                  (3 * R, "one two three four")])
+    p0, p1 = turns[0].phrases
+    assert p0.text == "Hi there." and p1.text == "one two three four"
+    turns = [ed.Turn(id=0, you=True, phrases=[ed.Phrase(0, 0, R), ed.Phrase(1, int(1.5 * R), int(2.5 * R))])]
+    ed._attach_transcript(turns, [(3 * R, "one two three four")])  # all at once, after both
+    p0, p1 = turns[0].phrases
+    assert p0.text == "one two" and p1.text == "three four"
+
+
+@check("co-host: mode switches tint the segments said after them")
+def _():
+    edit = ed.build_edit(_conversation())
+    ep = ed.assemble(edit, ed.fallback_plan("T"), "Marc", "Nova", revs=[(int(3.5 * R), 1)])
+    assert [s["style_rev"] for s in ep.segments] == [0, 0, 1]
+
+
+@check("co-host: the unedited mix has both sides where they happened")
+def _():
+    take = _conversation()
+    x = ed.pcm_to_float(ed.raw_mix(take))
+    assert len(x) == take.length == 6 * R
+    assert np.abs(x[int(2.5 * R):int(3.5 * R)]).max() > 0.2           # the co-host
+    assert np.abs(x[int(5.2 * R):]).max() == 0
+
+
+@check("co-host: nothing said means no episode")
+def _():
+    take = ed.Take()
+    take.add_mic(_quiet(3, M))
+    edit = ed.build_edit(take)
+    assert edit.turns == []
+    assert ed.assemble(edit, ed.fallback_plan("T"), "Marc", "Nova").segments == []
+
+
+@check("co-host: cast with a voice of its own gender; a picked voice wins")
+def _():
+    h = cast_cohost(HostRequest(name="Dr. Maya", gender="female"))
+    assert VOICE_GENDER[h.voice] == "female" and h.gender == "female" and h.persona
+    h = cast_cohost(HostRequest(name="Sam", voice="Puck", gender="female"))
+    assert h.voice == "Puck" and h.gender == "male"
+    assert cast_cohost(HostRequest()).name == "Alex"
+
+
+@check("co-host: the prompt carries the persona, its private notes, the mode and the topic")
+def _():
+    req = CohostRequest(host=HostRequest(name="Nova", persona="A skeptic.", context="SECRET NOTES"),
+                        mode="debate", topic="Is cereal soup?", minutes=5)
+    host = cast_cohost(req.host)
+    s = prompts.cohost_system(req, host, "Marc", "SOME NOTES")
+    assert "SECRET NOTES" in s and "SOME NOTES" in s and "Is cereal soup?" in s
+    assert "Take the opposite side" in s and "co-hosting a podcast episode live with Marc" in s
+    assert "Producer:" in prompts.cohost_mode_switch("interview")
+
+
+@check("co-host: the editor reads your phrases with words, and the co-host's turns")
+def _():
+    text = prompts.editor_input([
+        {"id": 0, "speaker": "Marc", "you": True, "phrases": [{"id": 0, "text": "Um"}, {"id": 1, "text": ""}]},
+        {"id": 1, "speaker": "Nova", "you": False, "cut_off": True, "text": "Well I"},
+    ])
+    assert "[p0] Um" in text and "[p1]" not in text and "T1 Nova (cut off): Well I" in text
 
 
 def main() -> int:

@@ -23,8 +23,7 @@ from pathlib import Path
 
 import httpx
 
-os.environ.setdefault("SMOKE_FAKE_PORT", "8875")
-os.environ.setdefault("SMOKE_APP_PORT", "8876")
+os.environ.setdefault("SMOKE_PORT", "8875")   # the stub on it, the app on the next port
 from tests.smoke_test import APP_PORT, BASE, FAKE_PORT, WS, Listener, _start, _wait_up, sign_in  # noqa: E402
 
 
