@@ -276,11 +276,22 @@
   .login-lede { font: 760 21px/1.12 var(--f-display); font-stretch: 88%; max-width: 18ch; margin-bottom: 14px; }
   .login-card h1 { font: 800 28px/1 var(--f-display); font-stretch: 86%; letter-spacing: -0.015em; }
   .login-card .btn svg { flex: none; }
+  /* signing in: the button's lamp chases while it works */
+  .login-card .btn:disabled { opacity: 1; cursor: progress; }
+  .login-card .btn:disabled::before {
+    content: ""; width: 14px; height: 14px; flex: none; border-radius: 50%; border: 2px solid transparent;
+    border-top-color: var(--amber); border-right-color: color-mix(in oklch, var(--amber) 50%, transparent);
+    animation: spin .8s linear infinite;
+  }
   .or { display: flex; align-items: center; gap: 10px; color: var(--fg-3); font-size: 13px; }
   .or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
   .login-links { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px; }
   .dev-note {
     display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 9px 11px; border-radius: 10px;
     color: var(--callin); background: rgba(255, 215, 230, .1);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sk, .login-card .btn:disabled::before { animation: none; }
   }
 }
