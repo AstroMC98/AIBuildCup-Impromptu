@@ -1,0 +1,1963 @@
+<title>Impromptu Motion Lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anybody:ital,wdth,wght@0,50..150,100..900;1,50..150,100..900&family=Atkinson+Hyperlegible+Next:ital,wght@0,200..800;1,200..800&display=swap">
+<style>
+/* Layout: a lab bench. Scene list on the left (chips on phones), one phone stage in the
+   middle that plays the selected moment, and a spec panel on the right saying what in the
+   app drives it. The phone is a fixed render of the app; the bench follows the theme. */
+:root {
+  --paper: #F1F3F6;
+  --paper-2: #E2E6EC;
+  --card: #FFFFFF;
+  --ink: #141720;
+  --ink-2: #4F5667;
+  --line: #D2D7E0;
+  --focus: #2F5BFF;
+  --tally: #FF3B30;
+  --bezel: #07080B;
+  --f-ui: "Atkinson Hyperlegible Next", "Segoe UI", system-ui, sans-serif;
+  --f-display: "Anybody", "Arial Narrow", "Segoe UI", sans-serif;
+  --spring-snappy: linear(0, 0.021 2.5%, 0.076 5%, 0.151 7.5%, 0.238 10%, 0.329 12.5%, 0.419 15%, 0.505 17.5%, 0.585 20%, 0.657 22.5%, 0.721 25%, 0.777 27.5%, 0.824 30%, 0.865 32.5%, 0.898 35%, 0.925 37.5%, 0.947 40%, 0.965 42.5%, 0.978 45%, 0.988 47.5%, 0.996 50%, 1.001 52.5%, 1.005 55%, 1.007 57.5%, 1.009 60%, 1.009 65%, 1.008 70%, 1.006 77.5%, 1.004 85%, 1.002 92.5%, 1);
+  --spring-smooth: linear(0, 0.021 2.5%, 0.074 5%, 0.147 7.5%, 0.23 10%, 0.318 12.5%, 0.404 15%, 0.487 17.5%, 0.563 20%, 0.633 22.5%, 0.695 25%, 0.749 27.5%, 0.796 30%, 0.836 32.5%, 0.87 35%, 0.898 37.5%, 0.921 40%, 0.94 42.5%, 0.955 45%, 0.968 47.5%, 0.977 50%, 0.985 52.5%, 0.99 55%, 0.995 57.5%, 0.998 60%, 1 62.5%, 1.002 67.5%, 1.003 75%, 1.002 87.5%, 1);
+  --spring-bouncy: linear(0, 0.045 2.5%, 0.161 5%, 0.317 7.5%, 0.49 10%, 0.66 12.5%, 0.814 15%, 0.941 17.5%, 1.04 20%, 1.108 22.5%, 1.148 25%, 1.165 27.5%, 1.163 30%, 1.147 32.5%, 1.123 35%, 1.095 37.5%, 1.066 40%, 1.04 42.5%, 1.017 45%, 0.999 47.5%, 0.986 50%, 0.977 52.5%, 0.973 55%, 0.973 57.5%, 0.974 60%, 0.978 62.5%, 0.982 65%, 0.987 67.5%, 0.992 70%, 0.996 72.5%, 0.999 75%, 1.002 77.5%, 1.004 82.5%, 1.004 90%, 1);
+  --spring-gentle: linear(0, 0.023 2.5%, 0.08 5%, 0.155 7.5%, 0.239 10%, 0.324 12.5%, 0.407 15%, 0.485 17.5%, 0.555 20%, 0.619 22.5%, 0.676 25%, 0.725 27.5%, 0.768 30%, 0.805 32.5%, 0.836 35%, 0.863 37.5%, 0.886 40%, 0.905 42.5%, 0.921 45%, 0.935 47.5%, 0.946 50%, 0.956 52.5%, 0.963 55%, 0.97 57.5%, 0.975 60%, 0.98 62.5%, 0.986 67.5%, 0.991 72.5%, 0.995 80%, 0.998 90%, 1);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #0E1016; --paper-2: #1A1D26; --card: #151821; --ink: #ECEEF3; --ink-2: #9AA1B2; --line: #262A35; --focus: #7C9BFF;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #0E1016; --paper-2: #1A1D26; --card: #151821; --ink: #ECEEF3; --ink-2: #9AA1B2; --line: #262A35; --focus: #7C9BFF;
+  color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.5 var(--f-ui); }
+h1, h2, h3, p, ol, ul { margin: 0; }
+ol, ul { padding: 0; list-style: none; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+.wrap { max-width: 1320px; margin: 0 auto; padding-inline: 20px; padding-block: 24px 56px; }
+
+/* ---- wordmark: the tittle of the i is the tally lamp ------------------------------ */
+.wm { font-family: var(--f-display); font-weight: 800; font-stretch: 112%; font-style: italic; letter-spacing: -0.02em; line-height: 1; display: inline-flex; white-space: nowrap; padding-top: .25em; }
+.wm .iw { position: relative; display: inline-block; }
+.wm .i { display: inline-block; clip-path: inset(0.02em -0.2em -0.3em -0.2em); }
+.wm .tittle { position: absolute; left: 0.24em; top: -0.25em; width: .22em; height: .22em; border-radius: 50%; background: var(--tally); box-shadow: 0 0 .35em .05em color-mix(in oklch, var(--tally) 55%, transparent); }
+.wm .tittle.off { background: #5A2622; box-shadow: none; }
+
+/* ---- bench chrome -------------------------------------------------------------- */
+.top { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px 24px; align-items: end; }
+@media (max-width: 820px) { .top { grid-template-columns: minmax(0, 1fr); } }
+.top .wm { font-size: 26px; }
+.top h1 { margin-top: 14px; font-family: var(--f-display); font-weight: 780; font-stretch: 88%; font-size: clamp(32px, 5vw, 52px); line-height: 1; letter-spacing: -0.02em; }
+.top p { margin-top: 10px; color: var(--ink-2); max-width: 60ch; }
+.ctls { display: flex; flex-wrap: wrap; gap: 8px; }
+.ctl { height: 40px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); font-weight: 650; font-size: 14px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; }
+.ctl[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.ctl svg { width: 16px; height: 16px; }
+.speed { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; background: var(--card); padding: 3px; gap: 2px; }
+.speed button { height: 32px; min-width: 48px; border: 0; border-radius: 999px; background: transparent; font-weight: 700; font-size: 13px; cursor: pointer; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.speed button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+
+.lab { margin-top: 28px; display: grid; grid-template-columns: 230px auto minmax(0, 1fr); gap: 28px; align-items: start; }
+@media (max-width: 1100px) { .lab { grid-template-columns: minmax(0, 1fr); } }
+.scenes { display: flex; flex-direction: column; gap: 18px; position: sticky; top: 16px; }
+.grp h2 { font-size: 13px; font-weight: 700; color: var(--ink-2); margin-bottom: 6px; }
+.grp ul { display: flex; flex-direction: column; gap: 2px; }
+.scene-btn { width: 100%; text-align: left; border: 0; background: transparent; border-radius: 10px; padding: 8px 10px; cursor: pointer; font-weight: 650; font-size: 15px; display: flex; align-items: center; gap: 10px; }
+.scene-btn:hover { background: var(--paper-2); }
+.scene-btn[aria-current="true"] { background: var(--ink); color: var(--paper); }
+.scene-btn .lamp { width: 8px; height: 8px; border-radius: 50%; background: var(--line); flex: none; }
+.scene-btn[aria-current="true"] .lamp { background: var(--tally); box-shadow: 0 0 8px var(--tally); }
+@media (max-width: 1100px) {
+  .scenes { position: static; flex-direction: row; overflow-x: auto; gap: 14px; padding-bottom: 6px; scrollbar-width: thin; }
+  .grp { flex: none; }
+  .grp ul { flex-direction: row; }
+  .scene-btn { white-space: nowrap; }
+}
+
+.bench { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.phone { width: 340px; max-width: 100%; height: 700px; border-radius: 48px; padding: 9px; background: var(--bezel); box-shadow: 0 34px 70px -24px rgba(8, 10, 20, .5), inset 0 0 0 1.5px #2A2C33; }
+@media (max-width: 400px) { .phone { height: 660px; } }
+.screen { position: relative; width: 100%; height: 100%; border-radius: 39px; overflow: hidden; isolation: isolate; background: #0B0C12; contain: layout paint; }
+.island { position: absolute; z-index: 90; left: 50%; top: 10px; width: 96px; height: 27px; margin-left: -48px; border-radius: 20px; background: #000; pointer-events: none; }
+.bench-row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; align-items: center; font-size: 14px; color: var(--ink-2); }
+.bench-row label { display: inline-flex; gap: 8px; align-items: center; cursor: pointer; }
+.bench-row input { width: 18px; height: 18px; accent-color: var(--ink); }
+.hint { font-size: 13px; color: var(--ink-2); text-align: center; max-width: 34ch; min-height: 1.5em; }
+
+.spec { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 20px 22px; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.spec h2 { font-family: var(--f-display); font-weight: 780; font-stretch: 90%; font-size: 30px; line-height: 1.05; letter-spacing: -0.015em; }
+.spec .lede { color: var(--ink-2); }
+.spec dl { margin: 0; display: grid; gap: 14px; }
+.spec dt { font-weight: 800; font-size: 14px; }
+.spec dd { margin: 3px 0 0; color: var(--ink-2); font-size: 15px; max-width: 62ch; }
+.spec code { font-size: 13px; background: var(--paper-2); border-radius: 5px; padding: 1px 5px; color: var(--ink); overflow-wrap: anywhere; }
+.tokens { display: flex; flex-wrap: wrap; gap: 6px; }
+.tok { font-size: 13px; font-weight: 700; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line); }
+
+/* =========================================================================
+   APP: the Live Wire stage (fixed render, always dark)
+   ========================================================================= */
+@property --gel { syntax: "<color>"; inherits: true; initial-value: #FF6B9A; }
+@property --level { syntax: "<number>"; inherits: true; initial-value: 0; }
+.stage {
+  position: absolute; inset: 0;
+  --gel: #FF6B9A;
+  --stage: color-mix(in oklch, var(--gel) 19%, #08090E);
+  --stage-hi: color-mix(in oklch, var(--gel) 46%, #0A0B11);
+  --glow: color-mix(in oklch, var(--gel) 72%, transparent);
+  --gel-text: color-mix(in oklch, var(--gel) 32%, #FFFFFF);
+  --on-dim: color-mix(in oklch, var(--gel) 18%, #B9BCC8);
+  transition: --gel 1.2s ease;
+  background:
+    radial-gradient(90% 55% at 12% -4%, color-mix(in oklch, var(--stage-hi) calc(62% + var(--level) * 38%), transparent), transparent 70%),
+    radial-gradient(120% 70% at 100% 110%, color-mix(in oklch, var(--gel) 14%, transparent), transparent 60%),
+    var(--stage);
+  color: #fff; font-family: var(--f-ui); display: flex; flex-direction: column;
+}
+.s-top { display: flex; align-items: center; gap: 10px; padding: 50px 18px 0; min-height: 76px; }
+.s-tally { display: inline-flex; align-items: center; gap: 7px; height: 26px; padding: 0 10px 0 8px; border-radius: 6px; background: var(--tally); color: #fff;
+  font: 800 12px/1 var(--f-display); font-stretch: 118%; letter-spacing: .06em; box-shadow: 0 0 18px -2px color-mix(in oklch, var(--tally) 70%, transparent); flex: none; }
+.s-tally i { width: 7px; height: 7px; border-radius: 50%; background: #fff; }
+.s-tally.off { background: #2B1412; color: #7A3E37; box-shadow: none; }
+.s-tally.off i { background: #7A3E37; }
+.s-clock { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: 14px; font-variant-numeric: tabular-nums; }
+.s-clock svg { width: 26px; height: 26px; }
+.ring circle { fill: rgba(255, 255, 255, .16); transition: fill .25s; }
+.ring circle.q { fill: rgba(255, 255, 255, .4); }
+.ring circle.lit { fill: var(--gel-text, #FFB257); }
+.ring circle.q.lit { fill: #fff; }
+.s-listen { margin-left: auto; font-size: 13px; color: var(--on-dim); font-weight: 600; }
+.s-back { margin-left: auto; width: 34px; height: 34px; border-radius: 50%; border: 0; background: rgba(255, 255, 255, .12); color: #fff; display: grid; place-items: center; cursor: pointer; }
+.s-ep { display: flex; align-items: center; gap: 12px; padding: 16px 18px 0; border: 0; background: none; color: inherit; text-align: left; cursor: pointer; width: 100%; }
+.s-cover { width: 46px; height: 46px; border-radius: 8px; flex: none; position: relative; overflow: hidden; background: radial-gradient(80% 80% at 20% 10%, var(--gel), color-mix(in oklch, var(--gel) 40%, #000)); }
+.s-cover::after { content: "W"; position: absolute; right: 3px; bottom: -6px; font: 900 36px/1 var(--f-display); font-stretch: 60%; color: rgba(0, 0, 0, .32); }
+.s-ep b { display: block; font: 760 17px/1.15 var(--f-display); font-stretch: 92%; }
+.s-chap { font-size: 13px; color: var(--on-dim); }
+.s-caps { flex: 1; min-height: 0; padding: 8px 22px 6px; display: flex; flex-direction: column; justify-content: center; gap: 14px; overflow: hidden; }
+.s-prev { font-size: 15px; line-height: 1.3; color: var(--on-dim); font-weight: 600; opacity: .85; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.s-prev:empty { display: none; }
+.s-who { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 700; margin-bottom: 6px; color: var(--gel-text); flex-wrap: wrap; }
+.s-who i { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.s-pill { font: 800 11px/1 var(--f-display); font-stretch: 112%; letter-spacing: .03em; padding: 4px 7px; border-radius: 5px; background: #FFD7E6; color: #2A0F1C; }
+.s-now { font-family: var(--f-display); font-weight: 720; font-size: 30px; line-height: 1.07; letter-spacing: -0.012em; }
+.s-now .w { opacity: .26; transition: opacity .22s ease, color .3s ease; }
+.s-now .w.said { opacity: 1; }
+.s-now .w.now { opacity: 1; color: var(--gel-text); background: linear-gradient(var(--glow), var(--glow)) 0 94% / calc(var(--wp, 0) * 100%) .09em no-repeat; }
+.s-chapters { display: flex; gap: 4px; padding: 6px 18px 10px; }
+.s-chapters i { position: relative; flex: 1; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, .22); overflow: hidden; }
+.s-chapters i.done { background: #fff; }
+.s-chapters i b { position: absolute; inset: 0 auto 0 0; background: #fff; border-radius: 2px; }
+.s-hosts { display: flex; gap: 8px; padding: 0 18px 10px; }
+.s-host { display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px 0 4px; border-radius: 999px; background: rgba(255, 255, 255, .08); font-size: 13px; font-weight: 700; color: var(--on-dim); transition: background .3s, color .3s; }
+.s-host .av { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; color: #10121A; font-weight: 800; position: relative; }
+.s-host .av::before { content: ""; position: absolute; inset: -3px; border-radius: 50%; border: 2px solid var(--gel-text); opacity: 0; transform: scale(calc(1 + var(--lv, 0) * .32)); transition: transform .08s linear, opacity .2s; }
+.s-host.talk { background: rgba(255, 255, 255, .16); color: #fff; }
+.s-host.talk .av::before { opacity: calc(.35 + var(--lv, 0) * .65); }
+.s-bar { display: flex; align-items: center; gap: 8px; padding: 0 14px 24px; }
+.s-field { flex: 1; min-width: 0; height: 46px; border-radius: 999px; background: rgba(255, 255, 255, .12); display: flex; align-items: center; padding: 0 16px; color: var(--on-dim); font-size: 14px; white-space: nowrap; overflow: hidden; }
+.s-field.typing { color: #fff; }
+.s-round { width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; background: rgba(255, 255, 255, .12); flex: none; border: 0; color: #fff; cursor: pointer; position: relative; }
+.s-round.white { background: #fff; color: #10121A; }
+.s-round svg { width: 20px; height: 20px; }
+.s-count { position: absolute; top: -6px; right: -4px; min-width: 22px; height: 18px; padding: 0 5px; border-radius: 9px; background: #fff; color: #10121A; font: 800 11px/18px var(--f-ui); display: none; overflow: hidden; font-variant-numeric: tabular-nums; }
+.with-count .s-count { display: inline-flex; }
+.odo { display: inline-block; height: 18px; overflow: hidden; }
+.odo span { display: flex; flex-direction: column; }
+.odo span i { font-style: normal; height: 18px; line-height: 18px; text-align: center; }
+
+/* call-in lines (borrowed from Switchboard) */
+.lines { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .45s var(--spring-smooth); margin: 0 14px; }
+.lines.open { grid-template-rows: 1fr; }
+.lines > div { overflow: hidden; }
+.line { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 44px; padding: 8px 12px; margin-bottom: 8px; border-radius: 12px; background: rgba(255, 255, 255, .08); font-size: 13px; }
+.line .lamp { width: 10px; height: 10px; border-radius: 50%; background: #3A3326; }
+.line.wait .lamp { background: #FFB000; box-shadow: 0 0 8px #FFB000; animation: blink .8s steps(1) infinite; }
+.line.next .lamp { background: #FFB000; box-shadow: 0 0 8px #FFB000; }
+.line.air .lamp { background: var(--tally); box-shadow: 0 0 10px var(--tally); }
+.line .msg { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #fff; }
+.line .st { font-weight: 700; color: var(--on-dim); font-variant-numeric: tabular-nums; }
+.line.air .st { color: #fff; }
+@keyframes blink { 50% { opacity: .25; } }
+
+/* toast as a cue card */
+.cue { position: absolute; z-index: 70; left: 16px; right: 16px; top: 48px; padding: 12px 14px 14px; border-radius: 10px; background: #FFFFFF; color: #141720; font-weight: 700; font-size: 14px;
+  box-shadow: 0 14px 34px -10px rgba(0, 0, 0, .55); overflow: hidden;
+  background-image: repeating-linear-gradient(transparent 0 21px, rgba(80, 130, 200, .16) 21px 22px); background-position: 0 30px; }
+.cue::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 3px; background: var(--tally); }
+.cue small { display: block; font-weight: 600; color: #4F5667; margin-top: 2px; }
+.cue .timer { position: absolute; left: 0; bottom: 0; height: 3px; background: #141720; opacity: .18; width: 100%; transform-origin: left; }
+
+/* ---- house (library side, lights up) -------------------------------------------- */
+.house { position: absolute; inset: 0; background: #F1F3F6; color: #141720; display: flex; flex-direction: column; font-family: var(--f-ui); }
+.h-top { display: flex; align-items: center; gap: 8px; padding: 50px 16px 8px; }
+.h-top .wm { font-size: 22px; color: #141720; }
+.h-credits { margin-left: auto; height: 32px; padding: 0 10px; border-radius: 999px; border: 1px solid #D2D7E0; display: inline-flex; align-items: center; gap: 6px; font-weight: 800; font-size: 13px; }
+.h-credits i { width: 10px; height: 10px; border-radius: 50%; background: #E9A93A; }
+.h-av { width: 32px; height: 32px; border-radius: 50%; background: #141720; color: #fff; display: grid; place-items: center; font-weight: 800; font-size: 13px; }
+.h-greet { padding: 10px 16px 4px; font: 780 27px/1.02 var(--f-display); font-stretch: 86%; letter-spacing: -0.015em; text-wrap: balance; }
+.h-sec { padding: 14px 16px 8px; font: 760 16px/1 var(--f-display); font-stretch: 96%; display: flex; align-items: center; gap: 8px; }
+.h-sec .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--tally); box-shadow: 0 0 8px var(--tally); }
+.sleeve { --gel: #FF6B9A; position: relative; overflow: hidden; border-radius: 12px; color: #fff; border: 0; padding: 0; cursor: pointer; text-align: left;
+  background: radial-gradient(90% 90% at 18% 8%, color-mix(in oklch, var(--gel) 95%, #fff), color-mix(in oklch, var(--gel) 55%, #120A10) 62%, color-mix(in oklch, var(--gel) 25%, #07060A)); }
+.sleeve .t { position: absolute; left: 12px; right: 10px; bottom: 30px; font: 860 36px/.86 var(--f-display); font-stretch: 58%; letter-spacing: -0.01em; }
+.sleeve .h { position: absolute; left: 12px; bottom: 11px; font-size: 11px; font-weight: 700; opacity: .88; }
+.sleeve .live { position: absolute; left: 10px; top: 10px; font: 800 10px/1 var(--f-display); font-stretch: 118%; letter-spacing: .05em; padding: 4px 6px; border-radius: 4px; background: var(--tally); }
+.sleeve .rg { position: absolute; right: -40px; top: -40px; width: 130px; height: 130px; opacity: .55; }
+.sleeve .rg circle { fill: rgba(255, 255, 255, .35); }
+.sleeve .rg circle.lit { fill: #fff; }
+.h-live { padding: 0 16px; display: flex; gap: 10px; }
+.h-live .sleeve { width: 168px; height: 168px; flex: none; }
+.h-live .side { display: flex; flex-direction: column; justify-content: flex-end; gap: 6px; font-size: 13px; color: #4F5667; min-width: 0; }
+.h-live .side b { color: #141720; font-size: 15px; }
+.h-rows { padding: 4px 10px; display: flex; flex-direction: column; }
+.h-row { display: flex; align-items: center; gap: 12px; padding: 8px 6px; border-radius: 10px; }
+.h-row .sleeve { width: 48px; height: 48px; border-radius: 7px; flex: none; cursor: default; }
+.h-row .sleeve .t { font-size: 16px; left: 5px; bottom: 5px; right: 4px; line-height: .85; }
+.h-row b { display: block; font-size: 14px; font-weight: 700; line-height: 1.2; }
+.h-row span.m { font-size: 13px; color: #4F5667; }
+.h-row .m.live { color: #C81E3A; font-weight: 700; }
+.tabs { position: relative; margin: 6px 16px 4px; display: grid; grid-template-columns: repeat(4, 1fr); background: #E2E6EC; border-radius: 12px; padding: 4px; }
+.tabs button { position: relative; z-index: 1; height: 34px; border: 0; background: transparent; font-weight: 700; font-size: 13px; color: #4F5667; cursor: pointer; border-radius: 9px; }
+.tabs button[aria-selected="true"] { color: #141720; }
+.tabs .ind { position: absolute; z-index: 0; top: 4px; bottom: 4px; left: 4px; border-radius: 9px; background: #fff; box-shadow: 0 1px 3px rgba(20, 23, 32, .12); }
+.chips { display: flex; gap: 6px; padding: 8px 16px; }
+.chip { height: 32px; padding: 0 12px; border-radius: 999px; border: 1px solid #D2D7E0; background: transparent; font-size: 13px; font-weight: 700; color: #141720; cursor: pointer; transition: background .2s, color .2s; }
+.chip[aria-pressed="true"] { background: #141720; color: #fff; border-color: #141720; }
+.skel { display: flex; align-items: center; gap: 12px; padding: 8px 6px; }
+.skel .sq { width: 48px; height: 48px; border-radius: 7px; }
+.skel .ln { height: 10px; border-radius: 5px; }
+.skel .sq, .skel .ln { background: linear-gradient(100deg, #E2E6EC 30%, #EEF1F5 50%, #E2E6EC 70%) 0 0 / 300% 100%; animation: sweep 1.6s linear infinite; }
+@keyframes sweep { from { background-position: 100% 0; } to { background-position: -50% 0; } }
+
+/* ---- scene-specific ------------------------------------------------------------- */
+.boot { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; background: #0B0C12; color: #fff; }
+.boot .wm { font-size: 46px; color: #fff; transform-origin: 0 0; }
+.boot .l { display: inline-block; }
+.boot-cap { position: absolute; bottom: 120px; left: 0; right: 0; text-align: center; color: #8C92A3; font-size: 14px; font-weight: 600; opacity: 0; }
+
+.tune { position: absolute; inset: 0; background: #0B0C12; color: #fff; display: grid; place-items: center; }
+.tune canvas { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; opacity: .5; }
+.tune-mid { position: relative; width: 100%; padding: 0 22px; display: flex; flex-direction: column; align-items: center; gap: 18px; text-align: center; }
+.tune-label { font: 760 15px/1 var(--f-display); font-stretch: 110%; color: #A6ACBC; letter-spacing: .02em; }
+.dial { position: relative; width: 100%; height: 64px; }
+.dial svg { width: 100%; height: 100%; overflow: visible; }
+.dial line { stroke: rgba(255, 255, 255, .28); transition: stroke .3s; }
+.dial line.maj { stroke: rgba(255, 255, 255, .6); }
+.dial line.hot { stroke: #FF8FB5; }
+.dial text { fill: #8C92A3; font: 700 9px var(--f-ui); }
+.needle { position: absolute; top: -6px; bottom: 10px; width: 2px; margin-left: -1px; background: var(--tally); box-shadow: 0 0 10px var(--tally); border-radius: 1px; }
+.freq { font: 700 13px/1 var(--f-ui); color: #A6ACBC; font-variant-numeric: tabular-nums; }
+.station { opacity: 0; display: flex; flex-direction: column; gap: 4px; }
+.station b { font: 780 24px/1.02 var(--f-display); font-stretch: 86%; }
+.station span { color: #A6ACBC; font-size: 14px; }
+.flood { position: absolute; inset: 0; clip-path: inset(50% 0 50% 0); }
+
+.gr-ringwrap { position: relative; width: 196px; height: 196px; margin: 14px auto 0; display: grid; place-items: center; }
+.gr-ringwrap svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.gr-step { font: 760 15px/1.15 var(--f-display); font-stretch: 100%; text-align: center; max-width: 130px; color: var(--gel-text); }
+.gr-title { margin: 14px 22px 0; font: 800 28px/1 var(--f-display); font-stretch: 84%; letter-spacing: -0.015em; text-align: center; min-height: 28px; text-wrap: balance; }
+.gr-title .wd { display: inline-block; }
+.gr-hosts { text-align: center; font-size: 14px; color: var(--on-dim); margin-top: 6px; min-height: 21px; }
+.gr-rundown { margin: 16px 18px 0; display: flex; flex-direction: column; gap: 6px; }
+.gr-rundown li { display: flex; align-items: center; gap: 12px; height: 42px; padding: 0 14px; border-radius: 10px; background: rgba(255, 255, 255, .09); font-weight: 700; font-size: 14px; }
+.gr-rundown li span { width: 18px; color: var(--gel-text); font-variant-numeric: tabular-nums; }
+.gr-theme { display: flex; align-items: center; gap: 3px; width: 168px; height: 30px; margin: 8px auto 0; }
+.gr-theme i { flex: 1; height: 20%; border-radius: 2px; background: var(--gel-text); }
+
+.gl-go { width: 100%; height: 58px; border: 0; border-radius: 999px; background: #141720; color: #fff; font: 800 18px/1 var(--f-ui); display: flex; align-items: center; justify-content: center; gap: 10px; cursor: pointer; }
+.gl-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--tally); }
+.gl-card { margin: 8px 16px 0; padding: 14px; border-radius: 16px; background: #fff; display: flex; gap: 14px; align-items: center; box-shadow: 0 1px 2px rgba(20, 23, 32, .08); }
+.gl-card .sleeve { width: 92px; height: 92px; flex: none; border-radius: 10px; cursor: default; }
+.gl-card .sleeve .t { font-size: 22px; bottom: 10px; }
+.gl-card b { font: 780 19px/1.05 var(--f-display); font-stretch: 90%; }
+.gl-card p { font-size: 13px; color: #4F5667; margin-top: 4px; }
+.gl-rows { margin: 12px 16px 0; display: grid; gap: 8px; font-size: 14px; }
+.gl-rows div { display: flex; justify-content: space-between; padding: 10px 2px; border-bottom: 1px solid #E2E6EC; }
+.gl-rows span { color: #4F5667; }
+.gl-foot { margin-top: auto; padding: 12px 16px 26px; display: flex; flex-direction: column; gap: 8px; align-items: center; }
+.gl-foot p { font-size: 13px; color: #4F5667; }
+.gl { position: absolute; inset: 0; z-index: 30; background: #050609; display: grid; place-items: center; }
+.gl-inner { position: relative; width: 240px; height: 240px; display: grid; place-items: center; }
+.gl-ring { position: absolute; inset: 0; width: 100%; height: 100%; }
+.gl-ring circle { fill: rgba(255, 255, 255, .1); transition: fill .1s; }
+.gl-ring circle.lit { fill: #FFB257; }
+.gl-ring circle.chase { fill: #FFB257; opacity: .9; }
+.gl-num { font: 800 96px/1 var(--f-display); color: #fff; font-variant-numeric: tabular-nums; }
+.gl-lamp { position: absolute; left: 50%; top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; background: #3A1512; display: grid; place-items: center; overflow: hidden;
+  color: #fff; font: 800 26px/1 var(--f-display); font-stretch: 125%; letter-spacing: .06em; white-space: nowrap; }
+.gl-lamp span { opacity: 0; }
+.gl-cap { position: absolute; bottom: 92px; left: 0; right: 0; text-align: center; color: #9BA0AE; font-size: 14px; font-weight: 650; }
+
+.np { position: absolute; inset: 0; z-index: 20; background: color-mix(in oklch, var(--gel, #FF6B9A) 22%, #08090E); color: #fff; display: flex; flex-direction: column; touch-action: none; }
+.np-top { display: flex; align-items: center; padding: 48px 12px 0; gap: 8px; }
+.np-top .from { flex: 1; text-align: center; font-size: 13px; color: #B9BCC8; }
+.np-top .from b { display: block; color: #fff; font-size: 14px; }
+.np-cover { margin: 20px 22px 0; aspect-ratio: 1; border-radius: 12px; position: relative; overflow: hidden;
+  background: radial-gradient(90% 90% at 18% 8%, color-mix(in oklch, #FF6B9A 95%, #fff), color-mix(in oklch, #FF6B9A 55%, #120A10) 62%, color-mix(in oklch, #FF6B9A 25%, #07060A)); box-shadow: 0 24px 40px -18px rgba(0, 0, 0, .6); }
+.np-cover .t { position: absolute; left: 18px; right: 14px; bottom: 18px; font: 860 58px/.84 var(--f-display); font-stretch: 56%; }
+.np-cover .rg { position: absolute; right: -60px; top: -60px; width: 220px; height: 220px; opacity: .5; }
+.np-meta { margin: 18px 22px 0; }
+.np-meta b { display: block; font: 780 22px/1.05 var(--f-display); font-stretch: 90%; }
+.np-meta span { color: #B9BCC8; font-size: 14px; }
+.np-prog { margin: 14px 22px 0; display: flex; gap: 4px; }
+.np-prog i { flex: 1; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, .25); }
+.np-prog i.done { background: #fff; }
+.np-tr { margin: 16px 0 0; display: flex; justify-content: center; align-items: center; gap: 26px; }
+.np-play { width: 66px; height: 66px; border-radius: 50%; background: #fff; color: #141720; display: grid; place-items: center; }
+.np-lines { margin: 20px 22px 0; display: flex; flex-direction: column; gap: 10px; }
+.np-lines p { font: 720 18px/1.2 var(--f-display); color: rgba(255, 255, 255, .7); }
+.np-lines p.cur { color: #fff; }
+.np-grab { position: absolute; top: 40px; left: 50%; width: 40px; height: 5px; margin-left: -20px; border-radius: 3px; background: rgba(255, 255, 255, .3); }
+
+.recede { position: absolute; inset: 0; transform-origin: 50% 100%; border-radius: 39px; overflow: hidden; }
+.scrim { position: absolute; inset: 0; z-index: 25; background: rgba(4, 5, 10, .55); opacity: 0; pointer-events: none; }
+.sheet { position: absolute; z-index: 26; left: 0; right: 0; bottom: 0; padding: 10px 16px 28px; border-radius: 26px 26px 0 0; background: #1A1C26; color: #fff; transform: translateY(105%); touch-action: none; }
+.sheet .grab { display: block; width: 40px; height: 5px; border-radius: 3px; background: rgba(255, 255, 255, .25); margin: 0 auto 12px; }
+.sheet h3 { font: 800 24px/1 var(--f-display); font-stretch: 90%; margin-bottom: 14px; }
+.seg { position: relative; display: grid; grid-template-columns: repeat(4, 1fr); background: #11131B; border-radius: 13px; padding: 4px; }
+.seg button { position: relative; z-index: 1; height: 40px; border: 0; background: transparent; font-weight: 700; font-size: 14px; color: #9AA1B2; cursor: pointer; border-radius: 10px; transition: color .25s; }
+.seg button[aria-pressed="true"] { color: #141720; }
+.seg .ind { position: absolute; z-index: 0; top: 4px; bottom: 4px; left: 4px; border-radius: 10px; background: #fff; }
+.sheet-body { position: relative; height: 128px; margin-top: 12px; overflow: hidden; }
+.sheet-pane { position: absolute; inset: 0; border-radius: 12px; border: 1.5px dashed #3E4255; display: grid; place-items: center; text-align: center; color: #B9BCC8; font-size: 14px; padding: 12px; }
+.sheet-pane b { display: block; color: #fff; font-size: 15px; margin-bottom: 4px; }
+.sheet-add { margin-top: 12px; width: 100%; height: 50px; border-radius: 999px; border: 0; background: #fff; color: #141720; font-weight: 800; font-size: 16px; }
+
+.ed { position: absolute; inset: 0; background: #0B0C12; color: #fff; display: flex; flex-direction: column; --gel: #6FB3FF; }
+.ed h3 { margin: 56px 20px 0; font: 800 28px/1 var(--f-display); font-stretch: 86%; letter-spacing: -0.015em; }
+.ed .sub { margin: 6px 20px 0; color: #A6ACBC; font-size: 14px; min-height: 21px; }
+.ed-title { margin: 18px 20px 0; min-height: 52px; font: 800 24px/1.05 var(--f-display); font-stretch: 84%; color: #CFE3FF; text-wrap: balance; }
+.wave { position: relative; margin: 10px 14px 0; height: 120px; border-radius: 14px; background: #12141C; padding: 14px 10px; display: flex; align-items: center; gap: 2px; overflow: hidden; }
+.wave .b { flex: 1 1 0; min-width: 0; height: 100%; display: flex; align-items: center; }
+.wave .b i { display: block; width: 100%; height: 100%; border-radius: 2px; background: #3A4256; transform: scaleY(var(--h)); transition: background .2s; }
+.wave .b.you i { background: #4B5470; }
+.wave .b.heard i { background: #9CC2FF; }
+.wave .b.heard.you i { background: #FFB257; }
+.wave .b.cut i { background: var(--tally) !important; }
+.wave .ph { position: absolute; top: 8px; bottom: 8px; width: 2px; left: 10px; background: #fff; box-shadow: 0 0 8px #fff; opacity: 0; }
+.wave .flag { position: absolute; top: 4px; font-size: 9px; font-weight: 800; color: #0B0C12; background: #CFE3FF; padding: 2px 5px; border-radius: 4px; white-space: nowrap; }
+.steps { margin: 18px 20px 0; display: flex; flex-direction: column; gap: 10px; }
+.steps li { display: flex; align-items: center; gap: 10px; color: #5E6577; font-weight: 650; font-size: 14px; transition: color .3s; }
+.steps li.now { color: #fff; }
+.steps li.done { color: #A6ACBC; }
+.steps svg { width: 22px; height: 22px; flex: none; }
+.steps li.done svg circle { fill: #9CC2FF; }
+.ed-meter { margin: 14px 20px 0; display: flex; align-items: center; gap: 10px; font-size: 13px; color: #A6ACBC; font-variant-numeric: tabular-nums; opacity: 0; }
+.ed-meter .track { flex: 1; height: 6px; border-radius: 3px; background: #1E2230; position: relative; overflow: hidden; }
+.ed-meter .fill { position: absolute; inset: 0 auto 0 0; width: 0; border-radius: 3px; background: linear-gradient(90deg, #6FB3FF, #9CF0C8); }
+.ed-done { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; padding: 0 24px; opacity: 0; pointer-events: none; }
+.ed-done .sleeve { width: 190px; height: 190px; --gel: #6FB3FF; cursor: default; }
+.ed-done .sleeve .t { font-size: 34px; }
+.ed-done h4 { margin: 0; font: 800 22px/1.05 var(--f-display); font-stretch: 90%; }
+.ed-done p { color: #A6ACBC; font-size: 14px; }
+.ed-done .listen { height: 48px; padding: 0 22px; border-radius: 999px; background: #fff; color: #141720; font-weight: 800; display: inline-flex; align-items: center; }
+
+.heart-fly { position: absolute; z-index: 60; width: 22px; height: 22px; color: #FF7AA8; pointer-events: none; }
+
+/* ---- round 2 scenes ---------------------------------------------------------------- */
+.new-dot { margin-left: auto; font: 800 9.5px/1 var(--f-display); font-stretch: 112%; letter-spacing: .04em; padding: 3px 6px; border-radius: 4px; background: var(--ink); color: var(--paper); }
+.scene-btn[aria-current="true"] .new-dot { background: var(--paper); color: var(--ink); }
+.lampx { position: relative; width: 12px; height: 12px; border-radius: 50%; background: #3A3326; flex: none; transition: background .25s, box-shadow .25s; }
+.house .lampx { background: #D6DBE3; }
+.lampx.amber { background: #FFB000; box-shadow: 0 0 8px #FFB000; }
+.lampx.red { background: var(--tally); box-shadow: 0 0 9px var(--tally); }
+.lampx.blue { background: #9CC2FF; box-shadow: none; }
+.lampx.blink { animation: blink .8s steps(1) infinite; }
+.lampx.chase { background: none !important; box-shadow: none !important; }
+.lampx.chase::after { content: ""; position: absolute; inset: -2px; border-radius: 50%; border: 2px solid transparent; border-top-color: #FFB000; border-right-color: rgba(255, 176, 0, .5); animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.line .ret { display: inline-flex; align-items: center; gap: 4px; color: #FFB000; }
+.pill-amber { font: 800 10px/1 var(--f-display); font-stretch: 112%; letter-spacing: .03em; padding: 4px 6px; border-radius: 5px; background: #FFB000; color: #1A1200; }
+.srcs { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
+.srcs span { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px; border-radius: 7px; background: rgba(255, 255, 255, .12); font-size: 11.5px; font-weight: 700; color: var(--on-dim); }
+.found { position: absolute; z-index: 30; left: 14px; right: 14px; top: 150px; display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; background: rgba(20, 22, 32, .92); border: 1px solid rgba(255, 255, 255, .14); font-size: 13px; }
+.found b { display: block; }
+.found small { color: #A6ACBC; }
+/* interrupt */
+.talkbtn { position: relative; width: 150px; height: 150px; margin: 4px auto 0; display: grid; place-items: center; }
+.talkbtn svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.talkbtn svg circle.lit { fill: #FF8A80; }
+.talkbtn .tb { width: 92px; height: 92px; border-radius: 50%; background: #fff; color: #141720; display: grid; place-items: center; transition: background .2s, color .2s, box-shadow .2s; }
+.talkbtn.on .tb { background: var(--tally); color: #fff; box-shadow: 0 0 0 12px rgba(255, 59, 48, .2); }
+.talkbtn .tb svg { position: static; width: 34px; height: 34px; }
+.talk-l { text-align: center; font-weight: 800; font-size: 13px; min-height: 20px; }
+.int-field { display: flex; gap: 8px; margin-top: 10px; }
+.int-field span:first-child { flex: 1; min-width: 0; height: 44px; border-radius: 12px; background: #11131B; display: flex; align-items: center; padding: 0 12px; color: #6E7586; font-size: 14px; white-space: nowrap; overflow: hidden; }
+.int-field span.full { color: #fff; }
+.int-field .ask { height: 44px; padding: 0 16px; border-radius: 999px; background: #fff; color: #141720; font-weight: 800; display: grid; place-items: center; }
+.int-chips { display: flex; gap: 6px; margin-top: 10px; }
+.int-chips span { height: 32px; padding: 0 11px; border-radius: 999px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .22); display: inline-flex; align-items: center; font-size: 12.5px; font-weight: 700; }
+.s-chapters .det { flex: 0 0 22px !important; height: 8px !important; margin-top: -2px; border-radius: 4px; background: #FFB000 !important; box-shadow: 0 0 10px rgba(255, 176, 0, .6); }
+.s-now .w.gone { opacity: 0 !important; filter: blur(5px); transition: opacity .45s ease, filter .45s ease; }
+/* scrub */
+.scrubx { position: relative; margin: 6px 18px 14px; touch-action: none; cursor: grab; padding: 14px 0; }
+.scrubx .bar { position: relative; display: flex; gap: 4px; height: 6px; pointer-events: none; }
+.scrubx .bar i { flex: 1; border-radius: 3px; background: rgba(255, 255, 255, .22); position: relative; overflow: hidden; }
+.scrubx .bar i b { position: absolute; inset: 0 auto 0 0; background: #fff; }
+.scrubx .knob { position: absolute; top: 5px; width: 24px; height: 24px; margin-left: -12px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 8px rgba(255, 255, 255, .14), 0 2px 8px rgba(0, 0, 0, .4); pointer-events: none; }
+.scrubx .bub { position: absolute; bottom: 38px; transform: translateX(-50%); padding: 6px 10px; border-radius: 9px; background: #fff; color: #141720; font-size: 12px; font-weight: 800; white-space: nowrap; font-variant-numeric: tabular-nums; opacity: 0; pointer-events: none; }
+.scrubx .edge { position: absolute; top: 9px; width: 2px; height: 14px; margin-left: -1px; background: var(--tally); pointer-events: none; }
+.scrub-meta { display: flex; justify-content: space-between; align-items: center; margin: -6px 18px 14px; font-size: 12px; color: var(--on-dim); min-height: 34px; }
+.scrub-meta .lv { color: #fff; font-weight: 800; }
+.behind { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 13px; border-radius: 999px; background: #fff; color: #141720; font-weight: 800; font-size: 13px; border: 0; cursor: pointer; }
+.touch { position: absolute; z-index: 60; width: 34px; height: 34px; margin: -17px 0 0 -17px; border-radius: 50%; background: rgba(255, 255, 255, .35); border: 2px solid rgba(255, 255, 255, .8); pointer-events: none; opacity: 0; }
+/* show intro */
+.tcard { position: absolute; z-index: 10; left: 0; right: 0; top: 82px; bottom: 200px; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 14px; text-align: center; padding: 0 22px; }
+.tcard .pre { font-size: 13px; font-weight: 700; color: var(--on-dim); }
+.tcard .nm { font: 860 84px/.84 var(--f-display); font-stretch: 58%; transform-origin: 0 0; }
+.tcard .nm .wd { display: inline-block; }
+.tcard .wv { display: flex; align-items: center; gap: 3px; height: 48px; width: 190px; }
+.tcard .wv i { flex: 1; border-radius: 2px; background: var(--gel-text); height: 20%; }
+.tcard .ep { font: 760 16px/1.15 var(--f-display); font-stretch: 92%; color: var(--on-dim); }
+/* watchlist */
+.bk { margin: 6px 16px 0; padding: 12px; border-radius: 16px; background: #fff; box-shadow: 0 0 0 1px #D6DBE3; display: grid; gap: 10px; }
+.bk b.t { font: 780 16px/1 var(--f-display); font-stretch: 94%; }
+.bk-go { position: relative; height: 48px; border-radius: 999px; border: 0; background: #141720; color: #fff; font: 800 15px/1 var(--f-ui); display: flex; align-items: center; justify-content: center; gap: 8px; overflow: hidden; }
+.bk-go .mini { width: 16px; height: 16px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, .25); border-top-color: #FFB000; animation: spin .8s linear infinite; }
+.bk-sum { font-size: 12.5px; color: #4F5667; font-variant-numeric: tabular-nums; min-height: 18px; }
+.wrows { margin: 8px 16px 0; }
+.wrow { position: relative; display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 6px; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 0 #E2E6EC; }
+.wrow b { display: block; font-size: 13.5px; }
+.wrow small { font-size: 11.5px; color: #7A8193; }
+.wrow .sweep { position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(111, 179, 255, .22), transparent); transform: translateX(-100%); pointer-events: none; }
+.cnt-badge { min-width: 22px; height: 20px; padding: 0 6px; border-radius: 10px; background: #FFB000; color: #1A1200; font: 800 11px/20px var(--f-ui); text-align: center; opacity: 0; }
+/* voice memo */
+.rec { position: relative; width: 236px; height: 236px; margin: 0 auto; display: grid; place-items: center; }
+.rec svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.rec svg circle.lit { fill: #FF8A80; }
+.rec .rb { width: 92px; height: 92px; border-radius: 50%; background: var(--tally); display: grid; place-items: center; box-shadow: 0 0 0 12px rgba(255, 59, 48, .18), 0 14px 30px -8px rgba(255, 59, 48, .6); }
+.rec .rb i { width: 30px; height: 30px; border-radius: 7px; background: #fff; transform: scale(0); }
+.memo-time { text-align: center; font: 800 54px/1 var(--f-display); font-stretch: 80%; font-variant-numeric: tabular-nums; }
+.memo-hint { text-align: center; color: var(--on-dim); font-size: 13px; margin-top: 6px; }
+.levels { display: flex; align-items: center; justify-content: center; gap: 3px; height: 44px; }
+.levels i { width: 4px; height: 8%; border-radius: 2px; background: rgba(255, 255, 255, .85); }
+.memo-opts { position: absolute; z-index: 30; inset: 0; top: 0; transform: translateY(100%); }
+.memo-chip { margin: 6px 16px 0; display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 14px; background: #fff; box-shadow: 0 0 0 1px #D6DBE3; }
+.memo-chip .pb { width: 38px; height: 38px; border-radius: 50%; background: #141720; color: #fff; display: grid; place-items: center; flex: none; }
+.memo-chip .wv { flex: 1; display: flex; align-items: center; gap: 2px; height: 30px; }
+.memo-chip .wv i { flex: 1; border-radius: 2px; background: #141720; }
+.spine { display: flex; flex-direction: column; margin: 0 18px; }
+.spine li { display: grid; grid-template-columns: 12px minmax(0, 1fr); gap: 12px; padding-bottom: 11px; position: relative; font-size: 13.5px; font-weight: 650; color: #5E6577; transition: color .3s; }
+.spine li .rail { position: absolute; left: 5px; top: 15px; bottom: 0; width: 2px; background: #1E2230; overflow: hidden; }
+.spine li .rail b { position: absolute; inset: 0; background: #9CC2FF; transform: scaleY(0); transform-origin: top; }
+.spine li:last-child .rail { display: none; }
+.spine li.done { color: #A6ACBC; }
+.spine li.now { color: #fff; }
+.spine li .lampx { margin-top: 3px; }
+.spine li small { display: block; font-weight: 600; font-size: 12px; color: #8C92A3; margin-top: 2px; min-height: 0; }
+.spine li.now small { color: #CFE3FF; }
+
+.calm-note { position: absolute; z-index: 95; left: 12px; right: 12px; bottom: 12px; padding: 6px 10px; border-radius: 8px; background: rgba(0, 0, 0, .6); color: #fff; font-size: 12px; font-weight: 700; text-align: center; pointer-events: none; }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <span class="wm" aria-label="impromptu"><span aria-hidden="true"><span class="iw"><span class="i">i</span><span class="tittle"></span></span>mpromptu</span></span>
+      <h1>Motion Lab</h1>
+      <p>Every wait and every change of screen, in the Live Wire direction. Pick a moment and watch it, then slow it down or switch on reduced motion. The panel beside the phone says what in the app drives each one.</p>
+    </div>
+    <div class="ctls" role="group" aria-label="Playback">
+      <button class="ctl" id="replay" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v4h4"/></svg>Replay</button>
+      <span class="speed" role="group" aria-label="Speed"><button type="button" data-speed="1" aria-pressed="true">1&times;</button><button type="button" data-speed="0.5" aria-pressed="false">&frac12;&times;</button><button type="button" data-speed="0.25" aria-pressed="false">&frac14;&times;</button></span>
+      <button class="ctl" id="loop" type="button" aria-pressed="true">Loop</button>
+      <button class="ctl" id="calm" type="button" aria-pressed="false">Reduced motion</button>
+    </div>
+  </header>
+
+  <div class="lab">
+    <nav class="scenes" id="scenes" aria-label="Moments"></nav>
+    <section class="bench" aria-label="Preview">
+      <div class="phone"><div class="screen" id="screen"></div></div>
+      <div class="bench-row" id="bench-row"></div>
+      <p class="hint" id="hint"></p>
+    </section>
+    <aside class="spec" id="spec" aria-live="polite"></aside>
+  </div>
+</div>
+
+<script>
+(() => {
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+  const css = getComputedStyle(document.documentElement);
+  const SPR = Object.fromEntries(["snappy", "smooth", "bouncy", "gentle"].map((k) => [k, css.getPropertyValue(`--spring-${k}`).trim() || "ease-out"]));
+  const DUR = { snappy: 430, smooth: 590, bouncy: 790, gentle: 850 };
+  const EASE_OUT = "cubic-bezier(.16, 1, .3, 1)";
+  const EASE_IN = "cubic-bezier(.7, 0, .84, 0)";
+  const EASE_IO = "cubic-bezier(.65, 0, .35, 1)";
+
+  const mq = matchMedia("(prefers-reduced-motion: reduce)");
+  let calm = mq.matches;
+  let speed = 1;
+  let loop = true;
+  let run = 0;
+  let current = null;
+  let userTook = false;
+  const ABORT = Symbol("abort");
+  const screen = $("#screen");
+
+  const sleep = (ms) => {
+    const id = run;
+    return new Promise((res, rej) => setTimeout(() => (id === run ? res() : rej(ABORT)), ms / speed));
+  };
+  const alive = (id) => { if (id !== run) throw ABORT; };
+  const anim = (el, kf, o = {}) => el.animate(kf, { duration: o.dur ?? 300, delay: o.delay ?? 0, easing: o.ease ?? EASE_OUT, fill: o.fill ?? "both", iterations: o.iter ?? 1 });
+  const rect = (el) => { const s = screen.getBoundingClientRect(), b = el.getBoundingClientRect(); return { x: b.left - s.left, y: b.top - s.top, w: b.width, h: b.height }; };
+  const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  const hash = (n) => { const x = Math.sin(n * 127.1) * 43758.5453; return x - Math.floor(x); };
+
+  function ringSvg(cls = "ring") { return `<svg class="${cls}" viewBox="0 0 100 100" aria-hidden="true"></svg>`; }
+  function drawRing(svg, r = 44, dot = 2.2) {
+    let out = "";
+    for (let i = 0; i < 60; i++) {
+      const a = (i / 60) * Math.PI * 2 - Math.PI / 2;
+      const q = i % 15 === 0;
+      out += `<circle class="${q ? "q" : ""}" cx="${(50 + r * Math.cos(a)).toFixed(2)}" cy="${(50 + r * Math.sin(a)).toFixed(2)}" r="${q ? dot * 1.35 : dot}"></circle>`;
+    }
+    svg.innerHTML = out;
+    return $$("circle", svg);
+  }
+  const wmHtml = (lit = true) => `<span class="wm" aria-label="impromptu"><span aria-hidden="true"><span class="iw"><span class="i">i</span><span class="tittle ${lit ? "" : "off"}"></span></span>mpromptu</span></span>`;
+  const ICON = {
+    heart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></svg>',
+    heartFill: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></svg>',
+    mic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0V7a3 3 0 0 0-3-3z"/><path d="M6 11a6 6 0 0 0 12 0"/><path d="M12 17v3"/></svg>',
+    send: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l16-8-6 16-2-7z"/></svg>',
+    down: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>',
+    back: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>',
+    play: '<svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5l11 7-11 7z"/></svg>',
+    pause: '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M8 5v14M16 5v14"/></svg>',
+    b15: '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v4h4"/></svg>',
+  };
+
+  // ---- the live stage, used by most scenes --------------------------------------
+  const TITLE = "Wild Yeast and the Gold Rush";
+  function stageHtml({ gel = "#FF6B9A", tally = true, chapter = "Chapter 2, The Gold Rush", back = false, lines = false } = {}) {
+    return `<div class="stage" style="--gel:${gel}">
+      <header class="s-top"><span class="s-tally ${tally ? "" : "off"}"><i></i>ON AIR</span>
+        <span class="s-clock">${ringSvg()}<span class="s-time">1:42</span></span>
+        ${back ? `<button class="s-back" type="button" data-back aria-label="Back to the library">${ICON.back}</button>` : `<span class="s-listen">128 listening</span>`}</header>
+      <button class="s-ep" type="button" data-ep><span class="s-cover"></span><span><b>${TITLE}</b><span class="s-chap">${chapter}</span></span></button>
+      <section class="s-caps"><div class="s-prev"></div><div class="s-nowwrap"></div></section>
+      <div class="s-chapters"><i class="done"></i><i class="cur"><b style="width:42%"></b></i><i></i><i></i></div>
+      ${lines ? `<div class="lines"><div><div class="line" data-line><span class="lamp"></span><span class="msg"></span><span class="st"></span></div></div></div>` : ""}
+      <div class="s-hosts"><span class="s-host" data-h="0"><span class="av" style="background:#FFB257">M</span>Mia</span><span class="s-host" data-h="1"><span class="av" style="background:#9CC2FF">J</span>Jordan</span></div>
+      <div class="s-bar"><span class="s-field" data-field>Call in to the hosts</span><button class="s-round" type="button" data-heart aria-label="React">${ICON.heart}<span class="s-count" data-count><span class="odo" data-odo></span></span></button><button class="s-round white" type="button" data-send aria-label="Talk to the hosts">${ICON.mic}</button></div>
+    </div>`;
+  }
+  function primeStage(root) {
+    const svg = $(".s-clock svg", root);
+    if (svg) drawRing(svg, 42, 3.4).forEach((d, i) => i <= 42 && d.classList.add("lit"));
+  }
+
+  // Captions: words light up as they're said; long lines narrow before they shrink.
+  const LINES = [
+    { who: 0, text: "Okay, but listen. Miners in 1849 carried starter in pouches around their necks to keep it warm." },
+    { who: 1, text: "Which is why prospectors got called sourdoughs. The nickname stuck to the people." },
+    { who: 0, text: "Science gave a microbe a hometown. I love that for it." },
+  ];
+  const HOSTS = ["Mia", "Jordan"];
+  function timeline(lines, lead = 0.2) {
+    let t = lead;
+    return lines.map((ln, i) => {
+      const words = ln.text.split(/\s+/), starts = [];
+      for (const w of words) { starts.push(t); t += 0.16 + 0.048 * w.replace(/[^\w']/g, "").length + (/[.?!]$/.test(w) ? 0.34 : /[,;:]$/.test(w) ? 0.16 : 0); }
+      const L = { ...ln, i, words, starts, start: starts[0], end: t };
+      t += 0.55;
+      return L;
+    });
+  }
+  class Caps {
+    constructor(stage, lines = LINES) {
+      this.stage = stage; this.prev = $(".s-prev", stage); this.wrap = $(".s-nowwrap", stage);
+      this.tl = timeline(lines); this.total = this.tl[this.tl.length - 1].end + 1.2; this.t = 0; this.li = -1; this.spans = []; this.on = true;
+      this.hosts = $$(".s-host", stage);
+    }
+    fit() {
+      const inner = $(".s-now", this.wrap); if (!inner) return;
+      const max = this.wrap.parentElement.clientHeight - this.prev.offsetHeight - 30;
+      inner.style.fontSize = "";
+      // A long single word (a Latin bacterium name) can overflow the width, so check both.
+      const fits = () => this.wrap.offsetHeight <= max && this.wrap.scrollWidth <= this.wrap.clientWidth;
+      for (const s of [100, 90, 80, 70, 62]) { this.wrap.style.fontStretch = s + "%"; if (fits()) return; }
+      for (let z = 28; z >= 18; z -= 2) { inner.style.fontSize = z + "px"; if (fits()) return; }
+    }
+    show(L, pill = "") {
+      const old = this.tl[this.li];
+      this.prev.textContent = old ? `${HOSTS[old.who]}: ${old.text}` : "";
+      this.wrap.innerHTML = `<div class="s-who"><i></i>${HOSTS[L.who]}${pill ? `<span class="s-pill">${pill}</span>` : ""}</div><div class="s-now">${L.words.map((w) => `<span class="w">${esc(w)}</span>`).join(" ")}</div>`;
+      this.spans = $$(".w", this.wrap);
+      this.fit();
+      if (!calm) anim(this.wrap, [{ opacity: 0, transform: "translateY(16px)" }, { opacity: 1, transform: "none" }], { dur: DUR.smooth, ease: SPR.smooth });
+    }
+    tick(dt) {
+      if (!this.on) return;
+      this.t += dt;
+      if (this.t > this.total) { this.t = 0; this.li = -1; }
+      let li = -1;
+      for (let k = 0; k < this.tl.length; k++) if (this.tl[k].start <= this.t) li = k;
+      if (li < 0) return;
+      const L = this.tl[li];
+      if (li !== this.li) { this.show(L, L.pill); this.li = li; }
+      let wi = L.words.length, wp = 1, level = 0;
+      if (this.t < L.end) {
+        wi = 0;
+        for (let k = 0; k < L.starts.length; k++) if (L.starts[k] <= this.t) wi = k;
+        const e = wi + 1 < L.starts.length ? L.starts[wi + 1] : L.end;
+        wp = Math.min(1, (this.t - L.starts[wi]) / (e - L.starts[wi]));
+        level = Math.pow(Math.sin(Math.PI * Math.min(wp * 1.18, 1)), 0.6) * (0.5 + 0.5 * hash(li * 31 + wi));
+      }
+      if (calm) wi = this.spans.length;
+      this.spans.forEach((s, k) => { const c = k < wi ? "w said" : k === wi ? "w now" : "w"; if (s.className !== c) s.className = c; });
+      $(".s-now", this.wrap)?.style.setProperty("--wp", wp.toFixed(3));
+      this.stage.style.setProperty("--level", calm ? "0" : level.toFixed(3));
+      this.hosts.forEach((h, k) => { const talk = this.t < L.end && L.who === k; h.classList.toggle("talk", talk); h.style.setProperty("--lv", talk && !calm ? level.toFixed(3) : "0"); });
+    }
+  }
+
+  // ---- the house (library side) -----------------------------------------------------
+  function houseHtml({ rows = true, live = true } = {}) {
+    return `<div class="house">
+      <header class="h-top">${wmHtml()}<span class="h-credits"><i></i>60</span><span class="h-av">M</span></header>
+      <h3 class="h-greet">Hi Marc. What should today's pod be about?</h3>
+      ${live ? `<div class="h-sec"><span class="dot"></span>Live now</div>
+      <div class="h-live"><button class="sleeve" type="button" data-sleeve aria-label="Open ${TITLE}">${ringSvg("rg ring")}<span class="live">LIVE</span><span class="t">${TITLE}</span><span class="h">Mia and Jordan</span></button>
+        <div class="side"><b>128 listening</b>Started 1 min ago<br>Chapter 2 of 4</div></div>` : ""}
+      ${rows ? `<div class="h-sec">Your pods</div><div class="h-rows">${PODS.slice(0, 3).map(podRow).join("")}</div>` : ""}
+    </div>`;
+  }
+  const PODS = [
+    { t: "Why bridges sing in the wind", g: "#6FB3FF", m: "Science deep-dive, 14:52", s: "finished" },
+    { t: "Our first apartment, ranked", g: "#FFB257", m: "Married couple chat, 9:40", s: "finished" },
+    { t: "The case for naps", g: "#8BD17C", m: "Live now", s: "live" },
+    { t: "Debate: cats or dogs", g: "#B69CFF", m: "Debate night, 15:00", s: "finished" },
+    { t: "Notes for Friday's pitch", g: "#F2D16B", m: "Draft, Inspirational talk", s: "draft" },
+  ];
+  const podRow = (p) => `<div class="h-row" data-s="${p.s}"><span class="sleeve" style="--gel:${p.g}"><span class="t">${p.t.split(" ")[0]}</span></span><span><b>${p.t}</b><span class="m ${p.s === "live" ? "live" : ""}">${p.m}</span></span></div>`;
+  function primeHouse(root) {
+    $$(".rg", root).forEach((svg) => drawRing(svg, 44, 2).forEach((d, i) => i % 3 === 0 && d.classList.add("lit")));
+  }
+
+  // =================================================================================
+  // Scenes
+  // =================================================================================
+  const SCENES = [];
+  const scene = (o) => SCENES.push(o);
+
+  // ---- Opening the app ------------------------------------------------------------
+  scene({
+    id: "boot", group: "Arriving", name: "Opening the app",
+    lede: "A short ident while the app checks who you are. The wordmark opens on the width axis, the tally lamp in the i switches on, and the mark flies into the header of your home screen.",
+    when: "Cold start only, while <code>session.load()</code> waits for <code>/api/me</code>. If that answers in under 250 ms, the ident is skipped.",
+    driven: "<code>main.js boot()</code>. The ident never holds the first screen back: when data is ready it jumps to the hand-off.",
+    timing: ["Letters 35 ms apart", "spring smooth 590 ms", "lamp flicker 450 ms", "fly to header: spring gentle 850 ms"],
+    reduced: "The lit wordmark appears, then cross-fades to home in 200 ms.",
+    mount() {
+      screen.innerHTML = houseHtml() + `<div class="boot"><span class="wm" aria-label="impromptu"><span aria-hidden="true" class="ls"></span></span><p class="boot-cap">Getting your pods</p></div>`;
+      primeHouse(screen);
+      const ls = $(".boot .ls");
+      ls.innerHTML = `<span class="iw l"><span class="i">i</span><span class="tittle off"></span></span>` + "mpromptu".split("").map((c) => `<span class="l">${c}</span>`).join("");
+    },
+    async play() {
+      const boot = $(".boot"), wm = $(".boot .wm"), letters = $$(".boot .l"), tittle = $(".boot .tittle"), house = $(".house");
+      const target = $(".h-top .wm", house);
+      target.style.visibility = "hidden";
+      $$(".h-greet, .h-sec, .h-live, .h-rows", house).forEach((e) => (e.style.opacity = 0));
+      if (calm) {
+        tittle.classList.remove("off");
+        await sleep(700);
+        anim(boot, [{ opacity: 1 }, { opacity: 0 }], { dur: 200 });
+        $$(".h-greet, .h-sec, .h-live, .h-rows", house).forEach((e) => (e.style.opacity = 1));
+        target.style.visibility = "visible";
+        return;
+      }
+      letters.forEach((l, i) => anim(l, [{ fontStretch: "50%", opacity: 0, transform: "translateY(10px)" }, { fontStretch: "112%", opacity: 1, transform: "none" }], { dur: DUR.smooth, delay: i * 35, ease: SPR.smooth }));
+      await sleep(380);
+      tittle.classList.remove("off");
+      anim(tittle, [{ opacity: .15 }, { opacity: 1, offset: .15 }, { opacity: .25, offset: .3 }, { opacity: 1, offset: .45 }, { opacity: .6, offset: .6 }, { opacity: 1 }], { dur: 450, ease: "steps(1, end)" });
+      anim($(".boot-cap"), [{ opacity: 0 }, { opacity: 1 }], { dur: 300, delay: 300 });
+      await sleep(820);
+      const a = rect(wm), b = rect(target);
+      anim($(".boot-cap"), [{ opacity: 1 }, { opacity: 0 }], { dur: 150 });
+      anim(wm, [{ transform: "none" }, { transform: `translate(${b.x - a.x}px, ${b.y - a.y}px) scale(${b.w / a.w})` }], { dur: DUR.gentle, ease: SPR.gentle });
+      anim(boot, [{ backgroundColor: "#0B0C12" }, { backgroundColor: "rgba(11,12,18,0)" }], { dur: 500, delay: 120, ease: EASE_IO });
+      $$(".h-greet, .h-sec, .h-live, .h-rows", house).forEach((e, i) => anim(e, [{ opacity: 0, transform: "translateY(8px)" }, { opacity: 1, transform: "none" }], { dur: 420, delay: 380 + i * 40 }));
+      await sleep(DUR.gentle);
+      target.style.visibility = "visible";
+      boot.remove();
+    },
+  });
+
+  // ---- Tuning in -----------------------------------------------------------------------
+  scene({
+    id: "tune", group: "Arriving", name: "Tuning in",
+    lede: "Opening a pod is tuning a radio. The needle hunts while the pod loads, locks onto the station when it arrives, the static clears, and the stage floods in from the dial.",
+    when: "Opening any pod at <code>/show/:id</code>, until its audio can play. Replaces the \"Tuning in&hellip;\" spinner.",
+    driven: "Needle hunts while <code>api.getShow()</code> is pending and locks when it returns. Static clears as the WebSocket snapshot lands (<code>ctl._snapshotSeen</code>). The flood starts when <code>tuneInWhenReady()</code> fires.",
+    timing: ["needle: spring k 90, c 9", "static fade 1.6 s", "flood: clip-path, spring gentle 850 ms"],
+    reduced: "A still dial with the station name, then the stage fades in.",
+    mount() {
+      screen.innerHTML = `<div class="tune"><canvas width="90" height="190"></canvas><div class="tune-mid"><p class="tune-label">Tuning in</p><div class="dial"><svg viewBox="0 0 300 64" preserveAspectRatio="none"></svg><span class="needle"></span></div><span class="freq">88.0</span><div class="station"><b>${TITLE}</b><span>Live with Mia and Jordan</span></div></div><div class="flood">${stageHtml()}</div></div>`;
+      primeStage(screen);
+      const svg = $(".dial svg");
+      let out = "";
+      for (let f = 880; f <= 1080; f += 2) {
+        const x = ((f - 880) / 200) * 300, maj = f % 20 === 0;
+        out += `<line data-f="${f}" class="${maj ? "maj" : ""}" x1="${x}" x2="${x}" y1="${maj ? 14 : 24}" y2="48"/>`;
+        if (maj) out += `<text x="${x}" y="62" text-anchor="middle">${f / 10}</text>`;
+      }
+      svg.innerHTML = out;
+      this.needle = { x: 88, v: 0, target: 88 };
+      this.noise = 0.55;
+      this.ctx = $(".tune canvas").getContext("2d");
+      this.img = this.ctx.createImageData(90, 190);
+    },
+    tick(dt) {
+      const n = this.needle; if (!n) return;
+      if (!calm) { n.v += (90 * (n.target - n.x) - 9 * n.v) * dt; n.x += n.v * dt; } else n.x = n.target;
+      const nd = $(".needle"); if (!nd) return;
+      nd.style.left = `${((n.x - 88) / 20) * 100}%`;
+      $(".freq").textContent = n.x.toFixed(1);
+      if (this.noise > 0.01 && !calm) {
+        const d = this.img.data;
+        for (let i = 0; i < d.length; i += 4) { const v = Math.random() * 255; d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = 255; }
+        this.ctx.putImageData(this.img, 0, 0);
+      }
+      $(".tune canvas").style.opacity = calm ? 0 : this.noise;
+    },
+    async play() {
+      const station = $(".station"), flood = $(".flood");
+      if (calm) {
+        this.needle.target = 98.6; this.noise = 0; station.style.opacity = 1;
+        await sleep(900);
+        flood.style.clipPath = "none";
+        anim(flood, [{ opacity: 0 }, { opacity: 1 }], { dur: 250 });
+        this.caps = new Caps($(".stage", flood));
+        return;
+      }
+      const fade = (to, ms) => { const from = this.noise, t0 = performance.now(); const f = () => { const p = Math.min(1, (performance.now() - t0) / (ms / speed)); this.noise = from + (to - from) * p; if (p < 1) requestAnimationFrame(f); }; f(); };
+      this.needle.target = 102.2; fade(0.4, 700); await sleep(700);
+      this.needle.target = 95.4; fade(0.25, 650); await sleep(650);
+      this.needle.target = 98.6; fade(0.0, 1000); await sleep(1100);
+      $$(".dial line").forEach((l) => Math.abs(+l.dataset.f - 986) <= 6 && l.classList.add("hot"));
+      anim(station, [{ opacity: 0, transform: "translateY(8px)", fontStretch: "70%" }, { opacity: 1, transform: "none", fontStretch: "100%" }], { dur: DUR.smooth, ease: SPR.smooth });
+      await sleep(900);
+      anim(flood, [{ clipPath: "inset(50% 0 50% 0)" }, { clipPath: "inset(0 0 0 0)" }], { dur: DUR.gentle, ease: SPR.gentle });
+      const st = $(".stage", flood);
+      $$(".s-top, .s-ep, .s-caps, .s-chapters, .s-hosts, .s-bar", st).forEach((e, i) => anim(e, [{ opacity: 0, transform: "translateY(10px)" }, { opacity: 1, transform: "none" }], { dur: 420, delay: 220 + i * 40 }));
+      this.caps = new Caps(st);
+    },
+    frame(dt) { this.caps?.tick(dt); },
+  });
+
+  // ---- Loading lists -------------------------------------------------------------------
+  scene({
+    id: "lists", group: "Arriving", name: "Loading lists",
+    lede: "Lists wait 300 ms before showing anything, so fast loads never flash. Slow ones get content-shaped placeholders. Filters reorder rows in place instead of re-rendering the list.",
+    when: "Library, albums, stats, personas, connections: any list that fetches. Replaces the plain \"Loading&hellip;\" text.",
+    driven: "<code>mountLibraryList().load()</code>. Filter and tab changes currently re-render with <code>setHtml</code>; the plan keys rows by pod id so they can move (FLIP).",
+    timing: ["placeholder delay 300 ms", "sweep 1.6 s loop", "rows: opacity only, 30 ms apart", "reorder: spring snappy 430 ms", "tab indicator: spring snappy"],
+    reduced: "Placeholders don't sweep; rows and reorders appear at once.",
+    mount() {
+      screen.innerHTML = `<div class="house"><header class="h-top">${wmHtml()}<span class="h-credits"><i></i>60</span><span class="h-av">M</span></header>
+        <div class="tabs" role="tablist"><span class="ind"></span>${["Yours", "Following", "Shared", "Discover"].map((t, i) => `<button type="button" role="tab" aria-selected="${i === 0}">${t}</button>`).join("")}</div>
+        <div class="chips">${["All", "Live", "Finished", "Drafts"].map((t, i) => `<button class="chip" type="button" data-f="${t}" aria-pressed="${i === 0}">${t}</button>`).join("")}</div>
+        <div class="h-rows" data-list></div></div>`;
+      const ind = $(".tabs .ind"), b = $(".tabs button");
+      ind.style.width = b.offsetWidth + "px";
+    },
+    async play() {
+      const list = $("[data-list]");
+      await sleep(300);
+      list.innerHTML = Array.from({ length: 5 }, () => `<div class="skel"><span class="sq"></span><span style="flex:1;display:grid;gap:8px"><span class="ln" style="width:72%"></span><span class="ln" style="width:44%"></span></span></div>`).join("");
+      if (calm) $$(".skel *", list).forEach((e) => (e.style.animation = "none"));
+      anim(list, [{ opacity: 0 }, { opacity: 1 }], { dur: 150 });
+      await sleep(1300);
+      list.innerHTML = PODS.map(podRow).join("");
+      $$(".h-row", list).forEach((r, i) => !calm && anim(r, [{ opacity: 0 }, { opacity: 1 }], { dur: 240, delay: i * 30 }));
+      await sleep(1300);
+      await this.filter("Live");
+      await sleep(1500);
+      await this.filter("All");
+      await sleep(800);
+      await this.tab(3);
+      await sleep(900);
+      await this.tab(0);
+    },
+    async filter(name) {
+      const list = $("[data-list]");
+      $$(".chip").forEach((c) => c.setAttribute("aria-pressed", String(c.dataset.f === name)));
+      const rows = $$(".h-row", list);
+      const first = new Map(rows.map((r) => [r, r.getBoundingClientRect().top]));
+      const keep = (r) => name === "All" || (name === "Live" && r.dataset.s === "live");
+      if (name !== "All") {
+        const leaving = rows.filter((r) => !keep(r));
+        if (!calm) await Promise.all(leaving.map((r) => anim(r, [{ opacity: 1, transform: "none" }, { opacity: 0, transform: "scale(.97)" }], { dur: 160, ease: EASE_IN }).finished));
+        leaving.forEach((r) => (r.hidden = true));
+      } else rows.forEach((r) => (r.hidden = false));
+      for (const r of rows) {
+        if (r.hidden) continue;
+        const d = first.get(r) - r.getBoundingClientRect().top;
+        if (calm) continue;
+        if (name === "All" && first.get(r) === 0) anim(r, [{ opacity: 0 }, { opacity: 1 }], { dur: 220 });
+        else if (d) anim(r, [{ transform: `translateY(${d}px)` }, { transform: "none" }], { dur: DUR.snappy, ease: SPR.snappy });
+      }
+      if (name === "All") rows.forEach((r, i) => { if (!calm && r.dataset.s !== "live") anim(r, [{ opacity: 0 }, { opacity: 1 }], { dur: 220, delay: 60 + i * 30 }); });
+      await sleep(450);
+    },
+    async tab(i) {
+      const tabs = $$(".tabs button"), ind = $(".tabs .ind");
+      tabs.forEach((t, k) => t.setAttribute("aria-selected", String(k === i)));
+      const x = tabs[i].offsetLeft - 4;
+      anim(ind, [{ transform: getComputedStyle(ind).transform === "none" ? "translateX(0)" : getComputedStyle(ind).transform }, { transform: `translateX(${x}px)` }], { dur: calm ? 1 : DUR.snappy, ease: SPR.snappy });
+      await sleep(450);
+    },
+  });
+
+  // ---- Green room ------------------------------------------------------------------------
+  scene({
+    id: "greenroom", group: "Going live", name: "Green room",
+    lede: "A live pod is on air from the first second: its theme plays while the hosts plan. The ring chases, the title and rundown arrive as they're written under the music, and when the hosts' welcome begins the rundown folds into the chapter bar.",
+    when: "A live pod before its first line is heard. Replaces \"Theme music, while the hosts get ready&hellip;\", \"Planning the episode&hellip;\" and \"Writing the cold open&hellip;\".",
+    driven: "Live pods stream about 7 s of theme while the episode is planned (<code>store.inIntro(pos)</code>, before the first segment). <code>store.state</code> goes planning, the <code>plan</code> event brings title, hosts and beats, then writing (<code>app/show.py</code>), then the first <code>segment</code>: the spoken welcome.",
+    timing: ["tally on with the theme: flicker 450 ms", "theme bars follow the audio level", "ring chase 30 dots/s", "title words 40 ms apart", "chapters drop 90 ms apart, spring bouncy", "fold into bar on the welcome: spring smooth"],
+    reduced: "The steps tick over in place; the bars hold still; the rundown appears at once and fades into the live view.",
+    mount() {
+      screen.innerHTML = `<div class="stage" style="--gel:#FFB257" data-gr>
+        <header class="s-top"><span class="s-tally off"><i></i>ON AIR</span><span class="s-listen">Theme music</span></header>
+        <div class="gr-ringwrap">${ringSvg("ring gr-ring")}<span class="gr-step">Theme music, while the hosts get ready</span></div>
+        <div class="gr-theme">${"<i></i>".repeat(28)}</div>
+        <h3 class="gr-title"></h3><p class="gr-hosts"></p>
+        <ol class="gr-rundown"></ol>
+      </div><div data-live style="position:absolute;inset:0;opacity:0;pointer-events:none">${stageHtml({ gel: "#FFB257", chapter: "Chapter 1, Cold open" })}</div>`;
+      primeStage(screen);
+      this.dots = drawRing($(".gr-ring"), 45, 2.3);
+      this.chase = 0; this.mode = "chase"; this.arcs = 0; this.theme = true; this.tt = 0;
+    },
+    tick(dt) {
+      if (!this.dots) return;
+      if (this.mode === "chase") {
+        this.chase = (this.chase + dt * 30) % 60;
+        const h = Math.floor(this.chase);
+        this.dots.forEach((d, i) => d.classList.toggle("lit", !calm ? ((h - i + 60) % 60) < 9 : i % 5 === 0));
+      } else if (this.mode === "arcs") {
+        this.dots.forEach((d, i) => d.classList.toggle("lit", Math.floor(i / 15) < this.arcs && i % 15 !== 14));
+      }
+      this.tt += dt;
+      const env = this.theme ? 1 : Math.max(0, 1 - this.tt * 2);
+      $$(".gr-theme i").forEach((b, i) => { b.style.height = `${Math.round((calm ? 0.4 : 0.15 + 0.85 * env * Math.abs(Math.sin(this.tt * (3.5 + (i % 4)) + i * 0.8))) * 100)}%`; });
+    },
+    async play() {
+      const gr = $("[data-gr]"), step = $(".gr-step"), title = $(".gr-title"), hosts = $(".gr-hosts"), run = $(".gr-rundown"), tally0 = $(".s-tally", gr);
+      const setStep = (t) => { if (calm) { step.textContent = t; return; } anim(step, [{ opacity: 1 }, { opacity: 0 }], { dur: 120 }).finished.then(() => { step.textContent = t; anim(step, [{ opacity: 0, fontStretch: "70%" }, { opacity: 1, fontStretch: "100%" }], { dur: 360, ease: SPR.smooth }); }); };
+      // the theme is on air from the first second
+      await sleep(300);
+      tally0.classList.remove("off");
+      if (!calm) anim(tally0, [{ opacity: .2 }, { opacity: 1, offset: .15 }, { opacity: .3, offset: .3 }, { opacity: 1, offset: .45 }, { opacity: .7, offset: .6 }, { opacity: 1 }], { dur: 450, ease: "steps(1, end)" });
+      await sleep(1700);
+      // the plan lands
+      title.innerHTML = TITLE.split(" ").map((w) => `<span class="wd">${w}</span>`).join(" ");
+      if (!calm) $$(".wd", title).forEach((w, i) => anim(w, [{ opacity: 0, fontStretch: "50%" }, { opacity: 1, fontStretch: "84%" }], { dur: DUR.smooth, delay: i * 40, ease: SPR.smooth }));
+      hosts.textContent = "Mia and Jordan, 10 minutes";
+      if (!calm) anim(hosts, [{ opacity: 0 }, { opacity: 1 }], { dur: 300, delay: 250 });
+      this.mode = "arcs";
+      const beats = ["Cold open", "Wild yeast, explained", "The Gold Rush", "Why San Francisco tastes different"];
+      run.innerHTML = beats.map((b, i) => `<li><span>${i + 1}</span>${b}</li>`).join("");
+      const lis = $$("li", run);
+      for (let i = 0; i < lis.length; i++) {
+        if (!calm) anim(lis[i], [{ opacity: 0, transform: "translateY(-14px) scale(.96)" }, { opacity: 1, transform: "none" }], { dur: DUR.bouncy, ease: SPR.bouncy });
+        this.arcs = i + 1;
+        await sleep(calm ? 0 : 90);
+      }
+      await sleep(700);
+      setStep("Writing the welcome");
+      await sleep(1800);
+      // the theme fades under the welcome: the rundown folds into the chapter bar, captions begin
+      this.theme = false; this.tt = 0;
+      const live = $("[data-live]");
+      const segs = $$(".s-chapters i", live);
+      if (!calm) {
+        await Promise.all(lis.map((li, i) => {
+          const a = rect(li), b = rect(segs[i]);
+          $$("span", li).forEach((s) => (s.style.opacity = 0));
+          return anim(li, [{ transform: "none", color: "#fff", borderRadius: "10px" }, { transform: `translate(${b.x - a.x}px, ${b.y - a.y}px) scale(${b.w / a.w}, ${b.h / a.h})`, color: "transparent", borderRadius: "2px", background: i === 0 ? "#fff" : "rgba(255,255,255,.22)" }],
+            { dur: DUR.smooth, delay: i * 50, ease: SPR.smooth, fill: "forwards" }).finished;
+        }));
+      }
+      if (calm) { live.style.opacity = 1; gr.style.opacity = 0; }
+      else {
+        anim(live, [{ opacity: 0 }, { opacity: 1 }], { dur: 380, fill: "forwards" });
+        anim(gr, [{ opacity: 1 }, { opacity: 0 }], { dur: 300, fill: "forwards" });
+      }
+      segs.forEach((s, i) => { s.className = i === 0 ? "cur" : ""; s.innerHTML = i === 0 ? '<b style="width:3%"></b>' : ""; });
+      this.caps = new Caps($(".stage", live), [{ who: 0, text: "Hi, and welcome. I'm Mia." }, { who: 1, text: "And I'm Jordan. Today: wild yeast, the Gold Rush, and a very old jar." }, { who: 0, text: "So the starter in my fridge is technically older than my car." }]);
+    },
+    frame(dt) { this.caps?.tick(dt); },
+  });
+
+  // ---- Go live ------------------------------------------------------------------------------
+  scene({
+    id: "golive", group: "Going live", name: "Go live",
+    lede: "The button becomes the studio. Its red dot moves to the middle of a studio clock, the ring counts three seconds in, the dot opens into the ON AIR lamp, and the stage is revealed from the lamp.",
+    when: "Pressing Go live on the create screen or on a draft.",
+    driven: "The count-in runs while <code>POST /api/shows</code> or <code>api.startDraft()</code> is in flight. If the server takes longer than the count, the ring keeps chasing on \"Standing by\"; it never says on air before it is.",
+    timing: ["button to full screen: container transform 450 ms", "ring: 60 dots in 3 s", "numerals 1 s each, width 150% to 62%", "lamp opens 500 ms + flicker", "reveal from lamp: spring gentle"],
+    reduced: "The button reads \"Starting\", then the stage fades in with the lamp already lit.",
+    options: '<label><input type="checkbox" id="slow"> Simulate a slow server</label>',
+    mount() {
+      screen.innerHTML = `<div class="house">
+        <header class="h-top"><span style="display:inline-flex;align-items:center;gap:6px;font-weight:700">${ICON.back}New pod</span></header>
+        <div class="gl-card"><span class="sleeve" style="--gel:#FF6B9A"><span class="t">Wild Yeast</span></span><div><b>${TITLE}</b><p>Friends chatting, Mia and Jordan</p></div></div>
+        <div class="gl-rows"><div><span>Length</span><b>10 minutes</b></div><div><span>Who can listen</span><b>Public</b></div><div><span>Album</span><b>Kitchen science</b></div></div>
+        <div class="gl-foot"><p>Uses 10 credits. You have 60.</p><button class="gl-go" type="button" data-go><span class="gl-dot"></span>Go live</button></div>
+      </div>
+      <div class="gl" hidden><div class="gl-inner">${ringSvg("gl-ring")}<span class="gl-num"></span><span class="gl-lamp"><span>ON AIR</span></span></div><p class="gl-cap">Standing by</p></div>
+      <div class="gl-stage" style="position:absolute;inset:0;z-index:40" hidden>${stageHtml({ chapter: "Chapter 1, Cold open" })}</div>`;
+      primeStage(screen);
+    },
+    tick(dt) {
+      if (this.chasing && this.ring) {
+        this.chase = ((this.chase || 0) + dt * 40) % 60;
+        const h = Math.floor(this.chase);
+        this.ring.forEach((d, i) => { d.classList.toggle("chase", ((h - i + 60) % 60) < 10); d.classList.remove("lit"); });
+      }
+    },
+    async play() {
+      const go = $("[data-go]"), gl = $(".gl"), num = $(".gl-num"), lamp = $(".gl-lamp"), cap = $(".gl-cap"), st = $(".gl-stage");
+      const slow = $("#slow")?.checked;
+      await sleep(600);
+      anim(go, [{ transform: "scale(1)" }, { transform: "scale(.96)" }, { transform: "scale(1)" }], { dur: 240 });
+      await sleep(160);
+      if (calm) {
+        go.lastChild.textContent = "Starting";
+        await sleep(slow ? 2400 : 900);
+        st.hidden = false; anim(st, [{ opacity: 0 }, { opacity: 1 }], { dur: 250 });
+        this.caps = new Caps($(".stage", st));
+        return;
+      }
+      // container transform: the button grows into the dark studio
+      const b = rect(go), W = screen.clientWidth, H = screen.clientHeight;
+      gl.hidden = false;
+      const inset = `inset(${b.y}px ${W - b.x - b.w}px ${H - b.y - b.h}px ${b.x}px round 29px)`;
+      anim(gl, [{ clipPath: inset }, { clipPath: "inset(0 0 0 0 round 39px)" }], { dur: 460, ease: EASE_IO });
+      // the dot flies to the middle
+      const dot = $(".gl-dot", go), d = rect(dot), lr = { x: W / 2 - 7, y: H / 2 - 7 };
+      lamp.style.opacity = 0;
+      const ghost = document.createElement("span");
+      ghost.style.cssText = `position:absolute;z-index:35;left:${d.x}px;top:${d.y}px;width:12px;height:12px;border-radius:50%;background:#FF3B30`;
+      screen.append(ghost);
+      await anim(ghost, [{ transform: "none" }, { transform: `translate(${lr.x - d.x + 1}px, ${lr.y - d.y + 1}px)`, background: "#3A1512" }], { dur: 520, ease: SPR.smooth, fill: "forwards" }).finished;
+      ghost.remove(); lamp.style.opacity = 1;
+      this.ring = drawRing($(".gl-ring"), 46, 1.9);
+      cap.textContent = "Standing by";
+      const t0 = performance.now();
+      await new Promise((res) => {
+        const id = run;
+        const f = () => {
+          if (id !== run) return res();
+          const e = ((performance.now() - t0) / 1000) * speed;
+          const k = Math.min(60, Math.floor(e * 20));
+          this.ring.forEach((c, i) => c.classList.toggle("lit", i < k));
+          const n = 3 - Math.floor(e);
+          if (e < 3 && num.textContent !== String(n)) {
+            num.textContent = n;
+            anim(num, [{ fontStretch: "150%", opacity: 0, transform: "scale(.82)" }, { fontStretch: "70%", opacity: 1, offset: .7 }, { fontStretch: "62%", opacity: 1, transform: "none" }], { dur: 900, ease: SPR.smooth });
+          }
+          if (e >= 3) return res();
+          requestAnimationFrame(f);
+        };
+        requestAnimationFrame(f);
+      });
+      alive(run);
+      num.textContent = "";
+      if (slow) {
+        cap.textContent = "Standing by. The server is still getting the hosts ready.";
+        this.chasing = true;
+        await sleep(2600);
+        this.chasing = false;
+      }
+      this.ring.forEach((c) => { c.classList.remove("chase"); c.classList.add("lit"); });
+      // the dot opens into the lamp
+      anim(lamp, [{ width: "14px", height: "14px", margin: "-7px 0 0 -7px", borderRadius: "50%", background: "#3A1512" }, { width: "150px", height: "52px", margin: "-26px 0 0 -75px", borderRadius: "8px", background: "#FF3B30", boxShadow: "0 0 44px 6px rgba(255,59,48,.55)" }], { dur: 460, ease: SPR.snappy, fill: "forwards" });
+      await sleep(260);
+      anim($("span", lamp), [{ opacity: 0 }, { opacity: 1, offset: .15 }, { opacity: .3, offset: .3 }, { opacity: 1, offset: .45 }, { opacity: .6, offset: .6 }, { opacity: 1 }], { dur: 500, ease: "steps(1, end)" });
+      cap.textContent = TITLE;
+      await sleep(900);
+      st.hidden = false;
+      const lc = rect(lamp);
+      anim(st, [{ clipPath: `circle(0px at ${lc.x + lc.w / 2}px ${lc.y + lc.h / 2}px)` }, { clipPath: `circle(${Math.hypot(W, H)}px at ${lc.x + lc.w / 2}px ${lc.y + lc.h / 2}px)` }], { dur: DUR.gentle, ease: SPR.gentle });
+      this.caps = new Caps($(".stage", st), [{ who: 0, text: "So the starter in my fridge is technically older than my car." }, { who: 1, text: "That's not a flex. That's a custody arrangement." }]);
+    },
+    frame(dt) { this.caps?.tick(dt); },
+  });
+
+  // ---- House lights ---------------------------------------------------------------------------
+  scene({
+    id: "house", group: "Listening", name: "House lights",
+    lede: "Opening a pod from the library dims the house. The stage floods out from the sleeve you tapped while the sleeve flies into the cover slot. Going back raises the house lights the same way in reverse.",
+    when: "Moving between the library and a pod, in both directions.",
+    driven: "<code>router.dispatch()</code> wraps the swap in <code>document.startViewTransition()</code>. The sleeve and the stage cover share <code>view-transition-name: sleeve-{id}</code>; the tap point is passed as CSS variables for the circle.",
+    timing: ["sleeve press 120 ms", "flood: circle clip, spring gentle 850 ms", "sleeve flight: spring smooth", "stage contents 40 ms apart", "back: 80% of the way in"],
+    reduced: "A plain cross-fade between the two screens.",
+    mount() {
+      screen.innerHTML = houseHtml() + `<div class="hl-stage" style="position:absolute;inset:0;z-index:20;visibility:hidden">${stageHtml({ back: true })}</div>`;
+      primeHouse(screen); primeStage(screen);
+    },
+    async play() {
+      await sleep(700);
+      await this.open();
+      await sleep(3600);
+      await this.close();
+    },
+    async open() {
+      const sl = $("[data-sleeve]"), st = $(".hl-stage"), cover = $(".s-cover", st);
+      if (!calm) await anim(sl, [{ transform: "scale(1)" }, { transform: "scale(.97)" }, { transform: "scale(1.01)" }], { dur: 200 }).finished;
+      st.style.visibility = "visible";
+      if (calm) { anim(st, [{ opacity: 0 }, { opacity: 1 }], { dur: 200 }); this.caps = new Caps($(".stage", st)); return; }
+      const a = rect(sl), b = rect(cover), cx = a.x + a.w / 2, cy = a.y + a.h / 2, R = Math.hypot(screen.clientWidth, screen.clientHeight);
+      anim(st, [{ clipPath: `circle(0px at ${cx}px ${cy}px)` }, { clipPath: `circle(${R}px at ${cx}px ${cy}px)` }], { dur: DUR.gentle, ease: SPR.gentle });
+      const ghost = sl.cloneNode(true);
+      ghost.style.cssText = `position:absolute;z-index:40;left:${a.x}px;top:${a.y}px;width:${a.w}px;height:${a.h}px;margin:0;transform-origin:0 0`;
+      screen.append(ghost);
+      cover.style.visibility = "hidden";
+      $$(".s-top, .s-ep b, .s-chap, .s-caps, .s-chapters, .s-hosts, .s-bar", st).forEach((e, i) => anim(e, [{ opacity: 0, transform: "translateY(12px)" }, { opacity: 1, transform: "none" }], { dur: 460, delay: 260 + i * 40 }));
+      $$(".t, .h, .live, .rg", ghost).forEach((e) => anim(e, [{ opacity: 1 }, { opacity: 0 }], { dur: 200, delay: 120 }));
+      await anim(ghost, [{ transform: "none", borderRadius: "12px" }, { transform: `translate(${b.x - a.x}px, ${b.y - a.y}px) scale(${b.w / a.w}, ${b.h / a.h})`, borderRadius: `${8 * a.w / b.w}px` }], { dur: DUR.smooth, ease: SPR.smooth, fill: "forwards" }).finished;
+      cover.style.visibility = "visible"; ghost.remove();
+      this.caps = new Caps($(".stage", st));
+    },
+    async close() {
+      const sl = $("[data-sleeve]"), st = $(".hl-stage"), cover = $(".s-cover", st);
+      this.caps = null;
+      if (calm) { await anim(st, [{ opacity: 1 }, { opacity: 0 }], { dur: 200 }).finished; st.style.visibility = "hidden"; return; }
+      const a = rect(sl), b = rect(cover), cx = a.x + a.w / 2, cy = a.y + a.h / 2, R = Math.hypot(screen.clientWidth, screen.clientHeight);
+      const ghost = sl.cloneNode(true);
+      ghost.style.cssText = `position:absolute;z-index:40;left:${a.x}px;top:${a.y}px;width:${a.w}px;height:${a.h}px;margin:0;transform-origin:0 0`;
+      screen.append(ghost);
+      cover.style.visibility = "hidden"; sl.style.visibility = "hidden";
+      const dur = DUR.gentle * 0.8;
+      anim(st, [{ clipPath: `circle(${R}px at ${cx}px ${cy}px)` }, { clipPath: `circle(0px at ${cx}px ${cy}px)` }], { dur, ease: EASE_IO, fill: "forwards" });
+      await anim(ghost, [{ transform: `translate(${b.x - a.x}px, ${b.y - a.y}px) scale(${b.w / a.w}, ${b.h / a.h})`, borderRadius: `${8 * a.w / b.w}px` }, { transform: "none", borderRadius: "12px" }], { dur: DUR.smooth * 0.8, ease: SPR.smooth, fill: "forwards" }).finished;
+      sl.style.visibility = "visible"; ghost.remove();
+      await sleep(dur - DUR.smooth * 0.8);
+      st.style.visibility = "hidden"; cover.style.visibility = "visible";
+      st.getAnimations().forEach((x) => x.cancel());
+    },
+    frame(dt) { this.caps?.tick(dt); },
+  });
+
+  // ---- Now playing (interactive) -------------------------------------------------------------
+  function makeDraggable(el, { onClose, onMove }) {
+    let y0 = 0, dy = 0, t0 = 0, last = 0, lastT = 0, v = 0, active = false;
+    el.addEventListener("pointerdown", (e) => {
+      if (e.target.closest("button")) return;
+      active = true; userTook = true; y0 = e.clientY; t0 = lastT = performance.now(); last = e.clientY; dy = 0; v = 0;
+      el.setPointerCapture(e.pointerId);
+      el.getAnimations().forEach((a) => a.cancel());
+    });
+    el.addEventListener("pointermove", (e) => {
+      if (!active) return;
+      const now = performance.now();
+      v = (e.clientY - last) / Math.max(1, now - lastT); last = e.clientY; lastT = now;
+      dy = e.clientY - y0;
+      const y = dy > 0 ? dy : -Math.pow(-dy, 0.7);   // rubber band upward
+      el.style.transform = `translateY(${y}px)`;
+      onMove?.(Math.max(0, dy) / el.offsetHeight);
+    });
+    const end = () => {
+      if (!active) return;
+      active = false;
+      if (dy > 120 || v > 0.5) onClose(dy);
+      else {
+        anim(el, [{ transform: `translateY(${Math.max(0, dy)}px)` }, { transform: "translateY(0)" }], { dur: DUR.snappy, ease: SPR.snappy, fill: "none" });
+        el.style.transform = "";
+        onMove?.(0);
+      }
+    };
+    el.addEventListener("pointerup", end);
+    el.addEventListener("pointercancel", end);
+  }
+
+  scene({
+    id: "np", group: "Listening", name: "Now playing",
+    lede: "Tap the episode to open it. The cover grows out of the small one in the corner and the transcript follows. Drag it down to put it away; it follows your finger and closes past a point or on a quick flick.",
+    when: "Tapping the episode row in the phone live view, and closing it again.",
+    driven: "<code>live-mobile.js openNp()</code> / <code>closeNp()</code>. Today it slides in and closes instantly; there is no drag.",
+    timing: ["cover grows: FLIP, spring smooth 590 ms", "transcript lines 24 ms apart", "drag: closes past 120 px or 0.5 px/ms", "snap back: spring snappy"],
+    reduced: "Opens and closes with a 150 ms fade. Dragging still works.",
+    interactive: "Try it: tap the episode row, then drag the cover down.",
+    mount() {
+      screen.innerHTML = stageHtml() + `<div class="np" hidden>
+        <span class="np-grab"></span>
+        <header class="np-top"><button class="s-back" style="margin:0" type="button" data-close aria-label="Close">${ICON.down}</button><span class="from">Playing live from<b>Your pods</b></span><span style="width:34px"></span></header>
+        <div class="np-cover">${ringSvg("rg ring")}<span class="t">Wild Yeast</span></div>
+        <div class="np-meta"><b>${TITLE}</b><span>Mia and Jordan</span></div>
+        <div class="np-prog"><i class="done"></i><i></i><i></i><i></i></div>
+        <div class="np-tr"><span>${ICON.b15}</span><span class="np-play">${ICON.pause}</span><span style="font-weight:800;font-size:13px">LIVE</span></div>
+        <div class="np-lines"><p>Mia: So the starter in my fridge is technically older than my car.</p><p>Jordan: That's not a flex. That's a custody arrangement.</p><p class="cur">Mia: Okay, but listen. Miners in 1849 carried starter in pouches.</p></div>
+      </div>`;
+      primeStage(screen);
+      $$(".np .rg").forEach((svg) => drawRing(svg, 44, 2).forEach((d, i) => i % 3 === 0 && d.classList.add("lit")));
+      this.caps = new Caps($(".stage"));
+      const np = $(".np");
+      $("[data-ep]").addEventListener("click", () => { userTook = true; this.open(); });
+      $("[data-close]").addEventListener("click", () => { userTook = true; this.close(0); });
+      makeDraggable(np, { onClose: (dy) => this.close(dy) });
+    },
+    async play() {
+      await sleep(1400);
+      if (userTook) return;
+      await this.open();
+      await sleep(2600);
+      if (userTook) return;
+      await this.close(0, true);
+    },
+    async open() {
+      const np = $(".np"); if (!np.hidden) return;
+      const small = $(".s-cover"), big = $(".np-cover");
+      np.hidden = false; np.style.transform = "";
+      if (calm) { anim(np, [{ opacity: 0 }, { opacity: 1 }], { dur: 150 }); return; }
+      const a = rect(small), b = rect(big);
+      big.style.visibility = "hidden";
+      anim(np, [{ backgroundColor: "rgba(0,0,0,0)" }, { backgroundColor: getComputedStyle(np).backgroundColor }], { dur: 260 });
+      $$(".np-top, .np-meta, .np-prog, .np-tr, .np-lines p", np).forEach((e, i) => anim(e, [{ opacity: 0, transform: "translateY(18px)" }, { opacity: 1, transform: "none" }], { dur: 460, delay: 140 + i * 24, ease: SPR.smooth }));
+      const ghost = big.cloneNode(true);
+      ghost.style.cssText = `position:absolute;z-index:30;left:${b.x}px;top:${b.y}px;width:${b.w}px;height:${b.h}px;margin:0;transform-origin:0 0;visibility:visible`;
+      screen.append(ghost);
+      await anim(ghost, [{ transform: `translate(${a.x - b.x}px, ${a.y - b.y}px) scale(${a.w / b.w})`, borderRadius: `${8 * b.w / a.w}px` }, { transform: "none", borderRadius: "12px" }], { dur: DUR.smooth, ease: SPR.smooth }).finished;
+      big.style.visibility = "visible"; ghost.remove();
+    },
+    async close(dy = 0, demo = false) {
+      const np = $(".np"); if (np.hidden) return;
+      if (calm) { await anim(np, [{ opacity: 1 }, { opacity: 0 }], { dur: 150 }).finished; np.hidden = true; return; }
+      if (demo) {   // the demo drags it a little first, like a thumb would
+        await anim(np, [{ transform: "translateY(0)" }, { transform: "translateY(70px)" }], { dur: 380, ease: EASE_OUT, fill: "forwards" }).finished;
+        dy = 70;
+      }
+      await anim(np, [{ transform: `translateY(${dy}px)` }, { transform: "translateY(100%)" }], { dur: 340, ease: EASE_IN, fill: "forwards" }).finished;
+      np.getAnimations().forEach((x) => x.cancel());
+      np.style.transform = ""; np.hidden = true;
+    },
+    frame(dt) { this.caps?.tick(dt); },
+  });
+
+  // ---- Sheets (interactive) -----------------------------------------------------------------
+  scene({
+    id: "sheet", group: "Taking part", name: "Sheets",
+    lede: "Sheets rise on a spring while the show behind them steps back. The selected option slides between choices. Drag a sheet down to close it.",
+    when: "Add context, share, restyle, hosts, your account: everything that opens with <code>openSheet()</code>.",
+    driven: "<code>ui.js openSheet()</code> and its <code>close()</code>. Today the sheet rises 24 px in 200 ms and doesn't slide back down when it closes.",
+    timing: ["sheet: spring smooth 590 ms", "stage recedes to 94%", "option indicator: spring snappy 430 ms", "panes slide 16 px with the direction of travel", "close: 260 ms ease-in"],
+    reduced: "The sheet fades in place and the indicator jumps.",
+    interactive: "Try it: tap the white button, switch options, drag the sheet down.",
+    mount() {
+      screen.innerHTML = `<div class="recede">${stageHtml()}</div><div class="scrim"></div>
+        <div class="sheet" role="dialog" aria-label="Add context"><span class="grab"></span><h3>Add context</h3>
+          <div class="seg"><span class="ind"></span>${["Note", "File", "Link", "Photo"].map((t, i) => `<button type="button" data-i="${i}" aria-pressed="${i === 0}">${t}</button>`).join("")}</div>
+          <div class="sheet-body"><div class="sheet-pane" data-pane></div></div>
+          <button class="sheet-add" type="button">Add to the show</button></div>`;
+      primeStage(screen);
+      this.caps = new Caps($(".stage"));
+      this.i = 0; this.setPane(0, true);
+      const ind = $(".seg .ind"), b0 = $(".seg button");
+      ind.style.width = b0.offsetWidth + "px";
+      $$(".seg button").forEach((b) => b.addEventListener("click", () => { userTook = true; this.pick(+b.dataset.i); }));
+      $("[data-send]").addEventListener("click", () => { userTook = true; this.open(); });
+      $(".scrim").addEventListener("click", () => this.close());
+      makeDraggable($(".sheet"), { onClose: () => this.close(), onMove: (p) => { $(".scrim").style.opacity = String(1 - p); } });
+    },
+    PANES: [["Type a note", "The hosts use it from the next line on."], ["Drop a PDF or document", "Up to 20 MB."], ["Paste a link", "We'll read the page for the hosts."], ["Add a photo", "The hosts describe what they see."]],
+    setPane(i, instant) {
+      const box = $(".sheet-body"), old = $("[data-pane]", box), dir = i > this.i ? 1 : -1;
+      const [h, s] = this.PANES[i];
+      const neu = document.createElement("div");
+      neu.className = "sheet-pane"; neu.dataset.pane = ""; neu.innerHTML = `<span><b>${h}</b>${s}</span>`;
+      if (instant || calm) { old?.remove(); box.append(neu); this.i = i; return; }
+      box.append(neu);
+      anim(neu, [{ opacity: 0, transform: `translateX(${16 * dir}px)` }, { opacity: 1, transform: "none" }], { dur: 300 });
+      anim(old, [{ opacity: 1, transform: "none" }, { opacity: 0, transform: `translateX(${-16 * dir}px)` }], { dur: 180, ease: EASE_IN }).finished.then(() => old.remove());
+      this.i = i;
+    },
+    pick(i) {
+      if (i === this.i) return;
+      const btns = $$(".seg button"), ind = $(".seg .ind");
+      btns.forEach((b, k) => b.setAttribute("aria-pressed", String(k === i)));
+      const from = btns[this.i].offsetLeft - 4, to = btns[i].offsetLeft - 4;
+      anim(ind, [{ transform: `translateX(${from}px)` }, { transform: `translateX(${to}px)` }], { dur: calm ? 1 : DUR.snappy, ease: SPR.snappy, fill: "forwards" });
+      this.setPane(i);
+    },
+    async open() {
+      const sh = $(".sheet"); if (this.isOpen) return; this.isOpen = true;
+      sh.style.transform = "";
+      if (calm) { sh.getAnimations().forEach((a) => a.cancel()); sh.style.transform = "translateY(0)"; $(".scrim").style.opacity = 1; $(".scrim").style.pointerEvents = "auto"; return; }
+      anim(sh, [{ transform: "translateY(105%)" }, { transform: "translateY(0)" }], { dur: DUR.smooth, ease: SPR.smooth, fill: "forwards" });
+      anim($(".recede"), [{ transform: "none", borderRadius: "39px" }, { transform: "scale(.94) translateY(-6px)", borderRadius: "28px" }], { dur: DUR.smooth, ease: SPR.smooth, fill: "forwards" });
+      anim($(".scrim"), [{ opacity: 0 }, { opacity: 1 }], { dur: 300, fill: "forwards" });
+      $(".scrim").style.pointerEvents = "auto";
+      await sleep(DUR.smooth);
+    },
+    async close() {
+      const sh = $(".sheet"); if (!this.isOpen) return; this.isOpen = false;
+      const cur = sh.style.transform || "translateY(0)";
+      sh.getAnimations().forEach((a) => a.commitStyles?.());
+      $(".scrim").style.pointerEvents = "none";
+      if (calm) { sh.getAnimations().forEach((a) => a.cancel()); sh.style.transform = "translateY(105%)"; $(".scrim").getAnimations().forEach((a) => a.cancel()); $(".scrim").style.opacity = 0; return; }
+      sh.getAnimations().forEach((a) => a.cancel());
+      anim(sh, [{ transform: cur }, { transform: "translateY(105%)" }], { dur: 260, ease: EASE_IN, fill: "forwards" });
+      anim($(".recede"), [{ transform: "scale(.94) translateY(-6px)", borderRadius: "28px" }, { transform: "none", borderRadius: "39px" }], { dur: DUR.smooth, ease: SPR.smooth, fill: "forwards" });
+      $(".scrim").getAnimations().forEach((a) => a.cancel());
+      anim($(".scrim"), [{ opacity: getComputedStyle($(".scrim")).opacity }, { opacity: 0 }], { dur: 260, fill: "forwards" });
+      sh.style.transform = "";
+      await sleep(300);
+    },
+    async play() {
+      await sleep(900); if (userTook) return;
+      await this.open(); await sleep(800); if (userTook) return;
+      this.pick(2); await sleep(1000); if (userTook) return;
+      this.pick(3); await sleep(1000); if (userTook) return;
+      this.pick(0); await sleep(900); if (userTook) return;
+      await this.close();
+    },
+    frame(dt) { this.caps?.tick(dt); },
+  });
+
+  // ---- A call-in's journey ----------------------------------------------------------------
+  scene({
+    id: "callin", group: "Taking part", name: "A call-in's journey",
+    lede: "Your message leaves the field and waits on a lit phone line. The lamp blinks while it waits, holds when it's next, and turns red when the hosts read it, at which point it rises into the captions.",
+    when: "Sending a call-in during a live pod.",
+    driven: "<code>store.commentView(c, pos).tone</code>: wait (queued, with an ETA), next (on deck), live (being read), then done.",
+    timing: ["field to line: FLIP 520 ms, spring smooth", "lines open: grid rows 0fr to 1fr", "waiting blink 0.8 s", "rise into captions: spring smooth", "cue card: spring bouncy"],
+    reduced: "The line's status text changes in place; nothing flies.",
+    mount() {
+      screen.innerHTML = stageHtml({ lines: true });
+      primeStage(screen);
+      this.caps = new Caps($(".stage"), [{ who: 1, text: "Which is why prospectors got called sourdoughs. The nickname stuck to the people." }]);
+    },
+    async play() {
+      const field = $("[data-field]"), lines = $(".lines"), line = $("[data-line]"), msg = $(".msg", line), stt = $(".st", line);
+      const text = "My grandma's starter is from Alaska. Does that count?";
+      await sleep(1600);
+      field.classList.add("typing"); field.textContent = "";
+      for (let i = 1; i <= text.length; i += calm ? text.length : 2) { field.textContent = text.slice(0, i); await sleep(28); }
+      field.textContent = text;
+      await sleep(500);
+      lines.classList.add("open");
+      msg.textContent = text; line.className = "line wait"; stt.textContent = "about 40 s";
+      if (!calm) {
+        await sleep(120);
+        const a = rect(field), b = rect(msg);
+        const ghost = document.createElement("span");
+        ghost.textContent = text;
+        ghost.style.cssText = `position:absolute;z-index:40;left:${a.x}px;top:${a.y}px;width:${a.w}px;height:${a.h}px;border-radius:23px;background:rgba(255,255,255,.18);color:#fff;font-size:14px;display:flex;align-items:center;padding:0 16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis`;
+        screen.append(ghost);
+        msg.style.opacity = 0;
+        field.textContent = "Call in to the hosts"; field.classList.remove("typing");
+        await anim(ghost, [{ transform: "none", opacity: 1 }, { transform: `translate(${b.x - a.x - 16}px, ${b.y - a.y - (a.h - b.h) / 2}px) scale(${Math.min(1, (b.w + 32) / a.w)})`, opacity: 1, offset: .85 }, { transform: `translate(${b.x - a.x - 16}px, ${b.y - a.y - (a.h - b.h) / 2}px) scale(${Math.min(1, (b.w + 32) / a.w)})`, opacity: 0 }], { dur: 560, ease: SPR.smooth, fill: "forwards" }).finished;
+        ghost.remove(); msg.style.opacity = 1;
+      } else { field.textContent = "Call in to the hosts"; field.classList.remove("typing"); }
+      for (let s = 40; s > 0; s -= 4) { stt.textContent = `about ${s} s`; await sleep(220); }
+      line.className = "line next"; stt.textContent = "Next up";
+      await sleep(1600);
+      line.className = "line air"; stt.textContent = "On air";
+      this.caps = new Caps($(".stage"), [{ who: 0, pill: "Reading your call-in", text: "Marc wants to know: his grandma's starter is from Alaska. Does that count? Marc, it absolutely counts." }]);
+      await sleep(5200);
+      line.className = "line"; stt.textContent = "Done";
+      await sleep(500);
+      lines.classList.remove("open");
+      await cue("Mia read your call-in", "It's saved in the transcript.");
+    },
+    frame(dt) { this.caps?.tick(dt); },
+  });
+
+  async function cue(title, sub, ms = 2600) {
+    const c = document.createElement("div");
+    c.className = "cue"; c.setAttribute("role", "status");
+    c.innerHTML = `${title}<small>${sub}</small><span class="timer"></span>`;
+    screen.append(c);
+    if (calm) anim(c, [{ opacity: 0 }, { opacity: 1 }], { dur: 150 });
+    else anim(c, [{ transform: "translateY(-120%) rotate(-3deg)" }, { transform: "none" }], { dur: DUR.bouncy, ease: SPR.bouncy });
+    anim($(".timer", c), [{ transform: "scaleX(1)" }, { transform: "scaleX(0)" }], { dur: ms, ease: "linear" });
+    await sleep(ms);
+    await anim(c, [{ opacity: 1, transform: "none" }, { opacity: 0, transform: calm ? "none" : "translateY(-30px)" }], { dur: 200, ease: EASE_IN, fill: "forwards" }).finished;
+    c.remove();
+  }
+
+  // ---- Toasts and reactions ---------------------------------------------------------------
+  scene({
+    id: "small", group: "Taking part", name: "Toasts and reactions",
+    lede: "Small moments get small motion. Hearts leave the button on arcs and the count rolls like an odometer. Messages drop in as cue cards with a bar that shows how long they'll stay.",
+    when: "Reactions during a live pod; confirmations and errors anywhere.",
+    driven: "<code>shared.js floatHearts()</code> and <code>react</code> events with a burst count; <code>util.js toast()</code>.",
+    timing: ["hearts 900 to 1300 ms on arcs", "count roll: spring snappy", "cue card: spring bouncy 790 ms", "timer bar: linear for the toast's life"],
+    reduced: "One heart rises without an arc; the count changes in place; the cue card fades.",
+    interactive: "Try it: tap the heart.",
+    mount() {
+      screen.innerHTML = stageHtml();
+      primeStage(screen);
+      this.caps = new Caps($(".stage"));
+      $(".stage").classList.add("with-count");
+      this.count = 128;
+      this.odo(this.count, true);
+      $("[data-heart]").addEventListener("click", () => { userTook = true; this.burst(); });
+    },
+    odo(n, instant) {
+      const host = $("[data-odo]");
+      const digits = String(n).split("");
+      if (host.children.length !== digits.length) host.innerHTML = digits.map(() => `<span>${"0123456789".split("").map((d) => `<i>${d}</i>`).join("")}</span>`).join("");
+      $$("span", host).forEach((col, i) => {
+        const y = -18 * +digits[i];
+        if (instant || calm) { col.style.transform = `translateY(${y}px)`; return; }
+        const from = col.style.transform || "translateY(0px)";
+        if (from === `translateY(${y}px)`) return;
+        anim(col, [{ transform: from }, { transform: `translateY(${y}px)` }], { dur: DUR.snappy, ease: SPR.snappy, fill: "forwards" });
+        col.style.transform = `translateY(${y}px)`;
+      });
+    },
+    burst() {
+      const btn = $("[data-heart]"), r = rect(btn);
+      const n = calm ? 1 : 5;
+      for (let i = 0; i < n; i++) {
+        const h = document.createElement("span");
+        h.className = "heart-fly"; h.innerHTML = ICON.heartFill;
+        h.style.left = r.x + r.w / 2 - 11 + "px"; h.style.top = r.y + 4 + "px";
+        screen.append(h);
+        const dx = calm ? 0 : -70 + Math.random() * 80, dy = -170 - Math.random() * 120, rot = -30 + Math.random() * 60;
+        anim(h, calm ? [{ opacity: 1, transform: "none" }, { opacity: 0, transform: "translateY(-80px)" }]
+          : [{ opacity: 0, transform: "translate(0,0) scale(.4)" }, { opacity: 1, transform: `translate(${dx * 0.3}px, ${dy * 0.25}px) scale(1.1) rotate(${rot * 0.3}deg)`, offset: .2 }, { opacity: 0, transform: `translate(${dx}px, ${dy}px) scale(.9) rotate(${rot}deg)` }],
+          { dur: calm ? 700 : 900 + Math.random() * 400, delay: i * 70, ease: "cubic-bezier(.2,.7,.3,1)" }).finished.then(() => h.remove());
+      }
+      anim(btn, [{ transform: "scale(1)" }, { transform: "scale(.88)" }, { transform: "scale(1)" }], { dur: calm ? 1 : 300, ease: SPR.bouncy });
+      this.count += 1;
+      this.odo(this.count);
+    },
+    async play() {
+      await sleep(1000); if (userTook) return;
+      this.burst(); await sleep(260); this.burst(); await sleep(420); this.burst();
+      await sleep(1600);
+      await cue("Link copied", "Anyone with the link can listen.");
+      await sleep(600); if (userTook) return;
+      this.burst();
+    },
+    frame(dt) { this.caps?.tick(dt); },
+  });
+
+  // ---- Making the episode -------------------------------------------------------------------
+  scene({
+    id: "edit", group: "After the call", name: "Making the episode",
+    lede: "After a co-host call, you watch your episode get made. The playhead listens back, chapters land on the waveform, flubs light up and close, your theme slides in under the welcome and the sign-off, and the levels settle. Then the whole recording folds into the episode's sleeve.",
+    when: "Hanging up a co-host call, until the episode opens. Replaces the four-line checklist with a small spinner.",
+    driven: "<code>CallController.steps</code>: listening, notes, cutting, mastering (<code>app/cohost.py</code>), then <code>saved</code> with <code>stats.tightened_s</code>, <code>flubs_cut</code>, <code>cut_ins</code>. Mastering now scores the episode (<code>editing.scored()</code> runs <code>mixer.mix()</code>): the show intro's theme, else a library pick for the starting mode, under the welcome; a sting at each new chapter; the outro under the sign-off.",
+    timing: ["playhead scan 1.4 s linear", "chapter flags 120 ms apart, spring bouncy", "cuts flash 300 ms, close 420 ms ease-in-out", "theme bed slides in under welcome and sign-off: spring smooth", "levels settle: spring smooth", "fold into sleeve: spring gentle 850 ms"],
+    reduced: "The steps tick over as a checklist with the real numbers; the sleeve appears at the end.",
+    mount() {
+      const N = 96;
+      const bars = Array.from({ length: N }, (_, i) => {
+        const you = Math.floor(i / 12) % 2 === 1;
+        const quiet = (i > 30 && i < 35) || (i > 70 && i < 74);
+        const h = quiet ? 0.08 + hash(i) * 0.06 : 0.25 + hash(i * 3.1) * (you ? 0.55 : 0.75);
+        return `<span class="b ${you ? "you" : ""}" data-i="${i}" style="--h:${h.toFixed(2)}"><i></i></span>`;
+      }).join("");
+      const stepIcon = `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#1E2230"/></svg>`;
+      screen.innerHTML = `<div class="ed">
+        <h3>Making your episode</h3><p class="sub">You and Ada talked for 9 minutes.</p>
+        <p class="ed-title"></p>
+        <div class="wave">${bars}<span class="ph"></span></div>
+        <ol class="steps">${["Listening back", "Writing the title, show notes and chapters", "Cutting flubs, crosstalk and dead air", "Levelling and mastering"].map((s) => `<li>${stepIcon}<span>${s}</span></li>`).join("")}</ol>
+        <div class="ed-meter"><span>Loudness</span><span class="track"><span class="fill"></span></span><span class="lufs">-23 LUFS</span></div>
+        <div class="ed-done"><span class="sleeve">${ringSvg("rg ring")}<span class="t">Bread, Banter and Bad Puns</span><span class="h">You and Ada</span></span><h4>Your episode is ready</h4><p>Cut 6 flubs and tightened 41 seconds of dead air.</p><span class="listen">Listen to it</span></div>
+      </div>`;
+      $$(".ed-done .rg").forEach((svg) => drawRing(svg, 44, 2).forEach((d, i) => i % 3 === 0 && d.classList.add("lit")));
+    },
+    async play() {
+      const steps = $$(".steps li"), wave = $(".wave"), bars = $$(".wave .b"), ph = $(".wave .ph"), title = $(".ed-title"), sub = $(".sub");
+      const setStep = (k) => steps.forEach((s, i) => { s.className = i < k ? "done" : i === k ? "now" : ""; s.querySelector("svg").innerHTML = i < k ? '<circle cx="12" cy="12" r="10"/><path d="M7 12.5l3.2 3.2L17 9" fill="none" stroke="#0B0C12" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>' : `<circle cx="12" cy="12" r="10" fill="${i === k ? "#9CC2FF" : "#1E2230"}" ${i === k && !calm ? 'style="animation:blink 1s steps(1) infinite"' : ""}/>`; });
+      await sleep(600);
+      // 1. listening back
+      setStep(0);
+      if (!calm) {
+        ph.style.opacity = 1;
+        const W = wave.clientWidth - 20;
+        const t0 = performance.now(), id = run;
+        await new Promise((res) => {
+          const f = () => {
+            if (id !== run) return res();
+            const p = Math.min(1, ((performance.now() - t0) / 1400) * speed);
+            ph.style.left = 10 + p * W + "px";
+            const k = Math.floor(p * bars.length);
+            bars.forEach((b, i) => b.classList.toggle("heard", i < k));
+            if (p < 1) requestAnimationFrame(f); else res();
+          };
+          requestAnimationFrame(f);
+        });
+        alive(run);
+        anim(ph, [{ opacity: 1 }, { opacity: 0 }], { dur: 200, fill: "forwards" });
+      } else { bars.forEach((b) => b.classList.add("heard")); await sleep(500); }
+      // 2. notes and chapters
+      setStep(1);
+      const name = "Bread, Banter and Bad Puns";
+      for (let i = 1; i <= name.length; i += calm ? name.length : 1) { title.textContent = name.slice(0, i); await sleep(26); }
+      const flags = [["Cold open", 0.02], ["Starters", 0.3], ["The puns", 0.62]];
+      for (const [label, at] of flags) {
+        const f = document.createElement("span");
+        f.className = "flag"; f.textContent = label; f.style.left = 10 + at * (wave.clientWidth - 20) + "px";
+        wave.append(f);
+        if (!calm) anim(f, [{ opacity: 0, transform: "translateY(-12px)" }, { opacity: 1, transform: "none" }], { dur: DUR.bouncy, ease: SPR.bouncy });
+        await sleep(120);
+      }
+      await sleep(700);
+      // 3. cutting: dead air and a flub light up, then close
+      setStep(2);
+      const cuts = bars.filter((b) => { const i = +b.dataset.i; return (i > 30 && i < 35) || (i > 70 && i < 74) || (i >= 52 && i <= 54) || (i >= 86 && i <= 87); });
+      cuts.forEach((b) => b.classList.add("cut"));
+      sub.textContent = "Found 6 flubs and 41 seconds of dead air.";
+      await sleep(calm ? 400 : 700);
+      if (!calm) await Promise.all(cuts.map((b) => anim(b, [{ flexGrow: 1, opacity: 1 }, { flexGrow: 0, opacity: 0, marginLeft: "-2px" }], { dur: 420, ease: EASE_IO, fill: "forwards" }).finished));
+      cuts.forEach((b) => (b.style.display = "none"));
+      sub.textContent = "Tightened 41 seconds. 8 minutes 19 seconds left.";
+      await sleep(600);
+      // 4. mastering: quiet bars rise, loud ones come down, loudness lands on -16 LUFS
+      setStep(3);
+      // the score: your theme under the welcome and the sign-off, a sting at each chapter flag
+      const bed = (side) => { const b = document.createElement("span"); b.style.cssText = `position:absolute;bottom:6px;${side}:10px;width:${side === "left" ? 18 : 13}%;height:10px;border-radius:5px;background:linear-gradient(${side === "left" ? 90 : 270}deg,#B69CFF,rgba(182,156,255,.15));transform-origin:${side}`; wave.append(b); if (!calm) anim(b, [{ transform: "scaleX(0)", opacity: 0 }, { transform: "none", opacity: 1 }], { dur: DUR.smooth, ease: SPR.smooth }); };
+      bed("left"); bed("right");
+      $$(".flag", wave).forEach((f, i) => i && !calm && anim(f, [{ boxShadow: "0 0 0 0 rgba(182,156,255,.9)" }, { boxShadow: "0 0 0 8px rgba(182,156,255,0)" }], { dur: 600, delay: 200 + i * 150 }));
+      sub.textContent = "Adding your Walk & Talk theme under the welcome and the sign-off.";
+      const meter = $(".ed-meter"), fill = $(".fill", meter), lufs = $(".lufs", meter);
+      meter.style.opacity = 1;
+      const live = bars.filter((b) => b.style.display !== "none");
+      live.forEach((b, i) => {
+        const h = parseFloat(b.style.getPropertyValue("--h"));
+        const n = 0.48 + (h - 0.5) * 0.35 + hash(i * 1.7) * 0.08;
+        const inner = $("i", b);
+        if (calm) inner.style.transform = `scaleY(${n})`;
+        else anim(inner, [{ transform: `scaleY(${h})` }, { transform: `scaleY(${n})` }], { dur: DUR.smooth, delay: i * 4, ease: SPR.smooth, fill: "forwards" });
+      });
+      if (!calm) anim(fill, [{ width: "0%" }, { width: "72%" }], { dur: 1200, ease: EASE_OUT, fill: "forwards" }); else fill.style.width = "72%";
+      for (let v = -23; v <= -16; v++) { lufs.textContent = `${v} LUFS`; await sleep(calm ? 0 : 150); }
+      await sleep(700);
+      setStep(4);
+      // saved: the recording folds into the sleeve
+      const done = $(".ed-done"), sleeve = $(".sleeve", done);
+      if (calm) { done.style.opacity = 1; $$(".ed > :not(.ed-done)").forEach((e) => (e.style.opacity = 0)); return; }
+      const a = rect(wave), b = rect(sleeve);
+      anim(wave, [{ transform: "none", borderRadius: "14px", opacity: 1 }, { transform: `translate(${b.x - a.x}px, ${b.y - a.y}px) scale(${b.w / a.w}, ${b.h / a.h})`, borderRadius: "40px", opacity: 0 }], { dur: DUR.gentle, ease: SPR.gentle, fill: "forwards" });
+      $$(".ed h3, .ed .sub, .ed-title, .steps, .ed-meter").forEach((e) => anim(e, [{ opacity: 1 }, { opacity: 0 }], { dur: 250, fill: "forwards" }));
+      done.style.opacity = 1;
+      anim(sleeve, [{ opacity: 0, transform: "scale(.6) rotate(-6deg)" }, { opacity: 1, transform: "none" }], { dur: DUR.bouncy, delay: 260, ease: SPR.bouncy });
+      $$("h4, p, .listen", done).forEach((e, i) => anim(e, [{ opacity: 0, transform: "translateY(10px)" }, { opacity: 1, transform: "none" }], { dur: 420, delay: 520 + i * 60 }));
+    },
+  });
+
+  // =================================================================================
+  // Round 2: scenes for features added since the first pass
+  // =================================================================================
+  const lampSvg = (cls) => `<span class="lampx ${cls}"></span>`;
+  const RET = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14l-5-5 5-5M4 9h11a5 5 0 0 1 0 10h-3"/></svg>';
+  const GLOBE = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z"/></svg>';
+  const typeInto = async (el, text, ms = 22) => { for (let i = 1; i <= text.length; i += calm ? text.length : 2) { el.textContent = text.slice(0, i); await sleep(ms); } el.textContent = text; };
+  const flicker = (el) => !calm && anim(el, [{ opacity: .2 }, { opacity: 1, offset: .15 }, { opacity: .3, offset: .3 }, { opacity: 1, offset: .45 }, { opacity: .7, offset: .6 }, { opacity: 1 }], { dur: 450, ease: "steps(1, end)" });
+
+  // ---- Interrupt the show ---------------------------------------------------------------------
+  scene({
+    id: "interrupt", group: "Taking part", name: "Interrupt the show", isNew: true,
+    lede: "The producer cuts in. The show holds, a sheet rises with a big hold-to-talk button whose ring follows your voice, and when you let go the part of the show you never heard dissolves. A stinger, an amber detour on the chapter bar, and the hosts answer you.",
+    when: "The producer taps Interrupt on a live pod (phone bar, studio panel). Listeners hear the detour; they don't see this sheet.",
+    driven: "<code>ctl.holdForInterrupt()</code> pauses; the <code>Recorder</code> level drives the ring; on release <code>ctl.transcribe(blob)</code>, then <code>ctl.interrupt(kind, text)</code> sends <code>at</code>. The server truncates at the playhead; segments with <code>interrupt</code> are the detour (<code>detourLabel</code>).",
+    timing: ["hold: tally dims, captions freeze", "sheet: spring smooth", "talk ring follows mic level per frame", "unheard words: blur and fade 450 ms", "stinger: gel flash 600 ms", "detour piece drops in: spring bouncy"],
+    reduced: "The sheet fades in; the ring shows a steady 'listening' state; unheard words simply disappear; no flash.",
+    mount() {
+      screen.innerHTML = `<div class="recede">${stageHtml({ chapter: "Chapter 2, The Gold Rush" })}</div><div class="scrim"></div>
+        <div class="sheet" role="dialog" aria-label="Interrupt the show"><span class="grab"></span><h3>Interrupt the show</h3>
+          <p style="color:#A6ACBC;font-size:13px;margin:-6px 0 6px">The show's paused. Ask anything, or tell the hosts where to take it.</p>
+          <div class="talkbtn">${ringSvg()}<span class="tb">${ICON.mic}</span></div><p class="talk-l">Hold to talk</p>
+          <div class="int-field"><span data-q>Why did the serpent talk?</span><span class="ask">Ask</span></div>
+          <div class="int-chips"><span>Go deeper</span><span>Move on</span><span>Steer</span></div></div>`;
+      primeStage(screen);
+      this.dots = drawRing($(".talkbtn svg"), 44, 2.6);
+      this.caps = new Caps($(".stage"), [{ who: 0, text: "And the tang? That's a bacterium named after the city. Lactobacillus sanfranciscensis." }]);
+      this.listening = false;
+    },
+    tick(dt) {
+      if (!this.dots) return;
+      const lv = this.listening && !calm ? 0.25 + 0.75 * Math.abs(Math.sin(performance.now() / 160) * Math.sin(performance.now() / 370)) : this.listening ? 0.4 : 0;
+      const n = Math.round(lv * 30);
+      this.dots.forEach((d, i) => d.classList.toggle("lit", i < n || i > 59 - n));
+    },
+    async play() {
+      const st = $(".stage"), tally = $(".s-tally", st), sheet = $(".sheet"), talk = $(".talkbtn"), label = $(".talk-l"), q = $("[data-q]");
+      await sleep(2600);
+      // hold
+      const btn = $("[data-send]", st);
+      anim(btn, [{ transform: "scale(1)" }, { transform: "scale(.9)" }, { transform: "scale(1)" }], { dur: 220 });
+      this.caps.on = false;
+      tally.classList.add("off");
+      $(".s-listen", st).textContent = "Paused for you";
+      if (calm) { sheet.style.transform = "translateY(0)"; $(".scrim").style.opacity = 1; }
+      else {
+        anim(sheet, [{ transform: "translateY(105%)" }, { transform: "translateY(0)" }], { dur: DUR.smooth, ease: SPR.smooth, fill: "forwards" });
+        anim($(".recede"), [{ transform: "none" }, { transform: "scale(.94) translateY(-6px)", borderRadius: "28px" }], { dur: DUR.smooth, ease: SPR.smooth, fill: "forwards" });
+        anim($(".scrim"), [{ opacity: 0 }, { opacity: 1 }], { dur: 300, fill: "forwards" });
+      }
+      await sleep(900);
+      // hold to talk
+      talk.classList.add("on"); label.textContent = "Listening. Let go to send.";
+      this.listening = true;
+      await sleep(2000);
+      this.listening = false; talk.classList.remove("on"); label.textContent = "Got it";
+      q.classList.add("full");
+      await typeInto(q, "Why does sourdough keep longer than normal bread?", 18);
+      await sleep(400);
+      // send: sheet leaves, the unheard part of the show dissolves
+      if (!calm) {
+        anim(sheet, [{ transform: "translateY(0)" }, { transform: "translateY(105%)" }], { dur: 260, ease: EASE_IN, fill: "forwards" });
+        anim($(".recede"), [{ transform: "scale(.94) translateY(-6px)", borderRadius: "28px" }, { transform: "none", borderRadius: "39px" }], { dur: DUR.smooth, ease: SPR.smooth, fill: "forwards" });
+        anim($(".scrim"), [{ opacity: 1 }, { opacity: 0 }], { dur: 260, fill: "forwards" });
+      } else { sheet.style.transform = "translateY(105%)"; $(".scrim").style.opacity = 0; }
+      await sleep(320);
+      $$(".s-now .w", st).forEach((w) => { if (!w.classList.contains("said")) w.classList.add("gone"); });
+      await sleep(calm ? 100 : 500);
+      // stinger: a flash of amber light, the detour drops into the chapter bar
+      const segs = $(".s-chapters", st), det = document.createElement("i");
+      det.className = "det";
+      segs.children[1].after(det);
+      if (!calm) {
+        st.style.setProperty("--gel", "#FFB000");
+        anim(det, [{ transform: "translateY(-18px) scale(.5)", opacity: 0 }, { transform: "none", opacity: 1 }], { dur: DUR.bouncy, ease: SPR.bouncy });
+        await sleep(600);
+        st.style.setProperty("--gel", "#FF6B9A");
+      }
+      tally.classList.remove("off"); flicker(tally);
+      $(".s-listen", st).textContent = "128 listening";
+      this.caps = new Caps(st, [
+        { who: 1, pill: "Answering you", text: "Good question. The acid from the bacteria slows mold down, so a sourdough loaf keeps for days." },
+        { who: 0, text: "Which is the Gold Rush connection again: it kept in a miner's pack. Okay, back to San Francisco." },
+      ]);
+    },
+    frame(dt) { this.caps?.tick(dt); },
+  });
+
+  // ---- Looking it up (research and promised call-ins) ---------------------------------------
+  scene({
+    id: "lookup", group: "Taking part", name: "Looking it up", isNew: true,
+    lede: "With Research on, a call-in that needs facts gets read out, then looked up while the hosts carry on. Its lamp chases while the search runs, holds amber while they've promised to come back, and turns red when they do, with the sources under the answer.",
+    when: "A live pod with Research switched on, when a call-in (or a thin chapter) needs facts the source doesn't have.",
+    driven: "<code>store.commentView()</code>: <code>promised</code> with <code>c.research === \"pending\"</code> reads \"Read out, looking it up\", then \"they're coming back to it\", then up next and on air. The lookup arrives as a <code>research</code> context item with <code>sources</code> and Google's <code>search_suggestions</code>.",
+    timing: ["chase lamp 0.8 s turn", "found card: spring smooth, 2.4 s", "source chips: 60 ms apart", "line clears: grid rows to 0fr"],
+    reduced: "The lamp changes color and the status text changes; no chase, no sliding card.",
+    mount() {
+      screen.innerHTML = stageHtml({ lines: true });
+      primeStage(screen);
+      this.caps = new Caps($(".stage"), [{ who: 0, text: "Okay, but listen. Miners in 1849 carried starter in pouches around their necks to keep it warm." }]);
+    },
+    async play() {
+      const st = $(".stage"), lines = $(".lines", st), line = $("[data-line]", st), lamp = $(".lamp", line), msg = $(".msg", line), stt = $(".st", line);
+      lamp.className = "lampx";
+      await sleep(900);
+      lines.classList.add("open");
+      msg.textContent = "Kayla: is rye starter any different?"; stt.textContent = "about 30 s"; lamp.className = "lampx amber blink";
+      await sleep(2200);
+      lamp.className = calm ? "lampx amber" : "lampx chase"; stt.textContent = "Looking it up";
+      this.caps = new Caps(st, [{ who: 1, text: "Kayla's asking whether rye starter is any different. Good one. Let me check that and come back to you." }]);
+      await sleep(4200);
+      lamp.className = "lampx amber"; stt.innerHTML = `<span class="ret">${RET}Coming back</span>`;
+      this.caps = new Caps(st, [{ who: 0, text: "While Jordan digs, back to the Gold Rush and those pouches." }]);
+      await sleep(1600);
+      const card = document.createElement("div");
+      card.className = "found";
+      card.innerHTML = `<span class="lampx blue"></span><span><b>Found: rye vs wheat starters</b><small>2 sources, added to Context</small></span>`;
+      st.append(card);
+      if (!calm) anim(card, [{ opacity: 0, transform: "translateY(-14px)" }, { opacity: 1, transform: "none" }], { dur: DUR.smooth, ease: SPR.smooth });
+      await sleep(2400);
+      await anim(card, [{ opacity: 1 }, { opacity: 0 }], { dur: 200, fill: "forwards" }).finished;
+      card.remove();
+      stt.textContent = "Up next";
+      await sleep(1200);
+      lamp.className = "lampx red"; stt.textContent = "On air";
+      this.caps = new Caps(st, [{ who: 1, pill: "Back to Kayla", text: "Rye starters ferment faster and taste sourer, because rye flour feeds the bacteria more." }]);
+      await sleep(900);
+      const wrap = $(".s-nowwrap", st), srcs = document.createElement("div");
+      srcs.className = "srcs";
+      srcs.innerHTML = ["kingarthurbaking.com", "seriouseats.com"].map((d) => `<span>${GLOBE}${d}</span>`).join("");
+      wrap.append(srcs);
+      if (!calm) $$("span", srcs).forEach((s, i) => anim(s, [{ opacity: 0, transform: "translateY(6px)" }, { opacity: 1, transform: "none" }], { dur: 360, delay: i * 60 }));
+      await sleep(4600);
+      lamp.className = "lampx"; stt.textContent = "Done";
+      await sleep(500);
+      lines.classList.remove("open");
+    },
+    frame(dt) { this.caps?.tick(dt); },
+  });
+
+  // ---- Scrubbing back (interactive) ----------------------------------------------------------
+  scene({
+    id: "scrub", group: "Listening", name: "Scrubbing back", isNew: true,
+    lede: "Drag the chapter bar to go back. A bubble says where you'll land, the captions rewind with you, and Back to live snaps you forward to the edge on a spring.",
+    when: "Dragging or clicking the chapter bar on a live pod or a replay. Arrow keys move 10 seconds.",
+    driven: "<code>bindSeekBar()</code> in <code>views/shared.js</code> (pointer moves throttled to 120 ms, because the live player reschedules on every seek), <code>ctl.seekTo()</code>, <code>store.sampleAtBar()</code>; <code>ctl.heldFrom()</code> limits a live pod to about 5 minutes back; <code>ctl.behindLive()</code> shows Back to live.",
+    timing: ["knob follows the finger", "bubble: spring snappy", "captions rewind: 200 ms cross-fade", "Back to live: spring snappy to the edge"],
+    reduced: "The knob and captions jump; no bubble animation.",
+    interactive: "Try it: drag along the chapter bar.",
+    EDGE: 0.62, MIN: 0.3,
+    mount() {
+      screen.innerHTML = stageHtml({ chapter: "Chapter 2, The Gold Rush" });
+      primeStage(screen);
+      const st = $(".stage");
+      $(".s-chapters", st).outerHTML = `<div class="scrubx" data-scrub><div class="bar"><i><b></b></i><i><b></b></i><i><b></b></i><i><b></b></i></div><span class="edge"></span><span class="knob"></span><span class="bub"></span></div>
+        <div class="scrub-meta"><span data-sm>Up to 5 minutes back</span><span class="lv" data-lv>Live 4:52</span></div>`;
+      $(".edge").style.left = this.EDGE * 100 + "%";
+      this.capsLive = { who: 1, text: "Which is why prospectors got called sourdoughs. The nickname stuck to the people." };
+      this.capsBack = { who: 0, text: "Okay, but listen. Miners in 1849 carried starter in pouches around their necks." };
+      this.side = "";
+      this.setPos(this.EDGE, true);
+      const sc = $("[data-scrub]");
+      let drag = false;
+      const at = (e) => { const r = sc.getBoundingClientRect(); return Math.max(this.MIN, Math.min(this.EDGE, (e.clientX - r.left) / r.width)); };
+      sc.addEventListener("pointerdown", (e) => { userTook = true; drag = true; sc.setPointerCapture(e.pointerId); this.setPos(at(e)); });
+      sc.addEventListener("pointermove", (e) => { if (drag) this.setPos(at(e)); });
+      sc.addEventListener("pointerup", () => { drag = false; this.bubble(false); });
+      sc.addEventListener("pointercancel", () => { drag = false; this.bubble(false); });
+    },
+    fmt(p) { const s = Math.round((this.EDGE - p) * 480); return `-${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; },
+    setPos(p, quiet) {
+      this.p = p;
+      const segs = $$(".scrubx .bar i b");
+      segs.forEach((b, i) => { const a = i / 4, z = (i + 1) / 4; b.style.width = `${Math.max(0, Math.min(1, (p - a) / (z - a))) * 100}%`; });
+      $(".scrubx .knob").style.left = p * 100 + "%";
+      const bub = $(".scrubx .bub");
+      bub.style.left = p * 100 + "%";
+      const behind = this.EDGE - p > 0.01;
+      bub.textContent = behind ? `${this.fmt(p)}, ${p < 0.5 ? "Wild yeast" : "The Gold Rush"}` : "Live";
+      if (!quiet) this.bubble(true);
+      const side = p < 0.48 ? "back" : "live";
+      if (side !== this.side) {
+        this.side = side;
+        this.caps = new Caps($(".stage"), [side === "back" ? this.capsBack : this.capsLive]);
+        this.caps.t = 2.2;
+      }
+      const meta = $("[data-sm]");
+      if (behind && !meta.querySelector(".behind")) { meta.innerHTML = `<button class="behind" type="button" data-live>${ICON.play.replace('width="26" height="26"', 'width="14" height="14"')}Back to live</button>`; meta.querySelector("[data-live]").addEventListener("click", () => { userTook = true; this.toLive(); }); if (!calm) anim(meta.firstChild, [{ opacity: 0, transform: "scale(.8)" }, { opacity: 1, transform: "none" }], { dur: DUR.snappy, ease: SPR.snappy }); }
+      if (!behind && meta.querySelector(".behind")) meta.textContent = "Up to 5 minutes back";
+      $("[data-lv]").style.opacity = behind ? 0.45 : 1;
+    },
+    bubble(show) { const b = $(".scrubx .bub"); if (!b) return; b.style.opacity = show ? 1 : 0; if (show && !calm && !this.bubOn) anim(b, [{ transform: "translateX(-50%) scale(.8)" }, { transform: "translateX(-50%)" }], { dur: DUR.snappy, ease: SPR.snappy }); this.bubOn = show; },
+    async toLive() {
+      const from = this.p, t0 = performance.now(), D = calm ? 1 : DUR.snappy;
+      const curve = (x) => 1 - Math.exp(-6 * x) * Math.cos(5 * x);   // a quick spring with a hair of overshoot
+      await new Promise((res) => { const f = () => { const x = Math.min(1, ((performance.now() - t0) / D) * speed); this.setPos(Math.min(this.EDGE + 0.004, from + (this.EDGE - from) * curve(x)), true); if (x < 1) requestAnimationFrame(f); else { this.setPos(this.EDGE, true); res(); } }; f(); });
+      this.bubble(false);
+    },
+    async play() {
+      await sleep(1400); if (userTook) return;
+      const sc = $("[data-scrub]"), touch = document.createElement("span");
+      touch.className = "touch"; screen.append(touch);
+      const r = rect(sc), y = r.y + r.h / 2, X = (p) => r.x + p * r.w;
+      touch.style.left = X(this.EDGE) + "px"; touch.style.top = y + "px";
+      if (!calm) anim(touch, [{ opacity: 0, transform: "scale(1.4)" }, { opacity: 1, transform: "none" }], { dur: 200 });
+      touch.style.opacity = 1;
+      const to = 0.36, t0 = performance.now(), D = 1100;
+      await new Promise((res) => { const f = () => { if (userTook) return res(); const x = Math.min(1, ((performance.now() - t0) / D) * speed), e = 1 - Math.pow(1 - x, 3); const p = this.EDGE + (to - this.EDGE) * e; this.setPos(p); touch.style.left = X(p) + "px"; if (x < 1) requestAnimationFrame(f); else res(); }; f(); });
+      await sleep(500); this.bubble(false); touch.style.opacity = 0;
+      await sleep(2600); if (userTook) return;
+      await this.toLive();
+    },
+    frame(dt) { this.caps?.tick(dt); },
+  });
+
+  // ---- Show intro --------------------------------------------------------------------------------
+  scene({
+    id: "intro", group: "Going live", name: "Show intro", isNew: true,
+    lede: "Every pod opens with a few seconds of theme music and the hosts' welcome. Your show's name owns the stage while the theme plays, the waveform moves with the music, then the name tucks into the episode row as the welcome begins.",
+    when: "The first seconds of every pod, live or made from a memo.",
+    driven: "Every kind of pod opens this way now. Live pods stream the theme while planning (<code>store.inIntro(pos)</code>) and the welcome is the first segment. Memo pods and co-host episodes have it mixed in (<code>mixer.mix()</code>: theme alone, then under the welcome; stings at chapters; outro under the sign-off). Briefings open on a library theme matched to the template's mood and never use the saved show intro. The bars follow the player's analyser level.",
+    timing: ["show name: words 40 ms apart, spring smooth", "bars follow the audio level", "hand-off: FLIP into the episode row, spring gentle 850 ms", "captions start on the welcome line"],
+    reduced: "The card shows still for the length of the sting, then cross-fades to the captions.",
+    mount() {
+      screen.innerHTML = stageHtml({ gel: "#FFB257", chapter: "Walk &amp; Talk" });
+      primeStage(screen);
+      const st = $(".stage");
+      st.insertAdjacentHTML("beforeend", `<div class="tcard"><span class="pre">Mia and Jordan present</span><div class="nm"><span class="wd">Walk</span> <span class="wd">&amp;</span> <span class="wd">Talk</span></div><div class="wv">${"<i></i>".repeat(30)}</div><span class="ep">Wild Yeast and the Gold Rush</span></div>`);
+      $$(".s-caps, .s-ep b, .s-chap", st).forEach((e) => (e.style.opacity = 0));
+      this.sting = false; this.t = 0;
+    },
+    tick(dt) {
+      const bars = $$(".tcard .wv i"); if (!bars.length) return;
+      this.t += dt;
+      const env = this.sting ? Math.min(1, this.t * 3) : 0.15;
+      bars.forEach((b, i) => { const v = calm ? 0.4 : 0.18 + 0.82 * env * Math.abs(Math.sin(this.t * (4 + (i % 5)) + i * 0.7)); b.style.height = `${Math.round(v * 100)}%`; });
+    },
+    async play() {
+      const st = $(".stage"), card = $(".tcard"), nm = $(".nm", card);
+      await sleep(400);
+      this.sting = true; this.t = 0;
+      if (!calm) {
+        $$(".wd", nm).forEach((w, i) => anim(w, [{ opacity: 0, fontStretch: "50%", transform: "translateY(14px)" }, { opacity: 1, fontStretch: "58%", transform: "none" }], { dur: DUR.smooth, delay: i * 40, ease: SPR.smooth }));
+        $$(".pre, .ep, .wv", card).forEach((e, i) => anim(e, [{ opacity: 0 }, { opacity: 1 }], { dur: 400, delay: 200 + i * 80 }));
+      }
+      await sleep(2600);
+      // hand-off: the show's name tucks into the episode row; the welcome begins
+      const target = $(".s-chap", st);
+      if (calm) { card.style.opacity = 0; } else {
+        const a = rect(nm), b = rect(target);
+        anim(nm, [{ transform: "none" }, { transform: `translate(${b.x - a.x}px, ${b.y - a.y}px) scale(${(b.h / a.h) * 1.4})`, opacity: 0.2 }], { dur: DUR.gentle, ease: SPR.gentle, fill: "forwards" });
+        $$(".pre, .ep, .wv", card).forEach((e) => anim(e, [{ opacity: 1 }, { opacity: 0 }], { dur: 250, fill: "forwards" }));
+      }
+      await sleep(calm ? 0 : 500);
+      $$(".s-caps, .s-ep b, .s-chap", st).forEach((e, i) => { e.style.opacity = 1; if (!calm) anim(e, [{ opacity: 0 }, { opacity: 1 }], { dur: 400, delay: i * 60 }); });
+      this.sting = false;
+      this.caps = new Caps(st, [{ who: 0, text: "Welcome to Walk and Talk, the show where big ideas start on a walk. I'm Mia." }, { who: 1, text: "And I'm Jordan. Today: wild yeast, the Gold Rush, and a very old jar." }]);
+      await sleep(500);
+      card.style.opacity = 0;
+    },
+    frame(dt) { this.caps?.tick(dt); },
+  });
+
+  // ---- Checking your watchlist (briefings) -------------------------------------------------------
+  const WATCHES = [["Ferment Lab", "fermentlab.blog, new posts", 3], ["Acme Ovens pricing", "acmeovens.example/pricing", 1], ['"climate tech funding"', "News search, with Google", 2], ["City council agenda", "cityhall.example/agenda", 0], ["Trail conditions", "trails.example/status", 0]];
+  scene({
+    id: "watch", group: "Briefings", name: "Checking your watchlist", isNew: true,
+    lede: "Making a briefing starts by checking what you watch. Each site lights up as it's checked: amber with a count when something's new, grey when it's quiet. Then the house lights go down on your private briefing.",
+    when: "Pressing Make my briefing, or opening one that's being made on schedule.",
+    driven: "The make call checks the watchlist before writing (today the button only says \"Checking your watchlist&hellip;\"). Per-row ticks need the make call to report each watch as it's checked, or the page to poll <code>api.watches()</code>; until then, rows tick together when the call returns. The briefing then opens on a library theme matched to its template's mood (<code>music_mood</code>: Morning roundup is upbeat), before the hosts' good morning.",
+    timing: ["button holds a mini ring", "each row: sweep 500 ms, lamp + count pop (spring bouncy)", "rows 350 ms apart", "house lights down from the button: spring gentle"],
+    reduced: "Rows update in place with no sweep; the briefing fades in.",
+    mount() {
+      screen.innerHTML = `<div class="house"><header class="h-top"><span style="display:inline-flex;align-items:center;gap:6px;font-weight:700">${ICON.back}You</span></header>
+        <h3 class="h-greet" style="padding-top:2px">Briefings</h3>
+        <div class="bk"><b class="t">Make one now</b><span class="bk-sum" data-sum>5 sites, pages and searches to check.</span><button class="bk-go" type="button" data-make>${ICON.play.replace('width="26" height="26"', 'width="16" height="16"')}Make my briefing, 2 credits</button></div>
+        <div class="wrows">${WATCHES.map(([n, k]) => `<div class="wrow"><span class="lampx"></span><span style="min-width:0"><b>${n}</b><small>${k}</small></span><span class="cnt-badge"></span><span class="sweep"></span></div>`).join("")}</div></div>
+        <div class="hl-stage" style="position:absolute;inset:0;z-index:20;visibility:hidden">${stageHtml({ gel: "#6FB3FF", chapter: "Watchlist roundup, 1 of 4" })}</div>`;
+      primeStage(screen);
+      const st = $(".hl-stage .stage");
+      $(".s-ep b", st).textContent = "Morning roundup";
+      $(".s-listen", st).textContent = "Only you";
+    },
+    async play() {
+      const go = $("[data-make]"), sum = $("[data-sum]"), rows = $$(".wrow");
+      await sleep(800);
+      anim(go, [{ transform: "scale(1)" }, { transform: "scale(.97)" }, { transform: "scale(1)" }], { dur: 220 });
+      go.innerHTML = `<span class="mini"></span>Checking your watchlist`;
+      let total = 0, sites = 0;
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i], n = WATCHES[i][2];
+        if (!calm) anim($(".sweep", r), [{ transform: "translateX(-100%)" }, { transform: "translateX(100%)" }], { dur: 500, ease: EASE_IO });
+        await sleep(calm ? 120 : 350);
+        const lamp = $(".lampx", r), badge = $(".cnt-badge", r);
+        if (n) {
+          lamp.className = "lampx amber"; badge.textContent = n; badge.style.opacity = 1;
+          if (!calm) anim(badge, [{ transform: "scale(.4)" }, { transform: "none" }], { dur: DUR.bouncy, ease: SPR.bouncy });
+          total += n; sites += 1;
+        } else { $("small", r).textContent = "Nothing new"; }
+        sum.textContent = `${total} update${total === 1 ? "" : "s"} from ${sites} so far.`;
+      }
+      sum.textContent = `${total} updates from ${sites} sources. Writing your briefing.`;
+      go.innerHTML = "Going live";
+      await sleep(700);
+      // house lights down, from the button
+      const stw = $(".hl-stage"), b = rect(go), cx = b.x + b.w / 2, cy = b.y + b.h / 2, R = Math.hypot(screen.clientWidth, screen.clientHeight);
+      stw.style.visibility = "visible";
+      if (calm) anim(stw, [{ opacity: 0 }, { opacity: 1 }], { dur: 250 });
+      else anim(stw, [{ clipPath: `circle(0px at ${cx}px ${cy}px)` }, { clipPath: `circle(${R}px at ${cx}px ${cy}px)` }], { dur: DUR.gentle, ease: SPR.gentle });
+      // a briefing opens on a library theme matched to its template's mood, then the hosts say good morning
+      const lst = $(".s-listen", stw);
+      lst.textContent = "Theme music";
+      await sleep(1500);
+      lst.textContent = "Only you";
+      this.caps = new Caps($(".stage", stw), [{ who: 1, text: "Morning, Marc. Six things changed overnight, starting with your oven people." }, { who: 0, text: "Acme Ovens raised the price of their pro model by ninety dollars. The old price is still on their sale page." }]);
+    },
+    frame(dt) { this.caps?.tick(dt); },
+  });
+
+  // ---- Recording a memo -----------------------------------------------------------------------------
+  scene({
+    id: "memo", group: "Voice memo", name: "Recording a memo", isNew: true,
+    lede: "The record button sits inside the studio clock. One dot is ten seconds, so the full ring is the 10-minute limit. Your voice moves the level bars; when you're done, the recording folds into a playable memo on the options page.",
+    when: "Recording at <code>/memo</code> (uploading a file skips straight to the options).",
+    driven: "<code>MemoRecorder</code> in <code>audio/recorder.js</code>: MediaRecorder with a level from an AnalyserNode, the duration from the timer (Chrome reports webm duration as Infinity), a wake lock while recording, and a guard before leaving the page.",
+    timing: ["button: circle to rounded square, spring snappy", "ring: one dot per 10 s", "pause: ring dims to 45%, levels rest", "levels: every frame, smoothed", "fold into the memo chip: spring smooth"],
+    reduced: "The timer and ring still advance; levels show a steady bar; the options page fades in.",
+    mount() {
+      screen.innerHTML = `<div class="stage" style="--gel:#FFB257"><header class="s-top"><span style="display:inline-flex;align-items:center;gap:4px;font-weight:700;font-size:14px">${ICON.back}New pod</span><span class="s-listen">Voice memo</span></header>
+        <div style="flex:1;display:flex;flex-direction:column;justify-content:center;gap:14px"><div><div class="memo-time" data-time>0:00</div><p class="memo-hint" data-hint>Tap to record. Up to 10 minutes.</p></div>
+          <div class="rec">${ringSvg()}<span class="rb" data-rec><i></i></span></div><div class="levels">${"<i></i>".repeat(26)}</div></div>
+        <div style="padding:0 18px 28px;display:flex;gap:8px;opacity:0" data-ctl><span class="btn" style="flex:1;background:rgba(255,255,255,.12);color:#fff;height:46px;border-radius:999px;display:grid;place-items:center;font-weight:800">Pause</span><span style="flex:1;background:#fff;color:#141720;height:46px;border-radius:999px;display:grid;place-items:center;font-weight:800">Done</span></div></div>
+        <div class="memo-opts"><div class="house"><header class="h-top"><span style="display:inline-flex;align-items:center;gap:6px;font-weight:700">${ICON.back}Voice memo</span></header>
+          <div class="memo-chip"><span class="pb">${ICON.play.replace('width="26" height="26"', 'width="16" height="16"')}</span><span class="wv">${"<i></i>".repeat(34)}</span><b style="font-size:12px" data-len>2:14</b></div>
+          <div class="h-sec">How long?</div><div class="chips" style="padding-top:0"><button class="chip">5 min</button><button class="chip">10 min</button><button class="chip" aria-pressed="true">15 min</button></div>
+          <div class="h-sec">Theme music</div><div class="h-rows" style="padding:0 16px;font-size:13px;color:#4F5667">Included: a studio theme that suits it. Free.</div></div></div>`;
+      this.dots = drawRing($(".rec svg"), 46, 2.4);
+      this.rec = false; this.sec = 0; this.lv = Array(26).fill(0.08);
+    },
+    tick(dt) {
+      if (!this.dots) return;
+      if (this.rec) {
+        this.sec += dt * 40;      // the demo runs 40x: a second of watching is 40 s of memo
+        $("[data-time]").textContent = `${Math.floor(this.sec / 60)}:${String(Math.floor(this.sec % 60)).padStart(2, "0")}`;
+        const n = Math.min(60, Math.floor(this.sec / 10));
+        this.dots.forEach((d, i) => d.classList.toggle("lit", i < n));
+      }
+      const bars = $$(".levels i");
+      this.lv = this.lv.map((v, i) => { const target = this.rec && !calm ? 0.12 + 0.88 * Math.abs(Math.sin(performance.now() / (90 + i * 7) + i)) * (0.4 + 0.6 * Math.random()) : this.rec ? 0.35 : 0.08; return v + (target - v) * 0.35; });
+      bars.forEach((b, i) => (b.style.height = `${Math.round(this.lv[i] * 100)}%`));
+    },
+    async play() {
+      const rb = $("[data-rec]"), dot = $("i", rb);
+      await sleep(900);
+      anim(rb, [{ transform: "scale(1)" }, { transform: "scale(.92)" }, { transform: "scale(1)" }], { dur: 240 });
+      if (!calm) anim(dot, [{ transform: "scale(0)" }, { transform: "scale(1)" }], { dur: DUR.snappy, ease: SPR.snappy, fill: "forwards" }); else dot.style.transform = "scale(1)";
+      $("[data-hint]").textContent = "Recording. Each dot is ten seconds.";
+      this.rec = true;
+      $("[data-ctl]").style.opacity = 1;
+      await sleep(1700);
+      // pause: the clock holds, the levels rest, the button says Resume
+      this.rec = false;
+      const pb = $("[data-ctl] span");
+      pb.textContent = "Resume"; $("[data-hint]").textContent = "Paused";
+      if (!calm) anim($(".rec svg"), [{ opacity: 1 }, { opacity: .45 }], { dur: 200, fill: "forwards" });
+      await sleep(1200);
+      pb.textContent = "Pause"; $("[data-hint]").textContent = "Recording. Each dot is ten seconds.";
+      if (!calm) anim($(".rec svg"), [{ opacity: .45 }, { opacity: 1 }], { dur: 200, fill: "forwards" });
+      this.rec = true;
+      await sleep(1660);
+      this.rec = false;
+      const len = $("[data-time]").textContent;
+      $("[data-len]").textContent = len;
+      $("[data-hint]").textContent = "Saved.";
+      await sleep(500);
+      // the recording folds into a memo you can play, and the options rise
+      const opts = $(".memo-opts"), chip = $(".memo-chip .wv"), levels = $(".levels");
+      $$(".memo-chip .wv i").forEach((b, i) => (b.style.height = `${Math.round(20 + 80 * Math.abs(Math.sin(i * 1.7)))}%`));
+      if (calm) { opts.style.transform = "none"; return; }
+      anim(opts, [{ transform: "translateY(100%)" }, { transform: "none" }], { dur: DUR.smooth, ease: SPR.smooth, fill: "forwards" });
+      const a = rect(levels);
+      await sleep(80);
+      const b = rect(chip);
+      const ghost = levels.cloneNode(true);
+      ghost.style.cssText = `position:absolute;z-index:40;left:${a.x}px;top:${a.y}px;width:${a.w}px;height:${a.h}px;transform-origin:0 0`;
+      screen.append(ghost);
+      $$(".memo-chip .wv i").forEach((b) => (b.style.opacity = 0));
+      await anim(ghost, [{ transform: "none", opacity: 1 }, { transform: `translate(${b.x - a.x}px, ${b.y - a.y}px) scale(${b.w / a.w}, ${b.h / a.h})`, opacity: 0.4 }], { dur: DUR.smooth, ease: SPR.smooth, fill: "forwards" }).finished;
+      ghost.remove();
+      $$(".memo-chip .wv i").forEach((b, i) => anim(b, [{ opacity: 0 }, { opacity: 1 }], { dur: 200, delay: i * 8, fill: "forwards" }));
+    },
+  });
+
+  // ---- Making a pod from a memo ---------------------------------------------------------------------
+  const MEMO_STAGES = [
+    ["Listening to your memo", '"&hellip;so bread is basically a pet you can eat."'],
+    ["Looking things up", "9 facts, 2 to double-check"],
+    ["Planning the episode", "6 chapters, 15 minutes"],
+    ["Waiting for a free studio", "You're next"],
+    ["Recording the hosts", "Chapter 6 of 6"],
+    ["Adding the music", "Morning walk, from your show intro"],
+    ["Mixing", "Theme under the welcome, stings between chapters"],
+    ["Saving the episode", ""],
+  ];
+  scene({
+    id: "memomake", group: "Voice memo", name: "Making a pod from a memo", isNew: true,
+    lede: "Production runs on a spine of lamps. Each stage shows what it made as it finishes: a line it heard in your memo, what research found, the title and chapters. The ring fills in eight arcs. You can leave; when it's done the spine folds into the pod's sleeve.",
+    when: "After Make my pod (or Produce, if you reviewed the outline), until the pod is ready.",
+    driven: "<code>views/memo-status.js</code> polls <code>getShow</code> every 3 s: <code>show.render.stage</code> picks the lamp (transcribing, researching, outlining, queued, voicing, scoring, mixing, saving; the queued lamp only appears when there's a wait), <code>render.progress</code> fills the ring and <code>render.detail</code> is the line under the lamp. With Review the outline first on, it stops after planning and shows the review screen. In the library, the same progress shows on the pod's sleeve.",
+    timing: ["lamp: amber blink while working", "rail fills 400 ms ease-in-out", "detail line types in", "ring: one arc per stage", "fold into the sleeve: spring gentle"],
+    reduced: "Lamps and lines change in place; the sleeve appears at the end.",
+    mount() {
+      screen.innerHTML = `<div class="ed" style="--gel:#6FB3FF;--gel-text:#9CC2FF"><p style="margin:54px 18px 0;font-size:12.5px;font-weight:700;color:#8C92A3">Making your pod</p>
+        <h3 class="mm-title" style="margin:5px 18px 0;font:800 26px/1 var(--f-display);font-stretch:84%;min-height:26px">Voice memo, 2:14</h3>
+        <div style="margin:14px auto 10px;width:100px;height:100px;position:relative">${ringSvg("ring mm-ring")}<b class="mm-pc" style="position:absolute;inset:0;display:grid;place-items:center;font:800 22px var(--f-display);font-stretch:86%;font-variant-numeric:tabular-nums">0%</b></div>
+        <ol class="spine">${MEMO_STAGES.map(([s]) => `<li><span class="lampx"></span><span>${s}<small></small></span><span class="rail"><b></b></span></li>`).join("")}</ol>
+        <p style="margin:auto 18px 22px;font-size:12.5px;color:#8C92A3;text-align:center">You can leave this page. It'll be in Your pods when it's ready.</p>
+        <div class="ed-done"><span class="sleeve">${ringSvg("rg ring")}<span class="t">Bread, Banter and Bad Puns</span><span class="h">Walk &amp; Talk</span></span><h4>Your pod is ready</h4><p>15 minutes, 6 chapters. Made from your 2:14 memo.</p><span class="listen">Listen to it</span></div></div>`;
+      this.dots = drawRing($(".mm-ring"), 44, 2.6);
+      $$(".ed-done .rg").forEach((svg) => drawRing(svg, 44, 2).forEach((d, i) => i % 3 === 0 && d.classList.add("lit")));
+    },
+    async play() {
+      const lis = $$(".spine li"), pc = $(".mm-pc"), title = $(".mm-title");
+      const light = (k) => this.dots.forEach((d, i) => d.classList.toggle("lit", Math.floor(i / 7.5) < k && i % 15 !== 14 && i % 15 !== 7));
+      await sleep(600);
+      for (let k = 0; k < lis.length; k++) {
+        const li = lis[k], lamp = $(".lampx", li), small = $("small", li);
+        li.className = "now"; lamp.className = calm ? "lampx amber" : "lampx amber blink";
+        if (k === 4) for (let c = 1; c <= 6; c++) { small.textContent = `Chapter ${c} of 6`; await sleep(260); }
+        else await sleep(k === 3 ? 500 : 900);
+        li.className = "done"; lamp.className = "lampx blue";
+        if (k !== 4 && MEMO_STAGES[k][1]) { small.innerHTML = ""; await typeInto(small, MEMO_STAGES[k][1].replace("&hellip;", String.fromCharCode(8230)), 14); }
+        if (k === 2) await typeInto(title, "Bread, Banter and Bad Puns", 24);
+        if (!calm) anim($(".rail b", li), [{ transform: "scaleY(0)" }, { transform: "scaleY(1)" }], { dur: 400, ease: EASE_IO, fill: "forwards" }); else $(".rail b", li).style.transform = "scaleY(1)";
+        light(k + 1);
+        pc.textContent = `${Math.round(((k + 1) / lis.length) * 100)}%`;
+      }
+      await sleep(600);
+      const done = $(".ed-done"), sleeve = $(".sleeve", done);
+      $$(".ed > :not(.ed-done)").forEach((e) => (calm ? (e.style.opacity = 0) : anim(e, [{ opacity: 1 }, { opacity: 0 }], { dur: 260, fill: "forwards" })));
+      done.style.opacity = 1;
+      if (!calm) {
+        anim(sleeve, [{ opacity: 0, transform: "scale(.6) rotate(-6deg)" }, { opacity: 1, transform: "none" }], { dur: DUR.bouncy, delay: 200, ease: SPR.bouncy });
+        $$("h4, p, .listen", done).forEach((e, i) => anim(e, [{ opacity: 0, transform: "translateY(10px)" }, { opacity: 1, transform: "none" }], { dur: 420, delay: 460 + i * 60 }));
+      }
+    },
+  });
+
+  // =================================================================================
+  // Bench wiring
+  // =================================================================================
+  const nav = $("#scenes");
+  const groups = [...new Set(SCENES.map((s) => s.group))];
+  nav.innerHTML = groups.map((g) => `<div class="grp"><h2>${g}</h2><ul>${SCENES.filter((s) => s.group === g).map((s) => `<li><button class="scene-btn" type="button" data-scene="${s.id}"><span class="lamp"></span>${s.name}${s.isNew ? '<span class="new-dot">NEW</span>' : ""}</button></li>`).join("")}</ul></div>`).join("");
+
+  function renderSpec(s) {
+    $("#spec").innerHTML = `<h2>${s.name}</h2><p class="lede">${s.lede}</p>
+      <dl><div><dt>When it plays</dt><dd>${s.when}</dd></div><div><dt>Driven by</dt><dd>${s.driven}</dd></div>
+      <div><dt>Timing</dt><dd><span class="tokens">${s.timing.map((t) => `<span class="tok">${t}</span>`).join("")}</span></dd></div>
+      <div><dt>With reduced motion</dt><dd>${s.reduced}</dd></div></dl>`;
+    $("#bench-row").innerHTML = s.options || "";
+    $("#hint").textContent = s.interactive || "";
+  }
+
+  async function start(id) {
+    const s = SCENES.find((x) => x.id === id) || SCENES[0];
+    run++;
+    userTook = false;
+    const myRun = run;
+    if (current !== s) { current = s; renderSpec(s); }
+    $$(".scene-btn").forEach((b) => b.setAttribute("aria-current", String(b.dataset.scene === s.id)));
+    for (const k of ["caps", "needle", "dots", "ring", "chasing", "mic", "isOpen", "listening", "rec", "sting", "side", "bubOn"]) delete s[k];
+    s.mount();
+    screen.insertAdjacentHTML("beforeend", `<span class="island"></span>${calm ? '<span class="calm-note">Reduced motion</span>' : ""}`);
+    // A scene that was switched away from may still be mid-await; its errors are stale.
+    try { await s.play(); } catch (e) { if (e !== ABORT && myRun === run) console.error(e); return; }
+    if (myRun !== run) return;
+    try { await sleep(2600); } catch { return; }
+    if (loop && !userTook && myRun === run) start(s.id);
+  }
+
+  nav.addEventListener("click", (e) => { const b = e.target.closest("[data-scene]"); if (b) { try { history.replaceState(null, "", "#" + b.dataset.scene); } catch {} start(b.dataset.scene); } });
+  $("#replay").addEventListener("click", () => start(current.id));
+  $$("[data-speed]").forEach((b) => b.addEventListener("click", () => { speed = +b.dataset.speed; $$("[data-speed]").forEach((x) => x.setAttribute("aria-pressed", String(x === b))); }));
+  $("#loop").addEventListener("click", (e) => { loop = !loop; e.currentTarget.setAttribute("aria-pressed", String(loop)); if (loop) start(current.id); });
+  const setCalm = (v) => { calm = v; $("#calm").setAttribute("aria-pressed", String(v)); };
+  setCalm(calm);
+  $("#calm").addEventListener("click", () => { setCalm(!calm); start(current.id); });
+  mq.addEventListener("change", () => { setCalm(mq.matches); start(current.id); });
+  $("#bench-row").addEventListener("change", () => start(current.id));
+
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min(0.05, (now - last) / 1000) * speed;
+    last = now;
+    if (current) { current.tick?.(dt); current.frame?.(dt); }
+    for (const a of document.getAnimations()) if (a.playbackRate !== speed) a.playbackRate = speed;
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  const fromHash = (location.hash || "").slice(1);
+  start(SCENES.some((s) => s.id === fromHash) ? fromHash : "greenroom");
+})();
+</script>

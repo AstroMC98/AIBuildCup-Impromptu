@@ -1,0 +1,840 @@
+<title>Impromptu Directions</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anybody:ital,wdth,wght@0,50..150,100..900;1,50..150,100..900&family=Atkinson+Hyperlegible+Next:ital,wght@0,200..800;1,200..800&family=Big+Shoulders:opsz,wght@10..72,100..900&family=Bitcount+Prop+Single:CRSV,ELSH,ELXP,slnt,wght@0..1,0..100,0..100,-8..0,100..900&family=Hanken+Grotesk:ital,wght@0,100..900;1,100..900&family=Imbue:opsz,wght@10..100,100..900&family=Martian+Mono:wdth,wght@75..112.5,100..800&display=swap">
+<style>
+/* Layout: a review board. A header strip with shared playback controls, three phone
+   columns (wrapping to one on phones) that play the same live moment in sync, then a
+   comparison table and the recommendation. Phones are fixed single-theme stages; the
+   board around them follows the viewer's theme. */
+:root {
+  --bg: #EDEFF3;
+  --surface: #FFFFFF;
+  --fg: #141720;
+  --muted: #535A6A;
+  --line: #D3D8E1;
+  --focus: #2F5BFF;
+  --bezel: #07080B;
+  --tally: #FF3B30;
+  --f-ui: "Atkinson Hyperlegible Next", "Segoe UI", system-ui, sans-serif;
+  --f-display: "Anybody", "Arial Narrow", "Segoe UI", sans-serif;
+  --spring-smooth: linear(0, 0.021 2.5%, 0.074 5%, 0.147 7.5%, 0.23 10%, 0.318 12.5%, 0.404 15%, 0.487 17.5%, 0.563 20%, 0.633 22.5%, 0.695 25%, 0.749 27.5%, 0.796 30%, 0.836 32.5%, 0.87 35%, 0.898 37.5%, 0.921 40%, 0.94 42.5%, 0.955 45%, 0.968 47.5%, 0.977 50%, 0.985 52.5%, 0.99 55%, 0.995 57.5%, 0.998 60%, 1 62.5%, 1.001 65%, 1.002 67.5%, 1.003 70%, 1);
+  --spring-bouncy: linear(0, 0.045 2.5%, 0.161 5%, 0.317 7.5%, 0.49 10%, 0.66 12.5%, 0.814 15%, 0.941 17.5%, 1.04 20%, 1.108 22.5%, 1.148 25%, 1.165 27.5%, 1.163 30%, 1.147 32.5%, 1.123 35%, 1.095 37.5%, 1.066 40%, 1.04 42.5%, 1.017 45%, 0.999 47.5%, 0.986 50%, 0.977 52.5%, 0.973 55%, 0.973 57.5%, 0.974 60%, 0.978 62.5%, 0.982 65%, 0.987 67.5%, 0.992 70%, 0.996 72.5%, 0.999 75%, 1.002 77.5%, 1.003 80%, 1);
+  --spring-gentle: linear(0, 0.023 2.5%, 0.08 5%, 0.155 7.5%, 0.239 10%, 0.324 12.5%, 0.407 15%, 0.485 17.5%, 0.555 20%, 0.619 22.5%, 0.676 25%, 0.725 27.5%, 0.768 30%, 0.805 32.5%, 0.836 35%, 0.863 37.5%, 0.886 40%, 0.905 42.5%, 0.921 45%, 0.935 47.5%, 0.946 50%, 0.956 52.5%, 0.963 55%, 0.97 57.5%, 0.975 60%, 0.98 62.5%, 0.983 65%, 0.986 67.5%, 0.989 70%, 0.991 72.5%, 0.993 75%, 0.995 80%, 0.997 85%, 0.998 90%, 1);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0D0F15; --surface: #151820; --fg: #E8EAF0; --muted: #9AA1B1; --line: #262B37; --focus: #7C9BFF;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0D0F15; --surface: #151820; --fg: #E8EAF0; --muted: #9AA1B1; --line: #262B37; --focus: #7C9BFF;
+  color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font: 16px/1.5 var(--f-ui); margin: 0; }
+.wrap { max-width: 1240px; margin: 0 auto; padding-inline: 20px; padding-block: 28px 64px; }
+h1, h2, h3, p { margin: 0; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+
+/* ---- board header ------------------------------------------------------------ */
+.head { display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr) auto; align-items: end; }
+@media (max-width: 760px) { .head { grid-template-columns: minmax(0, 1fr); } }
+.wm { font-family: var(--f-display); font-weight: 800; font-stretch: 112%; font-style: italic; font-size: 30px; letter-spacing: -0.02em; line-height: 1; display: inline-flex; }
+.wm .iw { position: relative; display: inline-block; }
+.wm .i { display: inline-block; clip-path: inset(0.02em -0.2em -0.3em -0.2em); }
+.wm .tittle { position: absolute; left: 0.24em; top: -0.25em; width: .22em; height: .22em; border-radius: 50%; background: var(--tally); animation: ignite 1.6s .4s both; }
+.wm { padding-top: .25em; }
+@keyframes ignite {
+  0% { opacity: .15; box-shadow: none; }
+  8% { opacity: 1; } 12% { opacity: .2; } 18% { opacity: 1; } 24% { opacity: .45; }
+  32%, 100% { opacity: 1; box-shadow: 0 0 10px 2px color-mix(in oklch, var(--tally) 60%, transparent); }
+}
+.head h1 { margin-top: 18px; font-family: var(--f-display); font-weight: 760; font-stretch: 88%; font-size: clamp(30px, 5vw, 52px); line-height: 1.02; letter-spacing: -0.02em; text-wrap: balance; max-width: 20ch; }
+.head p { margin-top: 12px; color: var(--muted); max-width: 62ch; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; }
+.ctl {
+  height: 40px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface);
+  font-weight: 650; font-size: 14px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px;
+}
+.ctl[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.ctl svg { width: 16px; height: 16px; }
+
+/* ---- direction columns ------------------------------------------------------ */
+.dirs { margin-top: 36px; display: grid; gap: 28px 24px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+.dir { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.dir-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.dir-name { font-family: var(--f-display); font-weight: 780; font-stretch: 92%; font-size: 26px; letter-spacing: -0.01em; }
+.dir-letter { font-weight: 700; color: var(--muted); font-size: 14px; }
+.pick { font-size: 13px; font-weight: 700; padding: 3px 10px; border-radius: 999px; background: var(--fg); color: var(--bg); }
+.dir-thesis { color: var(--muted); font-size: 15px; min-height: 3em; }
+.dir-meta { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; color: var(--muted); }
+.dir-meta b { color: var(--fg); font-weight: 700; }
+.swatches { display: flex; gap: 4px; }
+.swatches i { width: 22px; height: 22px; border-radius: 6px; border: 1px solid color-mix(in oklch, var(--fg) 12%, transparent); }
+
+.phone-wrap { display: grid; place-items: center; padding: 6px 0; }
+.phone {
+  width: 320px; max-width: 100%; height: 660px; border-radius: 46px; padding: 9px; background: var(--bezel);
+  box-shadow: 0 30px 60px -20px rgba(8, 10, 20, .45), inset 0 0 0 1.5px #2A2C33;
+}
+.screen { position: relative; width: 100%; height: 100%; border-radius: 37px; overflow: hidden; isolation: isolate; }
+.island { position: absolute; z-index: 50; left: 50%; top: 9px; width: 92px; height: 26px; margin-left: -46px; border-radius: 20px; background: #000; }
+.go-btn {
+  align-self: center; height: 40px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface);
+  font-weight: 700; font-size: 14px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px;
+}
+.go-btn .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--tally); }
+.lib-label { font-size: 13px; font-weight: 700; color: var(--muted); margin-top: 6px; }
+.lib-demo { display: grid; place-items: center; }
+
+/* shared words */
+.w { transition: opacity .22s ease, color .3s ease; }
+
+/* =========================================================================
+   A · LIVE WIRE
+   ========================================================================= */
+@property --gel { syntax: "<color>"; inherits: true; initial-value: #FFB257; }
+@property --level { syntax: "<number>"; inherits: true; initial-value: 0; }
+.a {
+  --gel: #FFB257;
+  --stage: color-mix(in oklch, var(--gel) 19%, #08090E);
+  --stage-hi: color-mix(in oklch, var(--gel) 46%, #0A0B11);
+  --glow: color-mix(in oklch, var(--gel) 72%, transparent);
+  --gel-text: color-mix(in oklch, var(--gel) 32%, #FFFFFF);
+  --on: #FFFFFF;
+  --on-dim: color-mix(in oklch, var(--gel) 18%, #B9BCC8);
+  transition: --gel 1.4s ease;
+  background:
+    radial-gradient(90% 55% at 12% -4%, color-mix(in oklch, var(--stage-hi) calc(60% + var(--level) * 40%), transparent), transparent 70%),
+    radial-gradient(120% 70% at 100% 110%, color-mix(in oklch, var(--gel) 14%, transparent), transparent 60%),
+    var(--stage);
+  color: var(--on); font-family: "Atkinson Hyperlegible Next", "Segoe UI", sans-serif;
+  display: flex; flex-direction: column;
+}
+.a-top { display: flex; align-items: center; gap: 10px; padding: 48px 18px 0; }
+.a-tally {
+  display: inline-flex; align-items: center; gap: 7px; height: 26px; padding: 0 10px 0 8px; border-radius: 6px;
+  background: var(--tally); color: #fff; font: 800 12px/1 "Anybody", sans-serif; font-stretch: 118%; letter-spacing: .06em;
+  box-shadow: 0 0 18px -2px color-mix(in oklch, var(--tally) 70%, transparent);
+}
+.a-tally i { width: 7px; height: 7px; border-radius: 50%; background: #fff; }
+.a-clock { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: 14px; font-variant-numeric: tabular-nums; }
+.a-clock svg { width: 26px; height: 26px; }
+.ring circle { fill: rgba(255, 255, 255, .18); transition: fill .3s; }
+.ring circle.lit { fill: var(--gel-text); }
+.ring circle.q { fill: rgba(255, 255, 255, .42); }
+.ring circle.q.lit { fill: #fff; }
+.a-listen { margin-left: auto; font-size: 13px; color: var(--on-dim); font-weight: 600; }
+
+.a-ep { display: flex; align-items: center; gap: 12px; padding: 18px 18px 0; }
+.a-cover {
+  width: 44px; height: 44px; border-radius: 8px; flex: none; position: relative; overflow: hidden;
+  background: radial-gradient(80% 80% at 20% 10%, var(--gel), color-mix(in oklch, var(--gel) 40%, #000));
+}
+.a-cover::after { content: "W"; position: absolute; right: 3px; bottom: -6px; font: 900 34px/1 "Anybody", sans-serif; font-stretch: 60%; color: rgba(0, 0, 0, .35); }
+.a-ep b { display: block; font: 760 17px/1.15 "Anybody", sans-serif; font-stretch: 92%; letter-spacing: -0.005em; }
+.a-chap { font-size: 13px; color: var(--on-dim); }
+
+.a-caps { flex: 1; min-height: 0; padding: 10px 22px 6px; display: flex; flex-direction: column; justify-content: center; gap: 14px; overflow: hidden; }
+.a-prev { font-size: 15px; line-height: 1.3; color: var(--on-dim); font-weight: 600; opacity: .8;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.a-who { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 700; margin-bottom: 6px; color: var(--gel-text); }
+.a-who i { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.a-now { font-family: "Anybody", "Arial Narrow", sans-serif; font-weight: 720; font-size: 30px; line-height: 1.07; letter-spacing: -0.012em; }
+.a-now .w { opacity: .26; }
+.a-now .w.said { opacity: 1; }
+.a-now .w.now {
+  opacity: 1; color: var(--gel-text);
+  background: linear-gradient(var(--glow), var(--glow)) 0 94% / calc(var(--wp, 0) * 100%) .09em no-repeat;
+}
+.a-line-in { animation: a-in .6s var(--spring-smooth) both; }
+@keyframes a-in { from { opacity: 0; transform: translateY(16px); } }
+
+.a-bubble {
+  margin: 0 18px 10px; padding: 10px 12px; border-radius: 14px; display: flex; gap: 10px; align-items: flex-start;
+  background: color-mix(in oklch, var(--stage) 55%, rgba(255, 255, 255, .1)); border: 1px solid rgba(255, 255, 255, .12);
+  backdrop-filter: blur(8px); font-size: 14px; line-height: 1.3;
+}
+.a-bubble[hidden] { display: none; }
+.a-bubble.in { animation: a-pop .7s var(--spring-bouncy) both; transform-origin: 90% 100%; }
+@keyframes a-pop { from { opacity: 0; transform: translateY(18px) scale(.86); } }
+.a-av { width: 28px; height: 28px; border-radius: 50%; flex: none; display: grid; place-items: center; font-weight: 800; font-size: 13px; background: #2E7F72; }
+.a-bubble small { display: block; font-size: 12px; color: var(--on-dim); font-weight: 650; margin-bottom: 2px; }
+.a-onair { display: inline-flex; margin-top: 6px; font: 800 11px/1 "Anybody", sans-serif; font-stretch: 118%; letter-spacing: .05em; padding: 4px 7px; border-radius: 5px; background: var(--tally); }
+.a-onair[hidden] { display: none; }
+
+.a-hosts { display: flex; gap: 8px; padding: 0 18px 10px; }
+.a-host { display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px 0 4px; border-radius: 999px; background: rgba(255, 255, 255, .08); font-size: 13px; font-weight: 700; color: var(--on-dim); transition: background .3s, color .3s; }
+.a-host .av { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; color: #10121A; font-weight: 800; position: relative; }
+.a-host .av::before { content: ""; position: absolute; inset: -3px; border-radius: 50%; border: 2px solid var(--gel-text); opacity: 0; transform: scale(calc(1 + var(--lv, 0) * .32)); transition: transform .08s linear, opacity .2s; }
+.a-host.talk { background: rgba(255, 255, 255, .16); color: #fff; }
+.a-host.talk .av::before { opacity: calc(.35 + var(--lv, 0) * .65); }
+.a-bar { display: flex; align-items: center; gap: 8px; padding: 0 14px 22px; }
+.a-field { flex: 1; height: 46px; border-radius: 999px; background: rgba(255, 255, 255, .12); display: flex; align-items: center; padding: 0 16px; color: var(--on-dim); font-size: 14px; }
+.a-round { width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; background: rgba(255, 255, 255, .12); flex: none; }
+.a-round.white { background: #fff; color: #10121A; }
+.a-round svg { width: 20px; height: 20px; }
+
+/* go-live: house lights down, the studio clock counts in, the tally lamp ignites */
+.a-go { position: absolute; inset: 0; z-index: 40; background: #050609; display: grid; place-items: center; }
+.a-go[hidden] { display: none; }
+.a-go-inner { position: relative; width: 230px; height: 230px; display: grid; place-items: center; }
+.a-go-ring { position: absolute; inset: 0; width: 100%; height: 100%; }
+.a-go-ring circle { fill: rgba(255, 255, 255, .1); transition: fill .12s; }
+.a-go-ring circle.lit { fill: #FFB257; }
+.a-go-num { font: 800 92px/1 "Anybody", sans-serif; color: #fff; font-variant-numeric: tabular-nums; }
+.a-go-num.tick { animation: a-num .9s var(--spring-smooth) both; }
+@keyframes a-num { from { font-stretch: 150%; opacity: 0; transform: scale(.82); } 70% { font-stretch: 70%; opacity: 1; } to { font-stretch: 62%; opacity: 1; } }
+.a-go-lamp {
+  position: absolute; padding: 10px 16px; border-radius: 8px; font: 800 26px/1 "Anybody", sans-serif; font-stretch: 125%; letter-spacing: .06em;
+  background: #2A0D0B; color: #5A2A26; opacity: 0;
+}
+.a-go-lamp.on { opacity: 1; background: var(--tally); color: #fff; box-shadow: 0 0 40px 4px color-mix(in oklch, var(--tally) 60%, transparent); animation: flicker .5s steps(1) both; }
+@keyframes flicker { 0% { opacity: .2; } 15% { opacity: 1; } 30% { opacity: .35; } 45% { opacity: 1; } 60% { opacity: .7; } 75%, 100% { opacity: 1; } }
+.a-go-cap { position: absolute; bottom: 70px; left: 0; right: 0; text-align: center; color: #9BA0AE; font-size: 14px; font-weight: 650; }
+.a-go.reveal { animation: a-reveal .8s var(--spring-gentle) forwards; }
+@keyframes a-reveal { from { clip-path: circle(150% at 50% 45%); } to { clip-path: circle(0% at 46px 62px); } }
+
+/* library sleeve */
+.a-sleeve {
+  --gel: #FF6B9A;
+  width: 180px; aspect-ratio: 1; border-radius: 10px; position: relative; overflow: hidden; color: #fff;
+  background: radial-gradient(90% 90% at 18% 8%, color-mix(in oklch, var(--gel) 95%, #fff), color-mix(in oklch, var(--gel) 55%, #120A10) 62%, color-mix(in oklch, var(--gel) 25%, #07060A));
+  box-shadow: 0 14px 30px -12px rgba(0, 0, 0, .5);
+}
+.a-sleeve .t { position: absolute; left: 12px; right: 10px; bottom: 30px; font: 860 38px/.86 "Anybody", sans-serif; font-stretch: 58%; letter-spacing: -0.01em; text-transform: none; }
+.a-sleeve .h { position: absolute; left: 12px; bottom: 11px; font-size: 11px; font-weight: 700; opacity: .85; }
+.a-sleeve .live { position: absolute; left: 10px; top: 10px; font: 800 10px/1 "Anybody", sans-serif; font-stretch: 118%; letter-spacing: .05em; padding: 4px 6px; border-radius: 4px; background: var(--tally); }
+.a-sleeve .rg { position: absolute; right: -36px; top: -36px; width: 120px; height: 120px; opacity: .5; }
+
+/* =========================================================================
+   B · RECITAL
+   ========================================================================= */
+.b {
+  --velvet: #2A0810; --velvet-2: #4B1020; --gilt: #D8B26A; --ivory: #F3E8D2; --ivory-dim: rgba(243, 232, 210, .58);
+  background:
+    radial-gradient(70% 45% at 50% 30%, rgba(255, 214, 160, .13), transparent 70%),
+    repeating-linear-gradient(90deg, rgba(0, 0, 0, .24) 0 7px, transparent 7px 20px, rgba(255, 255, 255, .035) 20px 27px, transparent 27px 40px),
+    linear-gradient(var(--velvet-2), var(--velvet) 60%);
+  color: var(--ivory); font-family: "Hanken Grotesk", "Segoe UI", sans-serif; display: flex; flex-direction: column; align-items: center; text-align: center;
+}
+.b-arch { position: absolute; left: 16px; right: 16px; top: 44px; height: 170px; border: 1px solid var(--gilt); border-bottom: 0; border-radius: 150px 150px 0 0 / 70px 70px 0 0; opacity: .45; pointer-events: none; }
+.b-top { margin-top: 64px; display: flex; flex-direction: column; align-items: center; gap: 4px; position: relative; }
+.b-no { font: 400 14px/1 "Imbue", serif; color: var(--gilt); letter-spacing: .02em; }
+.b-live { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-style: italic; color: var(--ivory-dim); }
+.b-live i { width: 6px; height: 6px; border-radius: 50%; background: var(--tally); box-shadow: 0 0 8px var(--tally); }
+.b-title { margin-top: 8px; font: 500 32px/.95 "Imbue", serif; font-variation-settings: "opsz" 72; padding: 0 30px; letter-spacing: -0.005em; }
+.b-act { font-style: italic; font-size: 14px; color: var(--gilt); margin-top: 8px; }
+.b-sur { flex: 1; width: 100%; display: grid; place-items: center; padding: 0 24px; position: relative; }
+.b-line { position: absolute; left: 24px; right: 24px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.b-who { font-style: italic; font-size: 14px; color: var(--gilt); }
+.b-text { font: 450 31px/1.04 "Imbue", serif; font-variation-settings: "opsz" 60; text-wrap: balance; }
+.b-rule { width: 64px; height: 1px; background: rgba(216, 178, 106, .3); position: relative; }
+.b-rule::after { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: calc(var(--p, 0) * 100%); background: var(--gilt); }
+.b-line.in { animation: b-in .9s ease both; }
+.b-line.out { animation: b-out .5s ease both; }
+@keyframes b-in { from { opacity: 0; filter: blur(6px); letter-spacing: .02em; } }
+@keyframes b-out { to { opacity: 0; filter: blur(4px); } }
+.b-note {
+  margin: 0 20px 12px; padding: 12px 14px; background: var(--ivory); color: #2A1A12; text-align: left; border-radius: 3px; font-size: 14px; line-height: 1.35;
+  box-shadow: 0 10px 22px -8px rgba(0, 0, 0, .5); transform: rotate(-1.2deg);
+}
+.b-note[hidden] { display: none; }
+.b-note.in { animation: b-note .8s var(--spring-smooth) both; }
+@keyframes b-note { from { opacity: 0; transform: translateY(30px) rotate(3deg); } }
+.b-note small { display: block; font-style: italic; color: #7A5A3A; margin-bottom: 2px; }
+.b-cast { display: flex; gap: 22px; padding: 4px 0 26px; font-size: 13px; color: var(--ivory-dim); }
+.b-cast span { padding-bottom: 3px; border-bottom: 1px solid transparent; transition: color .3s, border-color .3s; }
+.b-cast span.talk { color: var(--ivory); border-color: var(--gilt); }
+.b-cast em { color: var(--ivory-dim); }
+
+.b-go { position: absolute; inset: 0; z-index: 40; pointer-events: none; }
+.b-go[hidden] { display: none; }
+.b-cur { position: absolute; top: 0; bottom: 0; width: 51%;
+  background: repeating-linear-gradient(90deg, rgba(0, 0, 0, .35) 0 8px, transparent 8px 18px, rgba(255, 255, 255, .05) 18px 24px, transparent 24px 34px), linear-gradient(#5A1424, #2A0810);
+  box-shadow: inset 0 -30px 40px rgba(0, 0, 0, .35); }
+.b-cur.l { left: 0; transform-origin: left; } .b-cur.r { right: 0; transform-origin: right; }
+.b-go.open .b-cur.l { animation: cur-l 1.4s var(--spring-gentle) forwards; }
+.b-go.open .b-cur.r { animation: cur-r 1.4s var(--spring-gentle) forwards; }
+@keyframes cur-l { to { transform: translateX(-92%) scaleX(.4); } }
+@keyframes cur-r { to { transform: translateX(92%) scaleX(.4); } }
+.b-go-card { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; color: var(--gilt); }
+.b-go-card div { font: 400 14px/1.2 "Imbue", serif; }
+.b-go-card strong { display: block; font: 500 40px/.95 "Imbue", serif; color: #F3E8D2; margin: 8px 24px; }
+.b-go-card.fade { animation: b-out .5s ease forwards; }
+
+.b-program { width: 200px; padding: 16px 16px 14px; background: #F3E8D2; color: #2A1A12; border-radius: 2px; text-align: center; box-shadow: 0 14px 30px -14px rgba(0, 0, 0, .5); border-top: 3px double #8C6A3A; }
+.b-program .n { font: 400 13px/1 "Imbue", serif; color: #8C6A3A; }
+.b-program .t { font: 500 30px/.92 "Imbue", serif; margin: 8px 0; }
+.b-program .h { font: italic 13px/1.3 "Hanken Grotesk", sans-serif; color: #6A4A30; }
+
+/* =========================================================================
+   C · SWITCHBOARD
+   ========================================================================= */
+.c {
+  --console: #1C1F1A; --panel: #262A23; --bone: #DCD6C4; --bone-dim: #8E8B7F; --led: #FFB000;
+  background: radial-gradient(120% 60% at 50% 0%, #2B3028, var(--console) 70%);
+  color: var(--bone); font-family: "Martian Mono", ui-monospace, monospace; display: flex; flex-direction: column;
+}
+.c-top { display: flex; align-items: center; justify-content: space-between; padding: 46px 16px 0; }
+.c-sign { font: 600 20px/1 "Bitcount Prop Single", monospace; font-variation-settings: "ELXP" 0, "ELSH" 100; color: #4A1A16; letter-spacing: .04em; transition: color .3s, font-variation-settings .5s, text-shadow .3s; }
+.c-sign.on { color: var(--tally); font-variation-settings: "ELXP" 70, "ELSH" 100; text-shadow: 0 0 10px rgba(255, 59, 48, .7); }
+.c-time { font: 500 20px/1 "Bitcount Prop Single", monospace; font-variation-settings: "ELXP" 60, "ELSH" 100; color: var(--led); text-shadow: 0 0 8px rgba(255, 176, 0, .5); font-variant-numeric: tabular-nums; }
+.c-meters { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 14px 16px 0; }
+.c-meter { background: #EDE5C8; border-radius: 6px; padding: 6px 6px 4px; box-shadow: inset 0 0 0 2px #0E100D, inset 0 6px 14px rgba(0, 0, 0, .18); color: #1B1A15; }
+.c-meter svg { width: 100%; height: auto; display: block; }
+.c-meter .lbl { display: flex; justify-content: space-between; font-size: 9px; font-weight: 600; padding: 0 2px; }
+.c-meter .lbl i { font-style: normal; color: #B3261E; }
+.c-meter .lamp { width: 7px; height: 7px; border-radius: 50%; background: #3A2F1E; display: inline-block; vertical-align: 0; transition: background .15s; }
+.c-meter .lamp.on { background: #FF5A2E; box-shadow: 0 0 6px #FF5A2E; }
+.c-prompt { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; gap: 12px; padding: 12px 18px 10px; position: relative;
+  -webkit-mask-image: linear-gradient(transparent, #000 35%); mask-image: linear-gradient(transparent, #000 35%); }
+.c-ln { display: flex; flex-direction: column; gap: 4px; }
+.c-ln .who { font-size: 10px; font-weight: 600; color: var(--led); letter-spacing: .02em; }
+.c-ln .txt { font: 700 26px/1.02 "Big Shoulders", "Arial Narrow", sans-serif; font-variation-settings: "opsz" 40; text-transform: uppercase; letter-spacing: .01em; }
+.c-ln.old .txt { color: var(--bone-dim); font-size: 20px; }
+.c-ln.old .who { color: var(--bone-dim); }
+.c-ln .w { opacity: 0; transition: opacity .08s; }
+.c-ln .w.said, .c-ln .w.now { opacity: 1; }
+.c-ln.old .w { opacity: 1; }
+.c-cursor { display: inline-block; width: .42em; height: .78em; background: var(--led); margin-left: .1em; vertical-align: -.05em; animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.c-lines { margin: 0 12px 20px; background: var(--panel); border-radius: 8px; padding: 6px; display: grid; gap: 4px; box-shadow: inset 0 0 0 1px #343a30; }
+.c-line { display: grid; grid-template-columns: 22px 30px 1fr auto; align-items: center; gap: 6px; height: 30px; padding: 0 8px; border-radius: 5px; background: #20241E; font-size: 10px; color: var(--bone-dim); }
+.c-line .lamp { width: 10px; height: 10px; border-radius: 50%; background: #3A3326; }
+.c-line.ring .lamp { background: var(--led); box-shadow: 0 0 8px var(--led); animation: blink .7s steps(1) infinite; }
+.c-line.air .lamp { background: var(--tally); box-shadow: 0 0 8px var(--tally); }
+.c-line.ring, .c-line.air { color: var(--bone); }
+.c-line b { font-weight: 700; }
+.c-line .st { font-weight: 600; }
+
+.c-go { position: absolute; inset: 0; z-index: 40; background: #121410; display: grid; place-items: center; text-align: center; }
+.c-go[hidden] { display: none; }
+.c-go .stby { font: 600 18px/1 "Bitcount Prop Single", monospace; font-variation-settings: "ELXP" 40, "ELSH" 100; color: var(--led); animation: blink .8s steps(1) infinite; }
+.c-go .cnt { margin-top: 18px; font: 600 64px/1 "Bitcount Prop Single", monospace; font-variation-settings: "ELXP" 70, "ELSH" 100; color: var(--led); text-shadow: 0 0 18px rgba(255, 176, 0, .5); font-variant-numeric: tabular-nums; }
+.c-go .tx { margin-top: 18px; font: 600 34px/1 "Bitcount Prop Single", monospace; font-variation-settings: "ELXP" 0, "ELSH" 100; color: #3A1512; transition: font-variation-settings .6s, color .2s, text-shadow .3s; }
+.c-go .tx.on { font-variation-settings: "ELXP" 80, "ELSH" 100; color: var(--tally); text-shadow: 0 0 20px rgba(255, 59, 48, .8); }
+.c-go.up { animation: c-up .6s var(--spring-smooth) forwards; }
+@keyframes c-up { to { transform: translateY(-104%); } }
+
+.c-cart { width: 220px; border-radius: 6px; overflow: hidden; background: #2A2E27; color: #DCD6C4; font: 500 10px/1.3 "Martian Mono", monospace; box-shadow: 0 14px 30px -14px rgba(0, 0, 0, .5); }
+.c-cart .stripe { height: 10px; background: repeating-linear-gradient(90deg, #FF3B30 0 18px, #C22A20 18px 36px); }
+.c-cart .body { margin: 10px; background: #EFE8D2; color: #1D1C17; border-radius: 3px; padding: 8px 10px; display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; }
+.c-cart .body .k { color: #8A8471; }
+.c-cart .body .ttl { grid-column: 1 / -1; font: 800 22px/1 "Big Shoulders", sans-serif; text-transform: uppercase; margin-bottom: 4px; }
+
+/* ---- comparison + verdict -------------------------------------------------- */
+.section-h { margin: 56px 0 14px; font-family: var(--f-display); font-weight: 780; font-stretch: 90%; font-size: 30px; letter-spacing: -0.015em; }
+.tbl-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+table { width: 100%; border-collapse: collapse; min-width: 760px; font-size: 14px; }
+th, td { text-align: left; vertical-align: top; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+tr:last-child th, tr:last-child td { border-bottom: 0; }
+thead th { font-size: 14px; font-weight: 800; }
+tbody th { width: 150px; color: var(--muted); font-weight: 700; }
+td.rec { background: color-mix(in oklch, var(--focus) 6%, transparent); }
+.verdict { display: grid; gap: 18px; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); margin-top: 18px; }
+@media (max-width: 860px) { .verdict { grid-template-columns: minmax(0, 1fr); } }
+.verdict p, .verdict li { max-width: 64ch; }
+.verdict ul { margin: 10px 0 0; padding-left: 20px; display: grid; gap: 6px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; }
+.card h3 { font-size: 17px; font-weight: 800; margin-bottom: 6px; }
+.note { color: var(--muted); font-size: 14px; margin-top: 10px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .wm .tittle { animation: none; box-shadow: 0 0 10px 2px color-mix(in oklch, var(--tally) 60%, transparent); }
+}
+.calm .a-line-in, .calm .a-bubble.in, .calm .b-note.in, .calm .b-line.in, .calm .b-line.out { animation-duration: .01s; }
+.calm .a { transition-duration: .01s; }
+</style>
+
+<div class="wrap">
+  <header class="head">
+    <div>
+      <span class="wm" aria-label="impromptu"><span aria-hidden="true"><span class="iw"><span class="i">i</span><span class="tittle"></span></span>mpromptu</span></span>
+      <h1>Three ways Impromptu could look and move</h1>
+      <p>All three phones play the same live moment at the same time: two hosts riffing on sourdough, then a listener's call-in read on air.
+        Use <b>Play go-live</b> under each phone to see its signature transition.</p>
+    </div>
+    <div class="controls" role="group" aria-label="Playback">
+      <button class="ctl" id="btn-play" type="button" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M8 5v14M16 5v14"/></svg><span>Pause</span></button>
+      <button class="ctl" id="btn-restart" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v4h4"/></svg>Restart</button>
+      <button class="ctl" id="btn-slow" type="button" aria-pressed="false">Half speed</button>
+      <button class="ctl" id="btn-calm" type="button" aria-pressed="false">Reduced motion</button>
+    </div>
+  </header>
+
+  <main class="dirs">
+    <!-- A -->
+    <article class="dir" aria-labelledby="a-name">
+      <div class="dir-head"><h2 class="dir-name" id="a-name">Live Wire</h2><span class="pick">Recommended</span></div>
+      <p class="dir-thesis">The stage is lit by the episode's color, words light up as the hosts say them, and a studio clock ring counts every wait.</p>
+      <div class="dir-meta"><span><b>Anybody</b> for display and captions</span><span><b>Atkinson Hyperlegible Next</b> for everything else</span></div>
+      <div class="swatches" aria-label="Palette: tungsten, surprise pink, steel blue, tally red, stage ink"><i style="background:#FFB257"></i><i style="background:#FF6B9A"></i><i style="background:#6FB3FF"></i><i style="background:#FF3B30"></i><i style="background:#0E0F16"></i></div>
+      <div class="phone-wrap"><div class="phone"><div class="screen a" id="a-screen">
+        <span class="island"></span>
+        <header class="a-top">
+          <span class="a-tally"><i></i>ON AIR</span>
+          <span class="a-clock"><svg class="ring" id="a-ring" viewBox="0 0 100 100" aria-hidden="true"></svg><span id="a-time">0:42</span></span>
+          <span class="a-listen">128 listening</span>
+        </header>
+        <div class="a-ep"><span class="a-cover" aria-hidden="true"></span><div><b>Wild Yeast and the Gold Rush</b><span class="a-chap" id="a-chap">Chapter 1, Cold open</span></div></div>
+        <section class="a-caps" aria-hidden="true"><div class="a-prev" id="a-prev"></div><div id="a-now"></div></section>
+        <div class="a-bubble" id="a-bubble" hidden><span class="a-av">K</span><div><small>Kayla, calling from Juneau</small>My grandma's starter is from Alaska. Does that count?<br><span class="a-onair" id="a-onair" hidden>READING NOW</span></div></div>
+        <div class="a-hosts"><span class="a-host" id="a-h0"><span class="av" style="background:#FFB257">M</span>Mia</span><span class="a-host" id="a-h1"><span class="av" style="background:#9CC2FF">J</span>Jordan</span></div>
+        <div class="a-bar"><span class="a-field">Call in to the hosts</span><span class="a-round"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></svg></span><span class="a-round white"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0V7a3 3 0 0 0-3-3z"/><path d="M6 11a6 6 0 0 0 12 0"/><path d="M12 17v3"/></svg></span></div>
+        <div class="a-go" id="a-go" hidden><div class="a-go-inner"><svg class="a-go-ring" id="a-go-ring" viewBox="0 0 100 100" aria-hidden="true"></svg><span class="a-go-num" id="a-go-num"></span><span class="a-go-lamp" id="a-go-lamp">ON AIR</span></div><p class="a-go-cap" id="a-go-cap">Standing by</p></div>
+      </div></div></div>
+      <button class="go-btn" type="button" data-go="a"><span class="dot"></span>Play go-live</button>
+      <p class="lib-label">In the library: a sleeve lit by the episode's gel</p>
+      <div class="lib-demo"><div class="a-sleeve"><svg class="rg ring" id="a-sleeve-ring" viewBox="0 0 100 100" aria-hidden="true"></svg><span class="live">LIVE</span><span class="t">Wild Yeast and the Gold Rush</span><span class="h">Mia and Jordan, 10 min</span></div></div>
+    </article>
+
+    <!-- B -->
+    <article class="dir" aria-labelledby="b-name">
+      <div class="dir-head"><h2 class="dir-name" id="b-name">Recital</h2><span class="dir-letter">B</span></div>
+      <p class="dir-thesis">An evening performance. Each pod is a numbered piece, captions are surtitles, and going live raises the curtain.</p>
+      <div class="dir-meta"><span><b>Imbue</b> for titles and surtitles</span><span><b>Hanken Grotesk</b> for interface</span></div>
+      <div class="swatches" aria-label="Palette: velvet, oxblood, gilt, ivory"><i style="background:#2A0810"></i><i style="background:#4B1020"></i><i style="background:#D8B26A"></i><i style="background:#F3E8D2"></i><i style="background:#FF3B30"></i></div>
+      <div class="phone-wrap"><div class="phone"><div class="screen b" id="b-screen">
+        <span class="island"></span>
+        <span class="b-arch" aria-hidden="true"></span>
+        <div class="b-top"><span class="b-no">No. 12</span><span class="b-live"><i></i>Live, 128 in the house</span></div>
+        <h3 class="b-title">Wild Yeast and the Gold Rush</h3>
+        <p class="b-act" id="b-act">Part one, Cold open</p>
+        <div class="b-sur" id="b-sur" aria-hidden="true"></div>
+        <div class="b-note" id="b-note" hidden><small>A note from Kayla, in Juneau</small>My grandma's starter is from Alaska. Does that count?</div>
+        <div class="b-cast"><span id="b-h0">Mia <em>the baker</em></span><span id="b-h1">Jordan <em>the skeptic</em></span></div>
+        <div class="b-go" id="b-go" hidden><span class="b-cur l"></span><span class="b-cur r"></span><div class="b-go-card" id="b-go-card"><div>No. 12<strong>Wild Yeast and the Gold Rush</strong>Mia and Jordan</div></div></div>
+      </div></div></div>
+      <button class="go-btn" type="button" data-go="b"><span class="dot"></span>Play go-live</button>
+      <p class="lib-label">In the library: a concert program</p>
+      <div class="lib-demo"><div class="b-program"><div class="n">No. 12</div><div class="t">Wild Yeast and the Gold Rush</div><div class="h">Mia and Jordan, ten minutes</div></div></div>
+    </article>
+
+    <!-- C -->
+    <article class="dir" aria-labelledby="c-name">
+      <div class="dir-head"><h2 class="dir-name" id="c-name">Switchboard</h2><span class="dir-letter">C</span></div>
+      <p class="dir-thesis">A broadcast console. Hosts get VU meters, captions roll like a teleprompter, and call-ins wait on lit phone lines.</p>
+      <div class="dir-meta"><span><b>Big Shoulders</b> for captions</span><span><b>Martian Mono</b> and <b>Bitcount</b> for the console</span></div>
+      <div class="swatches" aria-label="Palette: console, panel, bone, LED amber, tally red"><i style="background:#1C1F1A"></i><i style="background:#262A23"></i><i style="background:#DCD6C4"></i><i style="background:#FFB000"></i><i style="background:#FF3B30"></i></div>
+      <div class="phone-wrap"><div class="phone"><div class="screen c" id="c-screen">
+        <span class="island"></span>
+        <header class="c-top"><span class="c-sign on" id="c-sign">ON AIR</span><span class="c-time" id="c-time">00:42</span></header>
+        <div class="c-meters">
+          <div class="c-meter"><svg viewBox="0 0 120 64" aria-hidden="true" id="c-m0"></svg><div class="lbl"><span>MIA <span class="lamp" id="c-l0"></span></span><i>+3</i></div></div>
+          <div class="c-meter"><svg viewBox="0 0 120 64" aria-hidden="true" id="c-m1"></svg><div class="lbl"><span>JORDAN <span class="lamp" id="c-l1"></span></span><i>+3</i></div></div>
+        </div>
+        <div class="c-prompt" id="c-prompt" aria-hidden="true"></div>
+        <div class="c-lines">
+          <div class="c-line" id="c-line1"><span class="lamp"></span><b>L1</b><span class="nm" id="c-line1-nm">open</span><span class="st" id="c-line1-st"></span></div>
+          <div class="c-line"><span class="lamp"></span><b>L2</b><span>open</span><span class="st"></span></div>
+          <div class="c-line"><span class="lamp"></span><b>L3</b><span>open</span><span class="st"></span></div>
+        </div>
+        <div class="c-go" id="c-go" hidden><div><div class="stby">STANDBY</div><div class="cnt" id="c-cnt">00:03</div><div class="tx" id="c-tx">ON AIR</div></div></div>
+      </div></div></div>
+      <button class="go-btn" type="button" data-go="c"><span class="dot"></span>Play go-live</button>
+      <p class="lib-label">In the library: a broadcast cart label</p>
+      <div class="lib-demo"><div class="c-cart"><div class="stripe"></div><div class="body"><span class="ttl">Wild Yeast and the Gold Rush</span><span class="k">HOSTS</span><span>MIA / JORDAN</span><span class="k">LEN</span><span>10:00</span><span class="k">STATUS</span><span>ON AIR</span></div></div></div>
+    </article>
+  </main>
+
+  <h2 class="section-h">Side by side</h2>
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th scope="col"></th><th scope="col">Live Wire</th><th scope="col">Recital</th><th scope="col">Switchboard</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Feels like</th><td class="rec">A late-night show lit for one episode at a time</td><td>A small concert hall, programme in hand</td><td>The control room behind the glass</td></tr>
+        <tr><th scope="row">Captions</th><td class="rec">Words light up as spoken. Long lines narrow (the width axis) instead of shrinking, so they stay big.</td><td>Whole-line surtitles that fade in. Calm, but you lose the sense of speech happening now.</td><td>Teleprompter roll, word by word. Very legible; uppercase gets tiring past a few minutes.</td></tr>
+        <tr><th scope="row">Every wait</th><td class="rec">The 60-dot studio clock ring: tuning in, planning, writing, editing, counting in</td><td>Programme pages and a dimming house</td><td>LED standby readouts and needles at rest</td></tr>
+        <tr><th scope="row">Go-live</th><td class="rec">Count-in on the ring, the tally lamp flickers on, the stage is revealed from the lamp</td><td>The curtain rises on the title card</td><td>Standby blinks, the LED counts down, ON AIR lights</td></tr>
+        <tr><th scope="row">Per-episode color</th><td class="rec">Built in: each vibe is a lighting gel; chapters change the gel live</td><td>Fixed velvet; color can't follow the vibe</td><td>Fixed console; vibe only shows on the cart stripe</td></tr>
+        <tr><th scope="row">Accessibility</th><td class="rec">Atkinson Hyperlegible was drawn for low-vision readers. Captions keep high contrast on any gel.</td><td>Thin didone hairlines blur at small sizes and on low-end screens</td><td>Monospace UI text is slower to read; LED text needs a plain-text twin</td></tr>
+        <tr><th scope="row">Fonts</th><td class="rec">About 88 KB</td><td>About 80 KB</td><td>About 112 KB</td></tr>
+        <tr><th scope="row">Risk</th><td class="rec">Gel colors need a contrast guard (handled in the token math)</td><td>Formal; co-host calls and banter templates feel out of place</td><td>Skeuomorphic chrome ages fast and crowds small screens</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 class="section-h">Recommendation</h2>
+  <div class="verdict">
+    <div class="card">
+      <h3>Go with Live Wire</h3>
+      <p>It is the only direction where the product's two real signals, which episode you're in and who is talking right now, drive the whole screen. The gel follows the vibe and the chapter, the type follows the voice, and the studio clock gives every wait the same honest shape.</p>
+      <ul>
+        <li>Borrow Switchboard's <b>lit phone lines</b> for the call-in queue: waiting, next, and on air read at a glance.</li>
+        <li>Borrow Recital's <b>whole-line surtitle fade</b> as the captions mode for reduced motion.</li>
+        <li>Keep Recital's cart and programme ideas out: they're lovely, and they fight the vibe colors.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>How to judge these</h3>
+      <p>Watch one phone through a full loop, then switch on <b>Reduced motion</b> and watch again. A direction that still reads well when nothing moves is one we can build on.</p>
+      <p class="note">Content is a sample episode. Hosts, caller and listener counts are examples.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const mq = matchMedia("(prefers-reduced-motion: reduce)");
+  let calm = mq.matches;
+  let speed = 1;
+  let playing = true;
+
+  // ---- the shared script ----------------------------------------------------
+  const CHAPTERS = [
+    { title: "Cold open", gel: "#FFB257", part: "Part one, Cold open" },
+    { title: "The Gold Rush", gel: "#FF6B9A", part: "Part two, The Gold Rush" },
+    { title: "The bacterium", gel: "#6FB3FF", part: "Part three, The bacterium" },
+  ];
+  const HOSTS = ["Mia", "Jordan"];
+  const SCRIPT = [
+    { who: 0, ch: 0, text: "So the starter in my fridge is technically older than my car." },
+    { who: 1, ch: 0, text: "That's not a flex. That's a custody arrangement." },
+    { who: 0, ch: 1, text: "Okay, but listen. Miners in 1849 carried starter in pouches around their necks to keep it warm." },
+    { who: 1, ch: 1, text: "Which is why prospectors got called sourdoughs. The nickname stuck to the people, not just the bread." },
+    { who: 0, ch: 1, call: true, text: "Kayla's calling in from Juneau. She says her grandma's starter is from Alaska. Does that count?" },
+    { who: 1, ch: 1, text: "Kayla, it absolutely counts. That jar has more history than most museums." },
+    { who: 0, ch: 2, text: "And the tang? That's a bacterium named after the city. Lactobacillus sanfranciscensis." },
+    { who: 1, ch: 2, text: "Science gave a microbe a hometown. I love that for it." },
+  ];
+  const TL = (() => {
+    let t = 1.0;
+    return SCRIPT.map((ln, i) => {
+      const words = ln.text.split(/\s+/);
+      const starts = [];
+      for (const w of words) {
+        starts.push(t);
+        t += 0.16 + 0.048 * w.replace(/[^\w']/g, "").length + (/[.?!]$/.test(w) ? 0.34 : /[,;:]$/.test(w) ? 0.16 : 0);
+      }
+      const line = { ...ln, i, words, starts, start: starts[0], end: t };
+      t += 0.6;
+      return line;
+    });
+  })();
+  const TOTAL = TL[TL.length - 1].end + 2.4;
+  const CALL = TL.find((l) => l.call);
+  const hash = (n) => { const x = Math.sin(n * 127.1) * 43758.5453; return x - Math.floor(x); };
+  const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+
+  function stateAt(t) {
+    const st = { t, chapter: 0, level: 0.03, line: null, wi: -1, wp: 0, speaking: false };
+    let li = -1;
+    for (let k = 0; k < TL.length; k++) if (TL[k].start <= t) li = k;
+    if (li >= 0) {
+      const L = TL[li];
+      st.line = L;
+      st.chapter = L.ch;
+      if (t < L.end) {
+        let wi = 0;
+        for (let k = 0; k < L.starts.length; k++) if (L.starts[k] <= t) wi = k;
+        const wEnd = wi + 1 < L.starts.length ? L.starts[wi + 1] : L.end;
+        st.wi = wi;
+        st.wp = Math.min(1, (t - L.starts[wi]) / (wEnd - L.starts[wi]));
+        st.speaking = true;
+        st.level = Math.pow(Math.sin(Math.PI * Math.min(st.wp * 1.18, 1)), 0.6) * (0.5 + 0.5 * hash(li * 31 + wi));
+      } else {
+        st.wi = L.words.length;
+        st.wp = 1;
+      }
+    }
+    st.call = t < CALL.start - 3.2 ? null : t < CALL.start ? "queued" : t < CALL.end ? "air" : t < CALL.end + 3.5 ? "done" : null;
+    return st;
+  }
+
+  const wordsHtml = (L) => L.words.map((w, k) => `<span class="w" data-k="${k}">${w.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</span>`).join(" ");
+  function markWords(spans, wi, wp, el) {
+    spans.forEach((s, k) => {
+      const cls = k < wi ? "w said" : k === wi ? "w now" : "w";
+      if (s.className !== cls) s.className = cls;
+    });
+    if (el) el.style.setProperty("--wp", wp.toFixed(3));
+  }
+
+  // ---- studio clock ring: 60 second-dots, quarter marks brighter ------------------
+  function drawRing(svg, r = 44, dot = 2.2) {
+    let out = "";
+    for (let i = 0; i < 60; i++) {
+      const a = (i / 60) * Math.PI * 2 - Math.PI / 2;
+      const q = i % 15 === 0;
+      out += `<circle class="${q ? "q" : ""}" cx="${(50 + r * Math.cos(a)).toFixed(2)}" cy="${(50 + r * Math.sin(a)).toFixed(2)}" r="${q ? dot * 1.35 : dot}"></circle>`;
+    }
+    svg.innerHTML = out;
+    return [...svg.querySelectorAll("circle")];
+  }
+
+  // =====================================================================
+  // A · Live Wire
+  // =====================================================================
+  const A = (() => {
+    const screen = $("a-screen"), now = $("a-now"), prev = $("a-prev");
+    const dots = drawRing($("a-ring"), 42, 3.4);
+    drawRing($("a-sleeve-ring"), 44, 2).forEach((d, i) => i % 3 === 0 && d.classList.add("lit"));
+    let lineI = -1, spans = [], chapter = -1, call = null, lit = -1;
+    const h = [$("a-h0"), $("a-h1")];
+    // Long lines narrow (the width axis) before they shrink, so captions stay big.
+    function fit() {
+      const box = now.parentElement;
+      const max = box.clientHeight - prev.offsetHeight - 34;
+      const inner = now.querySelector(".a-now");
+      if (!inner) return;
+      inner.style.fontSize = "";
+      const fits = () => now.offsetHeight <= max && now.scrollWidth <= now.clientWidth;
+      for (const s of [100, 90, 80, 70, 62]) {
+        now.style.fontStretch = s + "%";
+        if (fits()) return;
+      }
+      for (let size = 28; size >= 18; size -= 2) {
+        inner.style.fontSize = size + "px";
+        if (fits()) return;
+      }
+    }
+    return {
+      reset() { lineI = -1; chapter = -1; call = null; now.innerHTML = ""; prev.textContent = ""; },
+      update(st) {
+        const sec = 42 + st.t;
+        $("a-time").textContent = fmt(sec);
+        const n = Math.floor(sec % 60);
+        if (n !== lit) { lit = n; dots.forEach((d, i) => d.classList.toggle("lit", i <= n)); }
+        if (st.chapter !== chapter) {
+          chapter = st.chapter;
+          screen.style.setProperty("--gel", CHAPTERS[chapter].gel);
+          $("a-chap").textContent = `Chapter ${chapter + 1}, ${CHAPTERS[chapter].title}`;
+        }
+        screen.style.setProperty("--level", (calm ? 0 : st.level).toFixed(3));
+        if (st.line && st.line.i !== lineI) {
+          const old = TL[lineI];
+          lineI = st.line.i;
+          prev.textContent = old ? `${HOSTS[old.who]}: ${old.text}` : "";
+          now.innerHTML = `<div class="a-who"><i></i>${HOSTS[st.line.who]}</div><div class="a-now">${wordsHtml(st.line)}</div>`;
+          const inner = now.querySelector(".a-now");
+          spans = [...inner.querySelectorAll(".w")];
+          fit();
+          now.classList.remove("a-line-in"); void now.offsetWidth; now.classList.add("a-line-in");
+          now._inner = inner;
+        }
+        if (now._inner) markWords(spans, calm ? spans.length : st.wi, st.wp, now._inner);
+        h.forEach((el, k) => {
+          const talk = st.speaking && st.line && st.line.who === k;
+          el.classList.toggle("talk", talk);
+          el.style.setProperty("--lv", talk && !calm ? st.level.toFixed(3) : "0");
+        });
+        if (st.call !== call) {
+          call = st.call;
+          const b = $("a-bubble");
+          if (!call) b.hidden = true;
+          else if (b.hidden) { b.hidden = false; b.classList.remove("in"); void b.offsetWidth; b.classList.add("in"); }
+          $("a-onair").hidden = call !== "air";
+          if (now._inner) fit();
+        }
+      },
+      async golive(engine) {
+        const go = $("a-go"), num = $("a-go-num"), lamp = $("a-go-lamp"), cap = $("a-go-cap");
+        const ring = drawRing($("a-go-ring"), 46, 1.9);
+        go.hidden = false; go.classList.remove("reveal"); lamp.className = "a-go-lamp"; num.textContent = ""; cap.textContent = "Standing by";
+        engine.hold = true; engine.restart();
+        if (calm) {
+          lamp.className = "a-go-lamp on"; lamp.style.animation = "none"; cap.textContent = "Wild Yeast and the Gold Rush";
+          await wait(1200); go.hidden = true; lamp.style.animation = ""; engine.hold = false; return;
+        }
+        const start = performance.now();
+        await new Promise((res) => {
+          const tick = () => {
+            const e = (performance.now() - start) / 1000 * speed;
+            const k = Math.min(60, Math.floor(e * 20));
+            ring.forEach((d, i) => d.classList.toggle("lit", i < k));
+            const c = 3 - Math.floor(e);
+            if (e < 3 && num.textContent !== String(c)) { num.textContent = c; num.classList.remove("tick"); void num.offsetWidth; num.classList.add("tick"); }
+            if (e >= 3) return res();
+            requestAnimationFrame(tick);
+          };
+          requestAnimationFrame(tick);
+        });
+        num.textContent = ""; lamp.classList.add("on"); cap.textContent = "Wild Yeast and the Gold Rush";
+        await wait(900 / speed);
+        go.classList.add("reveal");
+        engine.hold = false;
+        await wait(820 / speed);
+        go.hidden = true; go.classList.remove("reveal");
+      },
+    };
+  })();
+
+  // =====================================================================
+  // B · Recital
+  // =====================================================================
+  const B = (() => {
+    const sur = $("b-sur");
+    let lineI = -1, spans = [], cur = null, chapter = -1, call = null;
+    return {
+      reset() { lineI = -1; chapter = -1; call = null; sur.innerHTML = ""; cur = null; },
+      update(st) {
+        if (st.chapter !== chapter) { chapter = st.chapter; $("b-act").textContent = CHAPTERS[chapter].part; }
+        if (st.line && st.line.i !== lineI) {
+          lineI = st.line.i;
+          if (cur) { const o = cur; o.classList.remove("in"); o.classList.add("out"); setTimeout(() => o.remove(), calm ? 0 : 500); }
+          cur = document.createElement("div");
+          cur.className = "b-line in";
+          cur.innerHTML = `<span class="b-who">${HOSTS[st.line.who]}</span><span class="b-text">${st.line.text.replace(/&/g, "&amp;")}</span><span class="b-rule"></span>`;
+          sur.append(cur);
+        }
+        if (cur && st.line) {
+          const p = st.speaking ? (st.wi + st.wp) / st.line.words.length : 1;
+          cur.querySelector(".b-rule").style.setProperty("--p", p.toFixed(3));
+        }
+        ["b-h0", "b-h1"].forEach((id, k) => $(id).classList.toggle("talk", Boolean(st.speaking && st.line && st.line.who === k)));
+        if (st.call !== call) {
+          call = st.call;
+          const n = $("b-note");
+          if (!call) n.hidden = true;
+          else if (n.hidden) { n.hidden = false; n.classList.remove("in"); void n.offsetWidth; n.classList.add("in"); }
+        }
+      },
+      async golive(engine) {
+        const go = $("b-go"), card = $("b-go-card");
+        go.hidden = false; go.classList.remove("open"); card.classList.remove("fade");
+        engine.hold = true; engine.restart();
+        await wait((calm ? 900 : 1500) / speed);
+        if (calm) { go.hidden = true; engine.hold = false; return; }
+        card.classList.add("fade");
+        await wait(300 / speed);
+        go.classList.add("open");
+        engine.hold = false;
+        await wait(1400 / speed);
+        go.hidden = true;
+      },
+    };
+  })();
+
+  // =====================================================================
+  // C · Switchboard
+  // =====================================================================
+  const C = (() => {
+    const prompt = $("c-prompt");
+    // VU meter face: scale arc, red zone, needle pivoting at the bottom center.
+    const meters = [0, 1].map((k) => {
+      const svg = $("c-m" + k);
+      let ticks = "";
+      for (let i = 0; i <= 10; i++) {
+        const a = (-48 + i * 9.6) * Math.PI / 180;
+        const x1 = 60 + Math.sin(a) * 46, y1 = 62 - Math.cos(a) * 46, x2 = 60 + Math.sin(a) * (i % 5 ? 41 : 38), y2 = 62 - Math.cos(a) * (i % 5 ? 41 : 38);
+        ticks += `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${i > 7 ? "#B3261E" : "#1B1A15"}" stroke-width="${i % 5 ? 1 : 1.6}"/>`;
+      }
+      svg.innerHTML = `<path d="M ${60 + Math.sin(-0.84) * 46} ${62 - Math.cos(-0.84) * 46} A 46 46 0 0 1 ${60 + Math.sin(0.84) * 46} ${62 - Math.cos(0.84) * 46}" fill="none" stroke="#1B1A15" stroke-width="1"/>
+        <path d="M ${60 + Math.sin(0.42) * 46} ${62 - Math.cos(0.42) * 46} A 46 46 0 0 1 ${60 + Math.sin(0.84) * 46} ${62 - Math.cos(0.84) * 46}" fill="none" stroke="#B3261E" stroke-width="3.5"/>
+        ${ticks}<text x="60" y="44" text-anchor="middle" font-size="9" font-family="Martian Mono, monospace" fill="#1B1A15">VU</text>
+        <g class="needle"><line x1="60" y1="62" x2="60" y2="12" stroke="#151410" stroke-width="1.4" stroke-linecap="round"/></g><circle cx="60" cy="62" r="4" fill="#151410"/>`;
+      return { g: svg.querySelector(".needle"), a: -48, v: 0, lamp: $("c-l" + k) };
+    });
+    let lineI = -1, cur = null, spans = [], call = null, last = performance.now();
+    return {
+      reset() { lineI = -1; call = null; prompt.innerHTML = ""; cur = null; },
+      update(st) {
+        const sec = 42 + st.t;
+        $("c-time").textContent = `${String(Math.floor(sec / 60)).padStart(2, "0")}:${String(Math.floor(sec % 60)).padStart(2, "0")}`;
+        // Needles: a damped spring toward the speaking host's level.
+        const nowT = performance.now(), dt = Math.min(0.05, (nowT - last) / 1000); last = nowT;
+        meters.forEach((m, k) => {
+          const talk = st.speaking && st.line && st.line.who === k;
+          const target = -48 + (talk ? 20 + st.level * 74 : 2 + hash(Math.floor(st.t * 8) + k) * 4);
+          if (calm) m.a = talk ? 10 : -46;
+          else { m.v += (target - m.a) * 180 * dt; m.v *= Math.pow(0.0009, dt); m.a += m.v * dt; }
+          m.g.setAttribute("transform", `rotate(${Math.max(-50, Math.min(50, m.a)).toFixed(2)} 60 62)`);
+          m.lamp.classList.toggle("on", Boolean(talk && st.level > 0.78));
+        });
+        if (st.line && st.line.i !== lineI) {
+          lineI = st.line.i;
+          const before = [...prompt.children].map((el) => [el, el.getBoundingClientRect().top]);
+          if (cur) { cur.classList.add("old"); cur.querySelector(".c-cursor")?.remove(); }
+          cur = document.createElement("div");
+          cur.className = "c-ln";
+          cur.innerHTML = `<span class="who">${HOSTS[st.line.who].toUpperCase()} &gt;</span><span class="txt">${wordsHtml(st.line)}</span>`;
+          prompt.append(cur);
+          spans = [...cur.querySelectorAll(".w")];
+          while (prompt.children.length > 4) prompt.firstElementChild.remove();
+          if (!calm) for (const [el, top] of before) {
+            if (!el.isConnected) continue;
+            const d = top - el.getBoundingClientRect().top;
+            el.animate([{ transform: `translateY(${d}px)` }, { transform: "none" }], { duration: 520 / speed, easing: getComputedStyle(document.documentElement).getPropertyValue("--spring-smooth").trim() || "ease-out" });
+          }
+        }
+        if (cur && st.line) {
+          const wi = calm ? spans.length : st.wi;
+          markWords(spans, wi, st.wp);
+          let c = cur.querySelector(".c-cursor");
+          if (!c) { c = document.createElement("span"); c.className = "c-cursor"; }
+          const anchor = spans[Math.min(wi, spans.length - 1)];
+          if (anchor && c.previousSibling !== anchor) anchor.after(c);
+        }
+        if (st.call !== call) {
+          call = st.call;
+          const row = $("c-line1");
+          row.className = "c-line" + (call === "queued" ? " ring" : call === "air" ? " air" : "");
+          $("c-line1-nm").textContent = call ? "KAYLA / JUNEAU" : "open";
+          $("c-line1-st").textContent = call === "queued" ? "HOLD" : call === "air" ? "ON AIR" : call === "done" ? "DONE" : "";
+        }
+      },
+      async golive(engine) {
+        const go = $("c-go"), cnt = $("c-cnt"), tx = $("c-tx"), sign = $("c-sign");
+        go.hidden = false; go.classList.remove("up"); tx.classList.remove("on"); sign.classList.remove("on");
+        engine.hold = true; engine.restart();
+        for (let s = 3; s >= 1; s--) { cnt.textContent = `00:0${s}`; await wait((calm ? 300 : 1000) / speed); }
+        cnt.textContent = "00:00"; tx.classList.add("on");
+        meters.forEach((m) => { m.v = calm ? 0 : 900; });
+        await wait((calm ? 400 : 900) / speed);
+        sign.classList.add("on");
+        if (!calm) { go.classList.add("up"); engine.hold = false; await wait(620 / speed); }
+        else engine.hold = false;
+        go.hidden = true; go.classList.remove("up");
+      },
+    };
+  })();
+
+  // ---- engines --------------------------------------------------------------
+  class Engine {
+    constructor(r) { this.r = r; this.t = 2.6; this.hold = false; }
+    restart() { this.t = 0; this.r.reset(); }
+    step(dt) {
+      if (!this.hold) { this.t += dt; if (this.t > TOTAL) this.restart(); }
+      this.r.update(stateAt(this.t));
+    }
+  }
+  const engines = { a: new Engine(A), b: new Engine(B), c: new Engine(C) };
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  let lastT = performance.now();
+  function frame(now) {
+    const dt = Math.min(0.1, (now - lastT) / 1000) * speed;
+    lastT = now;
+    if (playing) for (const e of Object.values(engines)) e.step(dt);
+    requestAnimationFrame(frame);
+  }
+  for (const e of Object.values(engines)) e.step(0);
+  requestAnimationFrame(frame);
+
+  // ---- controls -------------------------------------------------------------
+  const playBtn = $("btn-play");
+  playBtn.addEventListener("click", () => {
+    playing = !playing;
+    playBtn.setAttribute("aria-pressed", String(!playing));
+    playBtn.querySelector("span").textContent = playing ? "Pause" : "Play";
+    playBtn.querySelector("svg").innerHTML = playing ? '<path d="M8 5v14M16 5v14"/>' : '<path d="M8 5l11 7-11 7z"/>';
+  });
+  $("btn-restart").addEventListener("click", () => { for (const e of Object.values(engines)) e.restart(); });
+  $("btn-slow").addEventListener("click", (e) => { speed = speed === 1 ? 0.5 : 1; e.currentTarget.setAttribute("aria-pressed", String(speed !== 1)); });
+  const calmBtn = $("btn-calm");
+  const setCalm = (v) => { calm = v; calmBtn.setAttribute("aria-pressed", String(v)); document.body.classList.toggle("calm", v); };
+  setCalm(calm);
+  calmBtn.addEventListener("click", () => setCalm(!calm));
+  mq.addEventListener("change", () => setCalm(mq.matches));
+  document.querySelectorAll("[data-go]").forEach((b) => b.addEventListener("click", async () => {
+    const k = b.dataset.go;
+    b.disabled = true;
+    try { await ({ a: A, b: B, c: C })[k].golive(engines[k]); } finally { b.disabled = false; }
+  }));
+})();
+</script>

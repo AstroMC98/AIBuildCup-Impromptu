@@ -1,0 +1,1295 @@
+<title>Impromptu Screens</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anybody:ital,wdth,wght@0,50..150,100..900;1,50..150,100..900&family=Atkinson+Hyperlegible+Next:ital,wght@0,200..800;1,200..800&display=swap">
+<style>
+/* Layout: a screens board. A header with the House lights switch, then one band per flow
+   (arriving, library, making a pod, listening, taking part, co-host, you, desktop). Each
+   band is a horizontal row of artboards with a caption: the route, what changed, and the
+   Motion Lab moment that brings you there. Artboards are fixed renders of the app; the
+   house screens inside them follow the House lights switch. */
+:root {
+  --bg: #E9ECF1;
+  --surface: #FFFFFF;
+  --fg: #141720;
+  --muted: #535A6A;
+  --line: #D0D5DE;
+  --focus: #2F5BFF;
+  --tally: #FF3B30;
+  --bezel: #07080B;
+  --f-ui: "Atkinson Hyperlegible Next", "Segoe UI", system-ui, sans-serif;
+  --f-display: "Anybody", "Arial Narrow", "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --bg: #0C0E13; --surface: #151820; --fg: #E8EAF0; --muted: #9AA1B1; --line: #262B37; --focus: #7C9BFF; color-scheme: dark; }
+}
+:root[data-theme="dark"] { --bg: #0C0E13; --surface: #151820; --fg: #E8EAF0; --muted: #9AA1B1; --line: #262B37; --focus: #7C9BFF; color-scheme: dark; }
+
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 var(--f-ui); }
+h1, h2, h3, h4, p, ol, ul { margin: 0; }
+ol, ul { padding: 0; list-style: none; }
+button { font: inherit; color: inherit; }
+a { color: inherit; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+.wrap { max-width: 1440px; margin: 0 auto; padding-inline: 20px; padding-block: 24px 64px; }
+
+/* wordmark: the tittle of the i is the tally lamp */
+.wm { font-family: var(--f-display); font-weight: 800; font-stretch: 112%; font-style: italic; letter-spacing: -0.02em; line-height: 1; display: inline-flex; white-space: nowrap; padding-top: .25em; }
+.wm .iw { position: relative; display: inline-block; }
+.wm .i { display: inline-block; clip-path: inset(0.02em -0.2em -0.3em -0.2em); }
+.wm .tittle { position: absolute; left: 0.24em; top: -0.25em; width: .22em; height: .22em; border-radius: 50%; background: var(--tally); box-shadow: 0 0 .35em .05em color-mix(in oklch, var(--tally) 55%, transparent); }
+
+/* ---- board chrome ------------------------------------------------------------- */
+.top { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px 24px; align-items: end; }
+@media (max-width: 860px) { .top { grid-template-columns: minmax(0, 1fr); } }
+.top > div > .wm { font-size: 26px; }
+.top h1 { margin-top: 14px; font-family: var(--f-display); font-weight: 780; font-stretch: 88%; font-size: clamp(34px, 5vw, 56px); line-height: 1; letter-spacing: -0.02em; }
+.top p { margin-top: 10px; color: var(--muted); max-width: 64ch; }
+.top p a { font-weight: 700; }
+.ctls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.switch-l { display: inline-flex; align-items: center; gap: 10px; font-weight: 700; font-size: 14px; cursor: pointer; }
+.switch { width: 52px; height: 30px; border-radius: 999px; border: 0; padding: 3px; background: var(--line); cursor: pointer; display: flex; transition: background .25s; }
+.switch::after { content: ""; width: 24px; height: 24px; border-radius: 50%; background: var(--surface); box-shadow: 0 1px 3px rgba(0, 0, 0, .25); transition: transform .35s cubic-bezier(.3, 1.4, .5, 1); }
+.switch[aria-checked="true"] { background: var(--fg); }
+.switch[aria-checked="true"]::after { transform: translateX(22px); }
+
+.flow { margin-top: 48px; }
+.flow-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; }
+.flow-head h2 { font-family: var(--f-display); font-weight: 780; font-stretch: 90%; font-size: 30px; letter-spacing: -0.015em; }
+.flow-head p { color: var(--muted); max-width: 70ch; }
+.boards { margin-top: 16px; display: flex; gap: 26px; overflow-x: auto; padding: 6px 4px 18px; scroll-snap-type: x proximity; scrollbar-width: thin; }
+.board { flex: none; width: 320px; display: flex; flex-direction: column; gap: 10px; scroll-snap-align: start; }
+.board.wide { width: 660px; }
+.cap { display: flex; flex-direction: column; gap: 3px; font-size: 14px; }
+.cap b { font-size: 15px; }
+.cap .route { font-size: 13px; color: var(--muted); }
+.cap .chg { color: var(--muted); }
+.cap .via { font-size: 13px; font-weight: 700; display: inline-flex; gap: 6px; align-items: center; }
+.cap .via::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--tally); }
+.cap .via a { text-underline-offset: 3px; }
+
+.phone { width: 320px; height: 660px; border-radius: 46px; padding: 9px; background: var(--bezel); box-shadow: 0 26px 50px -22px rgba(8, 10, 20, .45), inset 0 0 0 1.5px #2A2C33; }
+.scr { position: relative; width: 100%; height: 100%; border-radius: 37px; overflow: hidden; isolation: isolate; font-family: var(--f-ui); font-size: 14px; line-height: 1.4; }
+.island { position: absolute; z-index: 90; left: 50%; top: 9px; width: 90px; height: 25px; margin-left: -45px; border-radius: 20px; background: #000; }
+.desk { width: 660px; height: 413px; border-radius: 14px; overflow: hidden; background: var(--bezel); padding: 6px; box-shadow: 0 26px 50px -22px rgba(8, 10, 20, .45); }
+.desk-in { width: 1296px; height: 802px; transform: scale(.5); transform-origin: 0 0; border-radius: 16px; overflow: hidden; position: relative; }
+
+/* =========================================================================
+   APP TOKENS
+   House = library side, follows the House lights switch. Stage = on air, always dark.
+   ========================================================================= */
+.hz {
+  --h-bg: #F1F3F6; --h-bg2: #E4E8EE; --h-card: #FFFFFF; --h-ink: #141720; --h-ink2: #4F5667; --h-ink3: #7A8193; --h-line: #D6DBE3; --h-chip: #E4E8EE;
+  --h-pri: #141720; --h-on-pri: #FFFFFF; --h-live: #C81E3A;
+  background: var(--h-bg); color: var(--h-ink);
+}
+.lights-down .hz {
+  --h-bg: #0F1117; --h-bg2: #181B24; --h-card: #161922; --h-ink: #ECEEF3; --h-ink2: #9AA1B2; --h-ink3: #6E7586; --h-line: #272B36; --h-chip: #1F232D;
+  --h-pri: #F1F3F6; --h-on-pri: #141720; --h-live: #FF7A8F;
+}
+.hz { display: flex; flex-direction: column; }
+.hz .wm { color: var(--h-ink); }
+
+@property --gel { syntax: "<color>"; inherits: true; initial-value: #FF6B9A; }
+@property --level { syntax: "<number>"; inherits: true; initial-value: 0; }
+.st {
+  --gel: #FF6B9A;
+  --stage: color-mix(in oklch, var(--gel) 19%, #08090E);
+  --stage-hi: color-mix(in oklch, var(--gel) 46%, #0A0B11);
+  --glow: color-mix(in oklch, var(--gel) 72%, transparent);
+  --gel-text: color-mix(in oklch, var(--gel) 32%, #FFFFFF);
+  --on-dim: color-mix(in oklch, var(--gel) 18%, #B9BCC8);
+  background:
+    radial-gradient(90% 55% at 12% -4%, color-mix(in oklch, var(--stage-hi) calc(62% + var(--level) * 38%), transparent), transparent 70%),
+    radial-gradient(120% 70% at 100% 110%, color-mix(in oklch, var(--gel) 14%, transparent), transparent 60%),
+    var(--stage);
+  color: #fff; display: flex; flex-direction: column;
+}
+
+/* ---- shared bits ---- */
+.ic { width: 20px; height: 20px; flex: none; }
+.ic.s { width: 16px; height: 16px; }
+.ic.l { width: 24px; height: 24px; }
+.ring circle { fill: rgba(255, 255, 255, .16); }
+.ring circle.q { fill: rgba(255, 255, 255, .4); }
+.ring circle.lit { fill: var(--gel-text, #FFB257); }
+.ring circle.q.lit { fill: #fff; }
+.hz .ring circle { fill: var(--h-line); }
+.hz .ring circle.lit { fill: var(--h-ink); }
+
+.sleeve { --gel: #FF6B9A; display: block; position: relative; overflow: hidden; border-radius: 12px; color: #fff; flex: none;
+  background: radial-gradient(90% 90% at 18% 8%, color-mix(in oklch, var(--gel) 95%, #fff), color-mix(in oklch, var(--gel) 55%, #120A10) 62%, color-mix(in oklch, var(--gel) 25%, #07060A)); }
+.sleeve .t { position: absolute; left: 10px; right: 8px; bottom: 26px; font: 860 30px/.86 var(--f-display); font-stretch: 58%; letter-spacing: -0.01em; }
+.sleeve .h { position: absolute; left: 10px; bottom: 9px; font-size: 10.5px; font-weight: 700; opacity: .88; }
+.sleeve .live { position: absolute; left: 8px; top: 8px; font: 800 9.5px/1 var(--f-display); font-stretch: 118%; letter-spacing: .05em; padding: 4px 6px; border-radius: 4px; background: var(--tally); }
+.sleeve .rg { position: absolute; right: -34px; top: -34px; width: 110px; height: 110px; opacity: .55; }
+.sleeve .rg circle { fill: rgba(255, 255, 255, .35); }
+.sleeve .rg circle.lit { fill: #fff; }
+.sleeve.sm { width: 44px; height: 44px; border-radius: 7px; }
+.sleeve.sm .t { font-size: 15px; left: 4px; bottom: 4px; right: 3px; line-height: .85; }
+
+.btn { height: 46px; padding: 0 18px; border-radius: 999px; border: 0; display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-weight: 800; font-size: 15px; white-space: nowrap; }
+.btn.pri { background: var(--h-pri); color: var(--h-on-pri); }
+.btn.sec { background: transparent; color: var(--h-ink); box-shadow: inset 0 0 0 1.5px var(--h-line); }
+.btn.white { background: #fff; color: #141720; }
+.btn.ghost { background: rgba(255, 255, 255, .12); color: #fff; }
+.btn.block { width: 100%; }
+.btn.sm { height: 34px; padding: 0 12px; font-size: 13px; }
+.btn .rec { width: 10px; height: 10px; border-radius: 50%; background: var(--tally); }
+.chips { display: flex; gap: 6px; flex-wrap: nowrap; overflow: hidden; }
+.chip { height: 30px; padding: 0 11px; border-radius: 999px; box-shadow: inset 0 0 0 1px var(--h-line); display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 700; white-space: nowrap; flex: none; }
+.chip.on { background: var(--h-pri); color: var(--h-on-pri); box-shadow: none; }
+.seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; background: var(--h-chip); border-radius: 12px; padding: 3px; }
+.seg span { height: 32px; display: grid; place-items: center; border-radius: 9px; font-weight: 700; font-size: 12.5px; color: var(--h-ink2); }
+.seg span.on { background: var(--h-card); color: var(--h-ink); box-shadow: 0 1px 3px rgba(20, 23, 32, .14); }
+.field { height: 44px; border-radius: 12px; background: var(--h-card); box-shadow: inset 0 0 0 1px var(--h-line); display: flex; align-items: center; gap: 8px; padding: 0 14px; color: var(--h-ink3); font-size: 14px; }
+.lbl { font-size: 12.5px; font-weight: 700; color: var(--h-ink2); }
+.card { background: var(--h-card); border-radius: 16px; box-shadow: 0 0 0 1px var(--h-line); }
+
+/* house header + tab bar */
+.hd { display: flex; align-items: center; gap: 8px; padding: 44px 14px 6px; }
+.hd .wm { font-size: 20px; }
+.hd .back { display: inline-flex; align-items: center; gap: 4px; font-weight: 700; font-size: 14px; color: var(--h-ink); }
+.hd .title { font: 780 17px/1 var(--f-display); font-stretch: 94%; }
+.credits { margin-left: auto; height: 30px; padding: 0 10px; border-radius: 999px; box-shadow: inset 0 0 0 1px var(--h-line); display: inline-flex; align-items: center; gap: 6px; font-weight: 800; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.credits i { width: 10px; height: 10px; border-radius: 50%; background: #E9A93A; box-shadow: inset 0 0 0 2px #C98A1E; }
+.av { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: 12.5px; color: #10121A; flex: none; }
+.av.ink { background: var(--h-pri); color: var(--h-on-pri); }
+.tabbar { margin-top: auto; display: grid; grid-template-columns: repeat(4, 1fr); padding: 6px 8px 22px; background: color-mix(in oklch, var(--h-bg) 88%, transparent); box-shadow: 0 -1px 0 var(--h-line); }
+.tabbar span { display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 10.5px; font-weight: 700; color: var(--h-ink3); padding-top: 4px; }
+.tabbar span.on { color: var(--h-ink); }
+.tabbar span.on .pill { background: var(--h-chip); }
+.tabbar .pill { width: 52px; height: 28px; border-radius: 999px; display: grid; place-items: center; position: relative; }
+.tabbar .pill .lv { position: absolute; top: 2px; right: 10px; width: 7px; height: 7px; border-radius: 50%; background: var(--tally); box-shadow: 0 0 0 2px var(--h-bg); }
+.body { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+/* Phones scroll; their content never squeezes to fit the frame. */
+.body > *, .st > :not(.s-caps), .hz > :not(.body) { flex-shrink: 0; }
+.pad { padding: 0 14px; }
+.h1 { font: 780 25px/1.02 var(--f-display); font-stretch: 86%; letter-spacing: -0.015em; text-wrap: balance; }
+.h2 { font: 760 16px/1.1 var(--f-display); font-stretch: 96%; display: flex; align-items: center; gap: 8px; }
+.h2 .more { margin-left: auto; font: 700 12.5px var(--f-ui); color: var(--h-ink2); }
+.h2 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--tally); box-shadow: 0 0 8px var(--tally); }
+.muted { color: var(--h-ink2); }
+.small { font-size: 12.5px; }
+.rowx { display: flex; gap: 10px; overflow: hidden; }
+.rows { display: flex; flex-direction: column; }
+.r { display: flex; align-items: center; gap: 11px; padding: 7px 0; }
+.r .tx { min-width: 0; flex: 1; }
+.r b { display: block; font-size: 13.5px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.r .m { font-size: 12px; color: var(--h-ink2); }
+.r .m.live { color: var(--h-live); font-weight: 700; }
+.r .vis { color: var(--h-ink3); }
+.newp { font: 800 10px/1 var(--f-display); font-stretch: 112%; padding: 4px 6px; border-radius: 4px; background: #FFD7E6; color: #2A0F1C; }
+
+.composer { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.composer .area { min-height: 64px; color: var(--h-ink3); font-size: 15px; }
+.composer .tools { display: flex; gap: 6px; }
+.composer .tool { width: 36px; height: 36px; border-radius: 10px; background: var(--h-chip); display: grid; place-items: center; color: var(--h-ink2); }
+.composer .go { display: flex; gap: 8px; }
+
+/* stage pieces (from the Motion Lab) */
+.s-top { display: flex; align-items: center; gap: 9px; padding: 46px 16px 0; }
+.tally { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 9px 0 7px; border-radius: 6px; background: var(--tally); color: #fff; font: 800 11px/1 var(--f-display); font-stretch: 118%; letter-spacing: .06em; box-shadow: 0 0 16px -2px color-mix(in oklch, var(--tally) 70%, transparent); flex: none; }
+.tally i { width: 6px; height: 6px; border-radius: 50%; background: #fff; }
+.tally.rep { background: rgba(255, 255, 255, .16); box-shadow: none; }
+.clock { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: 13px; font-variant-numeric: tabular-nums; }
+.clock svg { width: 24px; height: 24px; }
+.s-dim { color: var(--on-dim); font-size: 12.5px; font-weight: 600; }
+.s-ep { display: flex; align-items: center; gap: 11px; padding: 14px 16px 0; }
+.s-ep .cv { width: 42px; height: 42px; border-radius: 8px; flex: none; position: relative; overflow: hidden; background: radial-gradient(80% 80% at 20% 10%, var(--gel), color-mix(in oklch, var(--gel) 40%, #000)); }
+.s-ep b { display: block; font: 760 15.5px/1.15 var(--f-display); font-stretch: 92%; }
+.s-caps { flex: 1; min-height: 0; padding: 8px 20px 6px; display: flex; flex-direction: column; justify-content: center; gap: 12px; overflow: hidden; }
+.s-prev { font-size: 14px; line-height: 1.3; color: var(--on-dim); font-weight: 600; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.s-prev:empty { display: none; }
+.s-who { display: flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 700; margin-bottom: 5px; color: var(--gel-text); flex-wrap: wrap; }
+.s-who i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.pill-pink { font: 800 10px/1 var(--f-display); font-stretch: 112%; letter-spacing: .03em; padding: 4px 6px; border-radius: 5px; background: #FFD7E6; color: #2A0F1C; }
+.s-now { font-family: var(--f-display); font-weight: 720; font-size: 28px; line-height: 1.07; letter-spacing: -0.012em; }
+.s-now .w { opacity: .26; transition: opacity .22s ease, color .3s ease; }
+.s-now .w.said { opacity: 1; }
+.s-now .w.now { opacity: 1; color: var(--gel-text); background: linear-gradient(var(--glow), var(--glow)) 0 94% / calc(var(--wp, 0) * 100%) .09em no-repeat; }
+.chaps { display: flex; gap: 4px; padding: 6px 16px 10px; }
+.chaps i { position: relative; flex: 1; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, .22); overflow: hidden; }
+.chaps i.done { background: #fff; }
+.chaps i b { position: absolute; inset: 0 auto 0 0; background: #fff; }
+.hosts { display: flex; gap: 7px; padding: 0 16px 9px; }
+.host { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 11px 0 3px; border-radius: 999px; background: rgba(255, 255, 255, .08); font-size: 12.5px; font-weight: 700; color: var(--on-dim); }
+.host .av { width: 28px; height: 28px; position: relative; }
+.host .av::before { content: ""; position: absolute; inset: -3px; border-radius: 50%; border: 2px solid var(--gel-text); opacity: 0; transform: scale(calc(1 + var(--lv, 0) * .32)); transition: transform .08s linear, opacity .2s; }
+.host.talk { background: rgba(255, 255, 255, .16); color: #fff; }
+.host.talk .av::before { opacity: calc(.35 + var(--lv, 0) * .65); }
+.s-bar { display: flex; align-items: center; gap: 7px; padding: 0 12px 22px; }
+.s-field { flex: 1; min-width: 0; height: 44px; border-radius: 999px; background: rgba(255, 255, 255, .12); display: flex; align-items: center; padding: 0 15px; color: var(--on-dim); font-size: 13.5px; white-space: nowrap; overflow: hidden; }
+.rnd { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: rgba(255, 255, 255, .12); flex: none; color: #fff; position: relative; }
+.rnd.white { background: #fff; color: #10121A; }
+.rnd .cnt { position: absolute; top: -5px; right: -4px; height: 17px; padding: 0 5px; border-radius: 9px; background: #fff; color: #10121A; font: 800 10.5px/17px var(--f-ui); }
+.line { display: grid; grid-template-columns: 11px minmax(0, 1fr) auto; align-items: center; gap: 9px; min-height: 40px; padding: 7px 11px; border-radius: 12px; background: rgba(255, 255, 255, .08); font-size: 12.5px; }
+.line .lamp { width: 10px; height: 10px; border-radius: 50%; background: #3A3326; }
+.line.wait .lamp { background: #FFB000; box-shadow: 0 0 8px #FFB000; animation: blink .8s steps(1) infinite; }
+.line.next .lamp { background: #FFB000; box-shadow: 0 0 8px #FFB000; }
+.line.air .lamp { background: var(--tally); box-shadow: 0 0 10px var(--tally); }
+.line .msg { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.line .stt { font-weight: 700; color: var(--on-dim); }
+@keyframes blink { 50% { opacity: .25; } }
+
+/* sheets over the stage */
+.scrim { position: absolute; inset: 0; background: rgba(4, 5, 10, .55); }
+.recede { position: absolute; inset: 0; transform: scale(.94) translateY(-8px); transform-origin: 50% 100%; border-radius: 28px; overflow: hidden; }
+.recede .island { display: none; }
+.sheet { position: absolute; left: 0; right: 0; bottom: 0; padding: 9px 14px 24px; border-radius: 24px 24px 0 0; background: #1A1C26; color: #fff; display: flex; flex-direction: column; gap: 11px; }
+.sheet .grab { width: 38px; height: 5px; border-radius: 3px; background: rgba(255, 255, 255, .25); align-self: center; }
+.sheet h3 { font: 800 22px/1 var(--f-display); font-stretch: 90%; display: flex; align-items: center; justify-content: space-between; }
+.sheet h3 .x { width: 32px; height: 32px; border-radius: 50%; background: rgba(255, 255, 255, .1); display: grid; place-items: center; }
+.sheet .seg { background: #11131B; }
+.sheet .seg span { color: #9AA1B2; }
+.sheet .seg span.on { background: #fff; color: #141720; }
+.sheet .muted { color: #A6ACBC; }
+.sheet .area { min-height: 92px; border-radius: 12px; background: #11131B; padding: 12px; color: #6E7586; font-size: 14px; }
+.sheet .opt { display: flex; align-items: center; gap: 11px; min-height: 54px; padding: 8px 12px; border-radius: 13px; box-shadow: inset 0 0 0 1px #2C303D; }
+.sheet .opt.on { box-shadow: inset 0 0 0 2px #fff; background: rgba(255, 255, 255, .06); }
+.sheet .opt .rd { width: 18px; height: 18px; border-radius: 50%; box-shadow: inset 0 0 0 2px #6E7586; flex: none; }
+.sheet .opt.on .rd { box-shadow: inset 0 0 0 5px #fff; }
+.sheet .opt b { display: block; font-size: 14px; }
+.sheet .opt span { font-size: 12px; color: #A6ACBC; }
+.gels { display: grid; grid-template-columns: repeat(2, 1fr); gap: 7px; }
+.gel { position: relative; height: 54px; border-radius: 11px; overflow: hidden; padding: 8px 10px; display: flex; align-items: flex-end; font-weight: 800; font-size: 12.5px; color: #fff;
+  background: radial-gradient(120% 120% at 15% 0%, color-mix(in oklch, var(--g) 90%, #fff), color-mix(in oklch, var(--g) 45%, #0A0B10) 75%); }
+.gel.on { box-shadow: 0 0 0 2px #1A1C26, 0 0 0 4px #fff; }
+.gel.on::after { content: ""; position: absolute; right: 8px; top: 8px; width: 16px; height: 16px; border-radius: 50%; background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23141720' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 12.5l4 4 8-9'/%3E%3C/svg%3E") center / 11px no-repeat; }
+.hz .gel.on { box-shadow: 0 0 0 2px var(--h-bg), 0 0 0 4px var(--h-ink); }
+
+/* create */
+.lenpick { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
+.lenpick span { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 9px 0 8px; border-radius: 13px; box-shadow: inset 0 0 0 1px var(--h-line); font-weight: 800; font-size: 13px; }
+.lenpick span.on { box-shadow: inset 0 0 0 2px var(--h-ink); background: var(--h-card); }
+.lenpick svg { width: 42px; height: 42px; }
+.lenpick small { font-weight: 600; color: var(--h-ink2); font-size: 11px; }
+.hostc { display: flex; gap: 7px; }
+.hostc > span { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 13px; background: var(--h-card); box-shadow: 0 0 0 1px var(--h-line); }
+.hostc b { display: block; font-size: 13px; }
+.hostc small { color: var(--h-ink2); font-size: 11px; }
+.vis3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.vis3 span { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 4px; border-radius: 12px; box-shadow: inset 0 0 0 1px var(--h-line); font-size: 12px; font-weight: 700; color: var(--h-ink2); }
+.vis3 span.on { box-shadow: inset 0 0 0 2px var(--h-ink); color: var(--h-ink); background: var(--h-card); }
+.gobar { margin-top: auto; padding: 10px 14px 22px; display: flex; flex-direction: column; gap: 6px; align-items: center; background: var(--h-bg); box-shadow: 0 -1px 0 var(--h-line); }
+.gobar p { font-size: 12px; color: var(--h-ink2); }
+.prev-sleeve { display: flex; gap: 11px; align-items: center; padding: 10px; border-radius: 16px; background: var(--h-card); box-shadow: 0 0 0 1px var(--h-line); }
+.attach { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px; border-radius: 8px; background: var(--h-chip); font-size: 12px; font-weight: 700; }
+
+/* now playing */
+.np-top { display: flex; align-items: center; padding: 44px 12px 0; gap: 8px; }
+.np-top .from { flex: 1; text-align: center; font-size: 12px; color: var(--on-dim); }
+.np-top .from b { display: block; color: #fff; font-size: 13px; }
+.np-cover { margin: 12px 42px 0; aspect-ratio: 1; border-radius: 12px; display: block; }
+.np-cover .t { font-size: 52px; left: 16px; bottom: 16px; line-height: .84; font-stretch: 56%; }
+.np-cover .rg { width: 200px; height: 200px; right: -56px; top: -56px; }
+.np-meta { margin: 14px 22px 0; }
+.np-meta b { display: block; font: 780 20px/1.05 var(--f-display); font-stretch: 90%; }
+.np-meta span { color: var(--on-dim); font-size: 13px; }
+.scrub { margin: 12px 22px 0; }
+.scrub .bar { position: relative; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, .25); }
+.scrub .bar b { position: absolute; inset: 0 auto 0 0; background: #fff; border-radius: 2px; }
+.scrub .bar i { position: absolute; top: -5px; width: 14px; height: 14px; border-radius: 50%; background: #fff; margin-left: -7px; box-shadow: 0 1px 4px rgba(0, 0, 0, .4); }
+.scrub .bar .mk { position: absolute; top: -2px; width: 2px; height: 8px; background: rgba(255, 255, 255, .6); }
+.scrub .tm { display: flex; justify-content: space-between; margin-top: 7px; font-size: 11.5px; color: var(--on-dim); font-variant-numeric: tabular-nums; }
+.tr { margin-top: 8px; display: flex; justify-content: center; align-items: center; gap: 28px; }
+.play { width: 62px; height: 62px; border-radius: 50%; background: #fff; color: #141720; display: grid; place-items: center; }
+.np-sec { margin: 16px 16px 0; padding: 12px 14px; border-radius: 16px; background: rgba(255, 255, 255, .07); display: flex; flex-direction: column; gap: 9px; }
+.np-sec h4 { font: 780 15px/1 var(--f-display); font-stretch: 94%; }
+.tl { display: flex; flex-direction: column; gap: 7px; }
+.tl p { font: 700 15px/1.22 var(--f-display); color: rgba(255, 255, 255, .62); }
+.tl p.cur { color: #fff; }
+.tl p small { display: block; font: 700 11px var(--f-ui); color: var(--gel-text); margin-bottom: 1px; }
+
+/* call */
+.call-host { position: relative; width: 168px; height: 168px; margin: 18px auto 0; display: grid; place-items: center; }
+.call-host svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.call-host .big { width: 96px; height: 96px; border-radius: 50%; display: grid; place-items: center; font: 800 38px/1 var(--f-display); color: #141720; background: var(--gel-text); position: relative;
+  box-shadow: 0 0 0 calc(var(--lv, 0) * 14px) color-mix(in oklch, var(--gel) 30%, transparent), 0 14px 30px -8px rgba(0, 0, 0, .5); transition: box-shadow .08s linear; }
+.call-name { text-align: center; margin-top: 8px; }
+.call-name b { display: block; font: 800 22px/1 var(--f-display); font-stretch: 90%; }
+.call-name span { font-size: 13px; color: var(--on-dim); }
+.modes { display: flex; justify-content: center; gap: 6px; padding: 0 16px 12px; }
+.modes span { height: 32px; padding: 0 12px; border-radius: 999px; display: inline-flex; align-items: center; font-weight: 700; font-size: 12.5px; background: rgba(255, 255, 255, .1); color: var(--on-dim); }
+.modes span.on { background: #fff; color: #141720; }
+.callbar { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; justify-items: center; padding: 4px 20px 26px; }
+.hang { width: 70px; height: 70px; border-radius: 50%; background: var(--tally); display: grid; place-items: center; box-shadow: 0 10px 26px rgba(255, 59, 48, .45); }
+.cb { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; color: var(--on-dim); }
+
+/* stats chart */
+.tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
+.tile { padding: 10px; border-radius: 13px; background: var(--h-card); box-shadow: 0 0 0 1px var(--h-line); }
+.tile b { display: block; font: 800 24px/1 var(--f-display); font-stretch: 86%; font-variant-numeric: tabular-nums; }
+.tile span { font-size: 11px; color: var(--h-ink2); font-weight: 600; }
+.chart { position: relative; padding: 10px 10px 4px; }
+.chart svg { width: 100%; height: auto; display: block; overflow: visible; }
+.chart .grid line { stroke: var(--h-line); stroke-width: 1; }
+.chart .ax text { fill: var(--h-ink3); font: 600 9px var(--f-ui); }
+.chart .area { fill: color-mix(in oklch, #3D6BFF 16%, transparent); }
+.chart .ln { fill: none; stroke: #3D6BFF; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.lights-down .chart .ln { stroke: #8FB0FF; }
+.lights-down .chart .area { fill: color-mix(in oklch, #8FB0FF 18%, transparent); }
+.chart .end { fill: #3D6BFF; stroke: var(--h-card); stroke-width: 2; }
+.lights-down .chart .end { fill: #8FB0FF; }
+.chart .xh { stroke: var(--h-ink2); stroke-width: 1; stroke-dasharray: 2 2; opacity: 0; }
+.chart .tip { position: absolute; top: 4px; padding: 4px 8px; border-radius: 7px; background: var(--h-pri); color: var(--h-on-pri); font-size: 11px; font-weight: 700; pointer-events: none; opacity: 0; white-space: nowrap; transform: translateX(-50%); font-variant-numeric: tabular-nums; }
+.drop { display: flex; flex-direction: column; gap: 6px; }
+.drop div { display: grid; grid-template-columns: 92px 1fr 26px; gap: 8px; align-items: center; font-size: 11.5px; }
+.drop i { height: 8px; border-radius: 0 4px 4px 0; background: #3D6BFF; }
+.lights-down .drop i { background: #8FB0FF; }
+.drop em { font-style: normal; text-align: right; font-variant-numeric: tabular-nums; color: var(--h-ink2); }
+
+/* desktop */
+.dk-shell { position: absolute; inset: 0; display: grid; grid-template-columns: 236px minmax(0, 1fr); }
+.rail { padding: 26px 18px; display: flex; flex-direction: column; gap: 4px; box-shadow: 1px 0 0 var(--h-line); }
+.rail .wm { font-size: 26px; margin-bottom: 22px; padding-left: 8px; }
+.rail a { display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 12px; font-weight: 700; font-size: 15px; text-decoration: none; color: var(--h-ink2); }
+.rail a.on { background: var(--h-chip); color: var(--h-ink); }
+.rail .btn { margin-top: 16px; }
+.rail .foot { margin-top: auto; display: flex; align-items: center; gap: 10px; padding: 8px; font-size: 13px; }
+.dk-main { padding: 30px 36px; display: flex; flex-direction: column; gap: 24px; overflow: hidden; }
+.dk-hero { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 24px; align-items: stretch; }
+.dk-hero .h1 { font-size: 46px; max-width: 14ch; }
+.dk-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 14px; }
+.dk-grid .sleeve { width: 100%; aspect-ratio: 1; }
+.dk-grid .sleeve .t { font-size: 30px; }
+.studio { position: absolute; inset: 0; display: grid; grid-template-columns: 76px minmax(0, 1fr) 380px; gap: 22px; padding: 20px 22px 20px 0; background: #0D0E14; color: #fff; }
+.studio .mini-rail { display: flex; flex-direction: column; align-items: center; gap: 18px; padding-top: 10px; box-shadow: 1px 0 0 #1E212B; color: #8C92A3; }
+.player { position: relative; aspect-ratio: 16 / 9; border-radius: 18px; overflow: hidden; }
+.player .s-caps { position: absolute; left: 7%; right: 22%; top: 18%; bottom: 90px; padding: 0; }
+.player .s-now { font-size: 40px; max-width: 24ch; }
+.player .s-prev { font-size: 18px; }
+.player .pl-top { position: absolute; top: 18px; left: 22px; right: 22px; display: flex; align-items: center; gap: 12px; }
+.player .pl-bot { position: absolute; left: 0; right: 0; bottom: 0; padding: 12px 20px 14px; background: linear-gradient(transparent, rgba(0, 0, 0, .35)); }
+.panel { border-radius: 18px; background: #151720; display: flex; flex-direction: column; overflow: hidden; }
+.panel .tabs { display: flex; gap: 4px; padding: 8px 10px 0; box-shadow: inset 0 -1px 0 #252836; }
+.panel .tabs span { height: 44px; padding: 0 12px; display: grid; place-items: center; font-weight: 700; font-size: 14px; color: #8C92A3; }
+.panel .tabs span.on { color: #fff; box-shadow: inset 0 -2px 0 #fff; }
+.panel .pb { flex: 1; padding: 14px; display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
+.callin { display: flex; gap: 10px; }
+.callin .tx b { font-size: 13.5px; } .callin .tx p { font-size: 13.5px; color: #C9CDD8; line-height: 1.35; }
+.callin .tx small { color: #8C92A3; font-size: 12px; margin-left: 6px; }
+
+/* ---- new features (round 2) -------------------------------------------------------- */
+.new-tag.upd { background: transparent; color: var(--fg); box-shadow: inset 0 0 0 1.5px var(--fg); }
+/* round 3: memo pods in the library, show notes, outline editing */
+.sleeve .mk { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(8, 9, 14, .55); }
+.sleeve .mk svg { position: absolute; width: 74%; height: 74%; }
+.sleeve .mk svg circle { fill: rgba(255, 255, 255, .22); }
+.sleeve .mk svg circle.lit { fill: #fff; }
+.sleeve .mk b { font: 800 22px/1 var(--f-display); font-stretch: 86%; font-variant-numeric: tabular-nums; }
+.sleeve .rv { position: absolute; left: 8px; top: 8px; font: 800 9.5px/1 var(--f-display); font-stretch: 112%; letter-spacing: .04em; padding: 4px 6px; border-radius: 4px; background: #FFB000; color: #1A1200; }
+.memo-start { border-radius: 18px; padding: 16px; color: #fff; display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center;
+  background: radial-gradient(110% 90% at 15% 0%, color-mix(in oklch, #FFB257 46%, #0A0B11), color-mix(in oklch, #FFB257 19%, #08090E) 70%); }
+.memo-start .rec { width: 150px; height: 150px; }
+.memo-start .rec .rb { width: 72px; height: 72px; }
+.memo-start p { font-size: 12.5px; color: color-mix(in oklch, #FFB257 18%, #B9BCC8); }
+.notes-list { display: flex; flex-direction: column; gap: 7px; }
+.notes-list a, .notes-list span.t { font-size: 13px; font-weight: 700; color: #fff; text-decoration: underline; text-decoration-color: rgba(255, 255, 255, .3); text-underline-offset: 3px; }
+.notes-list small { display: block; font-size: 11px; color: var(--on-dim); }
+.beatrow { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 8px; align-items: start; padding: 9px 10px; border-radius: 11px; background: var(--h-card); box-shadow: 0 0 0 1px var(--h-line); }
+.beatrow .n { width: 22px; height: 22px; border-radius: 50%; background: var(--h-chip); display: grid; place-items: center; font-size: 11.5px; font-weight: 800; }
+.beatrow b { display: block; font-size: 13px; }
+.beatrow span.d { font-size: 11.5px; color: var(--h-ink2); }
+.beatrow .tools { display: flex; gap: 2px; color: var(--h-ink3); }
+.idea { padding: 10px 12px; border-radius: 12px; background: var(--h-bg2); font-size: 13px; }
+.new-tag { font: 800 10px/1 var(--f-display); font-stretch: 112%; letter-spacing: .04em; padding: 4px 7px; border-radius: 5px; background: var(--fg); color: var(--bg); vertical-align: 4px; margin-left: 8px; }
+/* sheets over the house */
+.hz .scrim { background: rgba(20, 23, 32, .35); }
+.sheet.house { background: var(--h-card); color: var(--h-ink); box-shadow: 0 -10px 30px rgba(0, 0, 0, .18); }
+.sheet.house .grab { background: var(--h-line); }
+.sheet.house h3 .x { background: var(--h-chip); }
+/* lamps used by watches, call-ins and stages */
+.lampx { position: relative; width: 12px; height: 12px; border-radius: 50%; background: #3A3326; flex: none; }
+.hz .lampx { background: var(--h-line); }
+.lampx.amber { background: #FFB000; box-shadow: 0 0 8px #FFB000; }
+.lampx.red { background: var(--tally); box-shadow: 0 0 9px var(--tally); }
+.lampx.blink { animation: blink .8s steps(1) infinite; }
+.lampx.done { background: #fff; box-shadow: none; }
+.hz .lampx.done { background: var(--h-ink); }
+.lampx.chase { background: none; box-shadow: none; }
+.lampx.chase svg { position: absolute; inset: -3px; width: 18px; height: 18px; animation: spin 1.2s linear infinite; }
+.lampx.chase svg circle { fill: #FFB000; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.line .lampx { width: 10px; height: 10px; }
+.line .ret { color: #FFB000; }
+.line.missed { opacity: .55; }
+.line.missed .msg { text-decoration: line-through; text-decoration-color: rgba(255, 255, 255, .4); }
+/* watches */
+.watch { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 10px 0; box-shadow: 0 1px 0 var(--h-line); }
+.watch .lampx { margin-top: 4px; }
+.watch b { display: block; font-size: 13.5px; }
+.watch .k { font-size: 11.5px; color: var(--h-ink2); }
+.watch .wst { font-size: 11.5px; color: var(--h-ink3); }
+.watch .wst.warn { color: #B4561A; }
+.lights-down .watch .wst.warn { color: #FFB27A; }
+.watch ul { margin-top: 4px; display: grid; gap: 2px; font-size: 11.5px; }
+.watch ul li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.watch ul li u { text-decoration-color: var(--h-line); text-underline-offset: 2px; }
+.cnt-badge { min-width: 22px; height: 20px; padding: 0 6px; border-radius: 10px; background: #FFB000; color: #1A1200; font: 800 11px/20px var(--f-ui); text-align: center; }
+.gsugg { margin-top: 6px; padding: 7px; border-radius: 10px; border: 1.5px dashed var(--h-line); display: flex; flex-direction: column; gap: 5px; }
+.gsugg small { font-size: 10px; font-weight: 700; color: var(--h-ink3); }
+.gsugg span.chips { gap: 4px; }
+.gsugg span.chip { height: 24px; font-size: 11px; }
+.st .gsugg, .sheet:not(.house) .gsugg { border-color: rgba(255, 255, 255, .2); }
+.st .gsugg small, .sheet:not(.house) .gsugg small { color: #8C92A3; }
+.st .gsugg .chip, .sheet:not(.house) .gsugg .chip { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .2); color: #DCE0EA; }
+/* briefings */
+.brief-ready { display: flex; gap: 12px; align-items: center; padding: 12px; border-radius: 16px; color: #fff;
+  background: radial-gradient(120% 140% at 0% 0%, color-mix(in oklch, #6FB3FF 70%, #fff), color-mix(in oklch, #6FB3FF 40%, #0A0F1C) 70%); }
+.brief-ready b { display: block; font: 800 18px/1.05 var(--f-display); font-stretch: 88%; }
+.brief-ready span.m { font-size: 12px; opacity: .85; }
+.brief-ready .play { width: 48px; height: 48px; flex: none; }
+.timebig { font: 800 56px/1 var(--f-display); font-stretch: 80%; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.days span { height: 36px; border-radius: 10px; display: grid; place-items: center; font-weight: 800; font-size: 12.5px; box-shadow: inset 0 0 0 1px var(--h-line); color: var(--h-ink2); }
+.days span.on { background: var(--h-pri); color: var(--h-on-pri); box-shadow: none; }
+.secpick { display: flex; align-items: center; gap: 10px; padding: 9px 11px; border-radius: 12px; box-shadow: inset 0 0 0 1px var(--h-line); }
+.secpick.on { box-shadow: inset 0 0 0 2px var(--h-ink); }
+.secpick .ck { width: 20px; height: 20px; border-radius: 6px; box-shadow: inset 0 0 0 2px var(--h-ink3); flex: none; display: grid; place-items: center; }
+.secpick.on .ck { background: var(--h-ink); box-shadow: none; color: var(--h-on-pri); }
+.secpick b { display: block; font-size: 13px; }
+.secpick span.d { font-size: 11.5px; color: var(--h-ink2); }
+.section-card { display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px 6px 8px; border-radius: 9px; background: rgba(255, 255, 255, .1); font-size: 12px; font-weight: 700; color: var(--on-dim); }
+.section-card b { color: #fff; }
+.srcs { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
+.srcs span { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px; border-radius: 7px; background: rgba(255, 255, 255, .1); font-size: 11.5px; font-weight: 700; color: var(--on-dim); }
+.private { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px; border-radius: 6px; background: rgba(255, 255, 255, .12); font-size: 11px; font-weight: 800; }
+/* interrupt */
+.talkbtn { position: relative; width: 150px; height: 150px; align-self: center; display: grid; place-items: center; }
+.talkbtn svg.ring { position: absolute; inset: 0; width: 100%; height: 100%; }
+.talkbtn .btn-t { width: 92px; height: 92px; border-radius: 50%; background: #fff; color: #141720; display: grid; place-items: center; box-shadow: 0 0 0 10px rgba(255, 255, 255, .08); }
+.talkbtn.on .btn-t { background: var(--tally); color: #fff; box-shadow: 0 0 0 12px rgba(255, 59, 48, .22); }
+.talkbtn .ring circle.lit { fill: #FF8A80; }
+.chap-x { display: flex; gap: 4px; padding: 6px 16px 10px; align-items: center; }
+.chap-x i { position: relative; flex: 1; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, .22); }
+.chap-x i.done { background: #fff; }
+.chap-x i b { position: absolute; inset: 0 auto 0 0; background: #fff; border-radius: 2px; }
+.chap-x .det { flex: none; width: 26px; height: 8px; border-radius: 4px; background: #FFB000; box-shadow: 0 0 10px rgba(255, 176, 0, .6); }
+.pill-amber { font: 800 10px/1 var(--f-display); font-stretch: 112%; letter-spacing: .03em; padding: 4px 6px; border-radius: 5px; background: #FFB000; color: #1A1200; }
+/* scrubber */
+.scrubx { position: relative; margin: 18px 22px 0; }
+.scrubx .bar { position: relative; display: flex; gap: 4px; height: 6px; }
+.scrubx .bar i { flex: 1; border-radius: 3px; background: rgba(255, 255, 255, .25); position: relative; overflow: hidden; }
+.scrubx .bar i b { position: absolute; inset: 0 auto 0 0; background: #fff; }
+.scrubx .knob { position: absolute; top: -9px; width: 24px; height: 24px; margin-left: -12px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 8px rgba(255, 255, 255, .16), 0 2px 8px rgba(0, 0, 0, .4); }
+.scrubx .bub { position: absolute; bottom: 24px; transform: translateX(-50%); padding: 6px 10px; border-radius: 9px; background: #fff; color: #141720; font-size: 12px; font-weight: 800; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.scrubx .ghost { position: absolute; top: -3px; width: 2px; height: 12px; background: var(--tally); }
+.jumpc { display: flex; gap: 8px; overflow: hidden; }
+.jumpc span { flex: none; width: 118px; padding: 10px; border-radius: 12px; background: rgba(255, 255, 255, .08); display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; font-weight: 800; }
+.jumpc span small { font-weight: 700; color: var(--on-dim); font-size: 11px; display: flex; align-items: center; gap: 4px; }
+.jumpc span.now { background: #fff; color: #141720; }
+.jumpc span.now small { color: #4F5667; }
+/* voice memo */
+.rec { position: relative; width: 240px; height: 240px; align-self: center; display: grid; place-items: center; }
+.rec svg.ring { position: absolute; inset: 0; width: 100%; height: 100%; }
+.rec .rb { width: 92px; height: 92px; border-radius: 50%; background: var(--tally); display: grid; place-items: center; box-shadow: 0 0 0 12px rgba(255, 59, 48, .18), 0 14px 30px -8px rgba(255, 59, 48, .6); }
+.rec .rb.stop i { width: 30px; height: 30px; border-radius: 7px; background: #fff; }
+.rec .ring circle.lit { fill: #FF8A80; }
+.levels { display: flex; align-items: center; justify-content: center; gap: 3px; height: 40px; }
+.levels i { width: 4px; border-radius: 2px; background: rgba(255, 255, 255, .85); }
+.memo-chip { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 14px; background: var(--h-card); box-shadow: 0 0 0 1px var(--h-line); }
+.memo-chip .pb { width: 38px; height: 38px; border-radius: 50%; background: var(--h-pri); color: var(--h-on-pri); display: grid; place-items: center; flex: none; }
+.memo-chip .wv { flex: 1; display: flex; align-items: center; gap: 2px; height: 30px; }
+.memo-chip .wv i { flex: 1; border-radius: 2px; background: var(--h-ink3); }
+.memo-chip .wv i.p { background: var(--h-ink); }
+.radio2 { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border-radius: 13px; box-shadow: inset 0 0 0 1px var(--h-line); }
+.radio2.on { box-shadow: inset 0 0 0 2px var(--h-ink); background: var(--h-card); }
+.radio2 .rd { width: 18px; height: 18px; border-radius: 50%; box-shadow: inset 0 0 0 2px var(--h-ink3); flex: none; margin-top: 1px; }
+.radio2.on .rd { box-shadow: inset 0 0 0 5px var(--h-ink); }
+.radio2 b { display: block; font-size: 13px; }
+.radio2 span.d { font-size: 11.5px; color: var(--h-ink2); }
+.sw { width: 44px; height: 26px; border-radius: 999px; background: var(--h-line); padding: 3px; flex: none; display: flex; }
+.sw::after { content: ""; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, .25); }
+.sw.on { background: var(--h-ink); justify-content: flex-end; }
+.lights-down .sw.on::after { background: #141720; }
+.swrow { display: flex; align-items: center; gap: 12px; }
+.swrow b { display: block; font-size: 13.5px; }
+.swrow span.d { font-size: 11.5px; color: var(--h-ink2); }
+.spine { display: flex; flex-direction: column; gap: 0; margin: 0 18px; }
+.spine li { display: grid; grid-template-columns: 12px minmax(0, 1fr); gap: 12px; padding-bottom: 12px; position: relative; font-size: 13.5px; font-weight: 650; color: #5E6577; }
+.spine li::before { content: ""; position: absolute; left: 5px; top: 14px; bottom: 0; width: 2px; background: #1E2230; }
+.spine li:last-child::before { display: none; }
+.spine li.done { color: #A6ACBC; }
+.spine li.done::before { background: #9CC2FF; }
+.spine li.now { color: #fff; }
+.spine li .lampx { margin-top: 3px; }
+.spine li.done .lampx { background: #9CC2FF; }
+.spine li small { display: block; font-weight: 600; font-size: 12px; color: #8C92A3; margin-top: 2px; }
+.spine li.now small { color: #CFE3FF; }
+.finding { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 9px; padding: 8px 0; box-shadow: 0 1px 0 var(--h-line); font-size: 12.5px; }
+.finding .ck { width: 20px; height: 20px; border-radius: 6px; background: var(--h-ink); color: var(--h-on-pri); display: grid; place-items: center; }
+.finding .ck.off { background: none; box-shadow: inset 0 0 0 2px var(--h-ink3); }
+.finding .src { font-size: 11px; color: var(--h-ink3); }
+.flagp { display: inline-block; font: 800 9.5px/1 var(--f-display); font-stretch: 110%; letter-spacing: .03em; padding: 3px 5px; border-radius: 4px; margin-left: 4px; vertical-align: 1px; }
+.flagp.amber { background: #FFE2A8; color: #5A3A00; }
+.flagp.grey { background: var(--h-chip); color: var(--h-ink2); }
+.outl { display: flex; flex-direction: column; gap: 6px; }
+.outl div { display: grid; grid-template-columns: 14px 18px minmax(0, 1fr) 16px; gap: 8px; align-items: center; padding: 9px 10px; border-radius: 11px; background: var(--h-card); box-shadow: 0 0 0 1px var(--h-line); font-size: 13px; font-weight: 700; }
+.outl .gr { color: var(--h-ink3); letter-spacing: -2px; font-size: 12px; }
+.outl .n { color: var(--h-ink3); font-variant-numeric: tabular-nums; }
+.outl .add { display: flex; justify-content: center; color: var(--h-ink2); box-shadow: inset 0 0 0 1.5px var(--h-line); background: none; border: 0; grid-template-columns: none; }
+/* show intro */
+.intro-card { position: relative; border-radius: 18px; padding: 18px 16px; overflow: hidden; color: #fff; background: radial-gradient(110% 120% at 10% 0%, color-mix(in oklch, var(--gel, #FFB257) 70%, #1A1208), color-mix(in oklch, var(--gel, #FFB257) 20%, #08090E) 70%); }
+.intro-card .nm { font: 860 46px/.88 var(--f-display); font-stretch: 62%; padding-right: 54px; }
+.intro-card .ln { margin-top: 8px; font-size: 13px; opacity: .85; max-width: 26ch; }
+.intro-card .wv { margin-top: 14px; display: flex; align-items: center; gap: 2px; height: 34px; }
+.intro-card .wv i { flex: 1; border-radius: 2px; background: rgba(255, 255, 255, .75); }
+.theme-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
+.theme-row span { display: flex; flex-direction: column; gap: 6px; padding: 8px; border-radius: 12px; box-shadow: inset 0 0 0 1px var(--h-line); font-size: 11.5px; font-weight: 800; }
+.theme-row span.on { box-shadow: inset 0 0 0 2px var(--h-ink); background: var(--h-card); }
+.theme-row span i.sw2 { height: 30px; border-radius: 7px; display: flex; align-items: center; justify-content: center; color: #fff; }
+.title-card { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 14px; text-align: center; padding: 0 22px; }
+.title-card .pre { font-size: 12.5px; font-weight: 700; color: var(--on-dim); }
+.title-card .nm { font: 860 78px/.84 var(--f-display); font-stretch: 58%; text-wrap: balance; }
+.title-card .wv { display: flex; align-items: center; gap: 3px; height: 44px; width: 180px; }
+.title-card .wv i { flex: 1; border-radius: 2px; background: var(--gel-text); }
+.title-card .ep { font: 760 16px/1.15 var(--f-display); font-stretch: 92%; color: var(--on-dim); max-width: 22ch; }
+
+.st .chip, .sheet:not(.house) .chip { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .22); color: #fff; }
+.st .chip.on, .sheet:not(.house) .chip.on { background: #fff; color: #141720; box-shadow: none; }
+.st .seg { background: rgba(255, 255, 255, .08); }
+.st .seg span { color: var(--on-dim); }
+.st .seg span.on { background: #fff; color: #141720; box-shadow: none; }
+.behind { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 13px; border-radius: 999px; background: #fff; color: #141720; font-weight: 800; font-size: 13px; }
+
+@media (prefers-reduced-motion: reduce) { .line.wait .lamp, .lampx.blink, .lampx.chase svg { animation: none; } }
+</style>
+
+<div class="wrap" id="root">
+  <header class="top">
+    <div>
+      <span class="wm" aria-label="impromptu"><span aria-hidden="true"><span class="iw"><span class="i">i</span><span class="tittle"></span></span>mpromptu</span></span>
+      <h1>Screens</h1>
+      <p>Every screen in the Live Wire direction, flow by flow. Each one says how you get there; the movement itself is in the
+        <a href="https://claude.ai/artifact/TpoEn8ELZKotaY4MMSUrwz" target="_blank" rel="noopener">Motion Lab</a>. Library screens follow the House lights switch, the way they'll follow your phone's light or dark setting. On-air screens are always lit by the episode.</p>
+      <p>Screens marked <span class="new-tag" style="margin:0;vertical-align:1px">NEW</span> cover what was added since the first pass: briefings, interrupting a show, research and call-in promises, the seekable timeline, voice memos and show intros. Screens marked <span class="new-tag upd" style="margin:0;vertical-align:1px">UPDATED</span> were revised to match what merged after that: the final voice-memo flow, intros on briefings and co-host calls, show notes, and memo pods in the library.</p>
+    </div>
+    <div class="ctls">
+      <span class="switch-l" id="lights-l">House lights <button class="switch" id="lights" type="button" role="switch" aria-checked="false" aria-labelledby="lights-l"></button><span id="lights-v">Up</span></span>
+    </div>
+  </header>
+  <main id="flows"></main>
+</div>
+
+<script>
+(() => {
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+  const LAB = "https://claude.ai/artifact/TpoEn8ELZKotaY4MMSUrwz";
+  const mq = matchMedia("(prefers-reduced-motion: reduce)");
+
+  // ---- icons (24px line icons from the app, plus home/compass/library) -----------------
+  const P = {
+    file: "M14 3H6v18h12V7zM14 3v4h4", link: "M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1",
+    photo: "M4 5h16v14H4zM4 16l5-5 4 4 3-3 4 4", mic: "M12 4a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0V7a3 3 0 0 0-3-3zM6 11a6 6 0 0 0 12 0M12 17v3",
+    micOff: "M12 4a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0V7a3 3 0 0 0-3-3zM6 11a6 6 0 0 0 12 0M12 17v3M4 4l16 16",
+    plus: "M12 5v14M5 12h14", home: "M4 11l8-7 8 7v9h-5v-6h-6v6H4z", compass: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM15.5 8.5l-2 5-5 2 2-5z",
+    lib: "M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z", user: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 20a8 8 0 0 1 16 0",
+    search: "M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4", heart: "M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z",
+    chat: "M4 5h16v11H9l-5 4z", share: "M12 4v11M7 9l5-5 5 5M5 14v6h14v-6", restyle: "M4 7h9M17 7h3M15 5v4M4 17h3M11 17h9M9 15v4",
+    more: "M5 12h.01M12 12h.01M19 12h.01", chevL: "M15 6l-6 6 6 6", chevD: "M6 9l6 6 6-6", chevR: "M9 6l6 6-6 6", lock: "M6 11h12v9H6zM8 11V8a4 4 0 0 1 8 0v3",
+    people: "M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 19a6 6 0 0 1 12 0M16 5.5a3 3 0 0 1 0 5.5M17 13.5a6 6 0 0 1 4 5.5",
+    globe: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z",
+    check: "M5 12l5 5 9-10", close: "M6 6l12 12M18 6L6 18", play: "M8 5l11 7-11 7z", pause: "M8 5v14M16 5v14", back15: "M4 12a8 8 0 1 0 2.4-5.7M4 4v4h4",
+    phoneOff: "M2.5 14.5c2.5-2.4 5.8-3.7 9.5-3.7s7 1.3 9.5 3.7l-1.8 3a1 1 0 0 1-1.2.4l-3-1.2a1 1 0 0 1-.6-.9v-2.1a12 12 0 0 0-5.8 0v2.1a1 1 0 0 1-.6.9l-3 1.2a1 1 0 0 1-1.2-.4z",
+    volume: "M4 9v6h4l5 4V5L8 9zM17 9a4 4 0 0 1 0 6", copy: "M8 8h12v12H8zM4 16V4h12", bars: "M6 18v-6M12 18V6M18 18v-9", note: "M5 4h14v16H5zM9 9h6M9 13h6M9 17h3",
+    shield: "M12 3l7 3v6c0 4.5-3 8-7 9-4-1-7-4.5-7-9V6z", edit: "M4 20h4L18.5 9.5a2.1 2.1 0 0 0-3-3L5 17v3zM14 7l3 3", signOut: "M15 4h4v16h-4M10 8l-4 4 4 4M6 12h11",
+    sparkle: "M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z", google: "",
+    jumpLive: "M5 5l9 7-9 7zM18 5v14", chevU: "M6 15l6-6 6 6", trash: "M5 7h14M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3", ret: "M9 14l-5-5 5-5M4 9h11a5 5 0 0 1 0 10h-3", grip: "M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01",
+  };
+  const ic = (n, cls = "", w = 2) => `<svg class="ic ${cls}" viewBox="0 0 24 24" fill="${n === "play" ? "currentColor" : "none"}" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${P[n]}"/></svg>`;
+  const G = "<svg class='ic' viewBox='0 0 24 24' aria-hidden='true'><path fill='#4285F4' d='M22 12.2c0-.7-.1-1.4-.2-2H12v3.8h5.6a4.8 4.8 0 0 1-2.1 3.1v2.6h3.4c2-1.8 3.1-4.5 3.1-7.5z'/><path fill='#34A853' d='M12 22c2.8 0 5.2-.9 6.9-2.5l-3.4-2.6c-.9.6-2.1 1-3.5 1-2.7 0-5-1.8-5.8-4.3H2.7v2.7A10 10 0 0 0 12 22z'/><path fill='#FBBC05' d='M6.2 13.6a6 6 0 0 1 0-3.8V7.1H2.7a10 10 0 0 0 0 9z'/><path fill='#EA4335' d='M12 6c1.5 0 2.9.5 4 1.6l3-3A10 10 0 0 0 2.7 7.1l3.5 2.7C7 7.8 9.3 6 12 6z'/></svg>";
+
+  // ---- building blocks ---------------------------------------------------------------
+  const wm = () => `<span class="wm" aria-label="impromptu"><span aria-hidden="true"><span class="iw"><span class="i">i</span><span class="tittle"></span></span>mpromptu</span></span>`;
+  const ring = (cls = "ring", lit = (i) => i % 3 === 0, dot = 0) => {
+    let o = "";
+    for (let i = 0; i < 60; i++) {
+      const a = (i / 60) * Math.PI * 2 - Math.PI / 2, q = i % 15 === 0, r = cls.includes("rg") ? 44 : 42, d = dot || (cls.includes("rg") ? 2 : 3.2);
+      o += `<circle class="${q ? "q " : ""}${lit(i) ? "lit" : ""}" cx="${(50 + r * Math.cos(a)).toFixed(2)}" cy="${(50 + r * Math.sin(a)).toFixed(2)}" r="${q ? d * 1.35 : d}"></circle>`;
+    }
+    return `<svg class="${cls}" viewBox="0 0 100 100" aria-hidden="true">${o}</svg>`;
+  };
+  const GELS = { pink: "#FF6B9A", blue: "#7C83FF", flame: "#FF8A4C", steel: "#A3B1CC", moss: "#4FD1A5", straw: "#F2C14E", lav: "#B69CFF", sky: "#6FB3FF", tung: "#FFB257" };
+  const sleeve = ({ t, g = GELS.pink, h = "", live = false, size = 132, cls = "", fs }) =>
+    `<span class="sleeve ${cls}" style="--gel:${g};${cls.includes("sm") || !size ? "" : `width:${size}px;height:${size}px`}">${cls.includes("sm") ? "" : ring("rg ring")}${live ? '<span class="live">LIVE</span>' : ""}<span class="t" ${fs ? `style="font-size:${fs}px"` : ""}>${t}</span>${h ? `<span class="h">${h}</span>` : ""}</span>`;
+  const hd = (right = true) => `<header class="hd">${wm()}${right ? `<span class="credits"><i></i>60</span><span class="av ink">M</span>` : ""}</header>`;
+  const hdBack = (label, right = "") => `<header class="hd"><span class="back">${ic("chevL", "s", 2.4)}${label}</span><span style="margin-left:auto">${right}</span></header>`;
+  const tabbar = (on, liveDot = false) => `<nav class="tabbar">${[["home", "Home"], ["compass", "Discover"], ["lib", "Library"], ["user", "You"]].map(([i, l]) => `<span class="${l === on ? "on" : ""}"><span class="pill">${ic(i)}${liveDot && l === "Discover" ? '<span class="lv"></span>' : ""}</span>${l}</span>`).join("")}</nav>`;
+  const row = ({ t, g, m, live, vis = "", nw }) => `<div class="r">${sleeve({ t: t.split(" ")[0], g, cls: "sm" })}<span class="tx"><b>${t}</b><span class="m ${live ? "live" : ""}">${m}</span></span>${nw ? '<span class="newp">NEW</span>' : ""}${vis ? `<span class="vis">${ic(vis, "s")}</span>` : ""}</div>`;
+  const PODS = [
+    { t: "Why bridges sing in the wind", g: GELS.moss, m: "Science deep-dive, 14:52", vis: "globe" },
+    { t: "Our first apartment, ranked", g: GELS.flame, m: "Married couple chat, 9:40", vis: "people" },
+    { t: "The case for naps", g: GELS.lav, m: "Live now", live: true, vis: "lock" },
+    { t: "Debate: cats or dogs", g: GELS.blue, m: "Debate night, 15:00", vis: "globe" },
+    { t: "Notes for Friday's pitch", g: GELS.straw, m: "Draft, Inspirational talk", vis: "" },
+  ];
+  const stageTop = (badge = `<span class="tally"><i></i>ON AIR</span>`, right = `<span class="s-dim" style="margin-left:auto">128 listening</span>`) =>
+    `<header class="s-top">${badge}<span class="clock">${ring("ring", (i) => i <= 42)}<span>1:42</span></span>${right}</header>`;
+  const sEp = (t = "Wild Yeast and the Gold Rush", sub = "Chapter 2, The Gold Rush") => `<div class="s-ep"><span class="cv"></span><span><b>${t}</b><span class="s-dim">${sub}</span></span></div>`;
+  const chaps = `<div class="chaps"><i class="done"></i><i><b style="width:42%"></b></i><i></i><i></i></div>`;
+  const hostsRow = `<div class="hosts"><span class="host" data-h="0"><span class="av" style="background:#FFB257">M</span>Mia</span><span class="host" data-h="1"><span class="av" style="background:#9CC2FF">J</span>Jordan</span></div>`;
+  const sBar = `<div class="s-bar"><span class="s-field">Call in to the hosts</span><span class="rnd">${ic("heart")}<span class="cnt">131</span></span><span class="rnd white">${ic("mic")}</span></div>`;
+  const capsStatic = (who, text, pill = "", prev = "") => `<section class="s-caps">${prev ? `<div class="s-prev">${prev}</div>` : ""}<div class="nowwrap"><div class="s-who"><i></i>${who}${pill ? `<span class="pill-pink">${pill}</span>` : ""}</div><div class="s-now">${text.split(" ").map((w, i, a) => `<span class="w ${i < a.length * 0.6 ? "said" : i < a.length * 0.6 + 1 ? "now" : ""}" style="--wp:.5">${w}</span>`).join(" ")}</div></div></section>`;
+  const stage = (inner, gel = GELS.pink) => `<div class="scr st" style="--gel:${gel}">${inner}<span class="island"></span></div>`;
+  const house = (inner) => `<div class="scr hz">${inner}<span class="island"></span></div>`;
+
+  // =================================================================================
+  // Screens, flow by flow
+  // =================================================================================
+  const FLOWS = [];
+  const flow = (name, blurb, boards, isNew = false) => FLOWS.push({ name, blurb, boards, isNew });
+  const via = (scene, label, verb = "Arrives by") => `<span class="via">${verb} <a href="${LAB}#${scene}" target="_blank" rel="noopener">${label}</a></span>`;
+
+  flow("Arriving", "First open, signing in, and the home screen. Home leads with a composer, so starting a pod is one step instead of three.", [
+    {
+      name: "Sign in", route: "/login", chg: "Stage-black with the ident; listening without an account is one tap.", via: via("boot", "Opening the app"),
+      html: stage(`<div style="padding:70px 22px 0;display:flex;flex-direction:column;gap:14px;flex:1">
+          <div style="position:absolute;left:50%;top:250px;width:520px;height:520px;margin-left:-260px;opacity:.6">${ring("ring", (i) => i < 22, 0.9)}</div>
+          <div style="font-size:38px;position:relative">${wm()}</div>
+          <p style="font:700 22px/1.12 var(--f-display);font-stretch:86%;position:relative;max-width:16ch">Live podcasts about anything. Call in while they're on air.</p>
+          <div style="margin-top:auto;display:flex;flex-direction:column;gap:9px;position:relative;padding-bottom:30px">
+            <span class="btn white block">${G}Continue with Google</span>
+            <span class="btn ghost block">Use email instead</span>
+            <span style="text-align:center;font-size:13px;font-weight:700;color:var(--on-dim);padding:8px 0 0">Just listening? <u>Browse public pods</u></span>
+          </div></div>`, GELS.tung),
+    },
+    {
+      name: "Home", route: "/", chg: "Composer first, then what's live and your recent pods. Bottom tabs replace the account-menu maze.", via: via("lists", "Loading lists"),
+      html: house(`${hd()}<div class="body" style="gap:14px"><div class="pad"><h3 class="h1">Hi Marc. What should today's pod be about?</h3></div>
+        <div class="pad"><div class="card composer"><span class="area">Paste notes, drop a file, add a link, or type a topic</span>
+          <div class="tools"><span class="tool">${ic("file", "s")}</span><span class="tool">${ic("link", "s")}</span><span class="tool">${ic("photo", "s")}</span></div>
+          <div class="go"><span class="btn pri" style="flex:1"><span class="rec"></span>Start a pod</span><span class="btn sec">${ic("mic", "s")}Co-host</span></div></div></div>
+        <div class="pad"><div class="h2"><span class="dot"></span>Live now<span class="more">See all</span></div></div>
+        <div class="pad rowx">${sleeve({ t: "Wild Yeast and the Gold Rush", g: GELS.pink, h: "Mia and Jordan", live: true, size: 128 })}${sleeve({ t: "Rookie Season Recap", g: GELS.flame, h: "Kayla's pods", live: true, size: 128 })}</div>
+        <div class="pad"><div class="h2">Your pods<span class="more">Library</span></div><div class="rows">${row(PODS[0])}</div></div>
+      </div>${tabbar("Home", true)}`),
+    },
+    {
+      name: "Home on a free account", route: "/", chg: "Says plainly what's free and what needs credits, instead of a disabled button.", via: via("boot", "Opening the app"),
+      html: house(`<header class="hd">${wm()}<span class="credits"><i></i>0</span><span class="av" style="background:#9CC2FF">A</span></header><div class="body" style="gap:14px">
+        <div class="pad"><h3 class="h1">Hi Ada. Here's what's on air.</h3></div>
+        <div class="pad"><div class="card" style="padding:13px;display:flex;flex-direction:column;gap:8px">
+          <b style="font:780 16px/1.1 var(--f-display);font-stretch:94%">You're on a free account</b>
+          <span class="muted small">Listen, call in, connect with people and build personas for free. Making pods uses credits, 1 per minute. Ask an admin for demo credits.</span>
+          <span class="btn sec sm" style="align-self:flex-start">See what credits do</span></div></div>
+        <div class="pad"><div class="h2"><span class="dot"></span>Live now</div></div>
+        <div class="pad rowx">${sleeve({ t: "Wild Yeast and the Gold Rush", g: GELS.pink, h: "Mia and Jordan", live: true, size: 128 })}${sleeve({ t: "Night Shift Radio", g: GELS.blue, h: "Theo", live: true, size: 128 })}</div>
+        <div class="pad"><div class="h2">From people you follow</div><div class="rows">${row({ t: "Kitchen science, episode 4", g: GELS.moss, m: "Marc, 12:10", nw: true })}</div></div>
+      </div>${tabbar("Home", true)}`),
+    },
+    {
+      name: "Discover, signed out", route: "/discover", chg: "Public pods by format, live first. Calling in asks you to sign in at that moment, not before.", via: via("tune", "Tuning in"),
+      html: house(`<header class="hd">${wm()}<span class="btn pri sm" style="margin-left:auto">Sign in</span></header><div class="body" style="gap:12px">
+        <div class="pad"><div class="field">${ic("search", "s")}Search public pods</div></div>
+        <div class="pad chips"><span class="chip on">All</span><span class="chip">Science deep-dive</span><span class="chip">Debate night</span><span class="chip">Girl talk</span></div>
+        <div class="pad">${sleeve({ t: "Wild Yeast and the Gold Rush", g: GELS.pink, h: "Mia and Jordan, 128 listening", live: true, size: 276, fs: 64 })}</div>
+        <div class="pad"><div class="rows">${row({ t: "Rookie Season Recap", g: GELS.flame, m: "Live now", live: true })}${row(PODS[0])}${row(PODS[3])}</div></div>
+      </div>`),
+    },
+  ]);
+
+  flow("Library", "Your pods, what you follow, albums and creators. Sleeves carry the episode's gel, so a shelf of pods reads like a record shelf.", [
+    {
+      isUpd: true, name: "Library", route: "/ (Yours)", chg: "Grid of sleeves with filters and tags. A memo pod being made shows its progress on the studio clock; one waiting for your review wears an amber tab.", via: via("lists", "Loading lists"),
+      html: house(`<header class="hd"><span class="title">Library</span><span style="margin-left:auto" class="av ink">M</span></header><div class="body" style="gap:10px">
+        <div class="pad"><div class="seg"><span class="on">Yours</span><span>Shared</span><span>Albums</span></div></div>
+        <div class="pad chips"><span class="chip on">All</span><span class="chip">Live</span><span class="chip">Finished</span><span class="chip">Drafts</span><span class="chip">#kitchen</span></div>
+        <div class="pad" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          ${[["Bread, Banter and Bad Puns", GELS.sky, "make"], ["Walking Through Rome", GELS.straw, "review"], ["The Case for Naps", GELS.lav, "Live"], ["Why Bridges Sing", GELS.moss, "14:52"]].map(([t, g, d]) => {
+            let s = sleeve({ t, g, size: 131, live: d === "Live", fs: 28 });
+            if (d === "make") s = s.replace(/<\/span>$/, `<span class="mk">${ring("ring", (i) => i < 25, 2.6)}<b>42%</b></span></span>`);
+            if (d === "review") s = s.replace(/<\/span>$/, '<span class="rv">REVIEW</span></span>');
+            const meta = { make: "From a voice memo, making it", review: "Ready for you to review", Live: "On air now" }[d] || d;
+            return `<div style="display:flex;flex-direction:column;gap:5px">${s}<b style="font-size:12.5px;line-height:1.2">${t}</b><span class="muted" style="font-size:11.5px;${d === "review" ? "color:var(--h-live);font-weight:700" : ""}">${meta}</span></div>`;
+          }).join("")}
+        </div></div>${tabbar("Library")}`),
+    },
+    {
+      name: "Following", route: "/following", chg: "Live-now banner on top, then new episodes from creators and albums you subscribe to.", via: via("lists", "Loading lists"),
+      html: house(`<header class="hd"><span class="title">Discover</span><span style="margin-left:auto" class="av ink">M</span></header><div class="body" style="gap:12px">
+        <div class="pad"><div class="seg"><span>Public</span><span class="on">Following</span></div></div>
+        <div class="pad"><div style="display:flex;gap:11px;align-items:center;padding:10px;border-radius:14px;background:#141720;color:#fff">${sleeve({ t: "Night", g: GELS.blue, cls: "sm" })}<span style="flex:1;min-width:0"><b style="display:block;font-size:13px">Night Shift Radio is live</b><span style="font-size:12px;opacity:.75">From Theo, 41 listening</span></span><span class="tally" style="height:22px">LIVE</span></div></div>
+        <div class="pad"><div class="h2">Creators</div></div>
+        <div class="pad" style="display:flex;gap:12px">${[["T", "#9CC2FF", "Theo"], ["K", "#FFB257", "Kayla"], ["R", "#B69CFF", "Ruby"], ["D", "#4FD1A5", "Dre"]].map(([a, c, n]) => `<span style="display:flex;flex-direction:column;align-items:center;gap:4px;font-size:11.5px;font-weight:700"><span class="av" style="width:50px;height:50px;font-size:18px;background:${c}">${a}</span>${n}</span>`).join("")}</div>
+        <div class="pad"><div class="h2">New for you</div><div class="rows">${row({ t: "Kitchen science, episode 4", g: GELS.moss, m: "Theo, 12:10", nw: true })}${row({ t: "Bedtime: the lighthouse keeper", g: GELS.lav, m: "Album: Sleepy stories", nw: true })}${row({ t: "Rookie Season Recap", g: GELS.flame, m: "Kayla, 15:00" })}</div></div>
+      </div>${tabbar("Discover", true)}`),
+    },
+    {
+      name: "Album", route: "/album/:id", chg: "The album is a fanned stack of its sleeves; Subscribe sits beside the title, not below the fold.", via: via("house", "House lights"),
+      html: house(`${hdBack("Albums", ic("more"))}<div class="body" style="gap:12px">
+        <div class="pad" style="position:relative;height:196px">
+          <span style="position:absolute;left:62px;top:16px;transform:rotate(-8deg)">${sleeve({ t: "Bridges", g: GELS.moss, size: 150 })}</span>
+          <span style="position:absolute;left:96px;top:10px;transform:rotate(5deg)">${sleeve({ t: "Bread", g: GELS.tung, size: 150 })}</span>
+          <span style="position:absolute;left:78px;top:22px">${sleeve({ t: "Kitchen Science", g: GELS.flame, size: 160, fs: 40 })}</span></div>
+        <div class="pad" style="display:flex;align-items:flex-end;gap:10px"><div style="flex:1"><h3 class="h1" style="font-size:26px">Kitchen science</h3><span class="muted small">Marc, 12 pods, public</span></div><span class="btn pri sm">Subscribe</span></div>
+        <div class="pad"><div class="rows">${row({ t: "Wild Yeast and the Gold Rush", g: GELS.pink, m: "Live now", live: true })}${row({ t: "Why bread goes stale", g: GELS.tung, m: "Friends chatting, 10:02" })}${row({ t: "Salt, explained", g: GELS.sky, m: "Science deep-dive, 14:40" })}</div></div>
+      </div>`),
+    },
+    {
+      name: "Creator", route: "/creator/:uid", chg: "Their albums as a shelf, their pods below; Subscribe shows how many others follow.", via: via("house", "House lights"),
+      html: house(`${hdBack("Back")}<div class="body" style="gap:12px">
+        <div class="pad" style="display:flex;gap:12px;align-items:center"><span class="av" style="width:64px;height:64px;font-size:24px;background:#9CC2FF">T</span><div style="flex:1"><h3 class="h1" style="font-size:26px">Theo</h3><span class="muted small">214 subscribers, 38 pods</span></div></div>
+        <div class="pad"><span class="btn pri block">Subscribe</span></div>
+        <div class="pad"><div class="h2">Albums</div></div>
+        <div class="pad rowx">${sleeve({ t: "Night Shift Radio", g: GELS.blue, size: 110, fs: 26 })}${sleeve({ t: "Stars, Slowly", g: GELS.lav, size: 110, fs: 26 })}${sleeve({ t: "Odd Jobs", g: GELS.straw, size: 110, fs: 26 })}</div>
+        <div class="pad"><div class="h2">Pods</div><div class="rows">${row({ t: "Night Shift Radio, 31", g: GELS.blue, m: "Live now", live: true })}${row({ t: "Kitchen science, episode 4", g: GELS.moss, m: "12:10" })}</div></div>
+      </div>`),
+    },
+  ]);
+
+  flow("Making a pod", "Create is one page with a live preview of the sleeve. Vibes are lighting gels you can see; length is minutes on the studio clock.", [
+    {
+      name: "Create: the idea", route: "/new", chg: "The sleeve at the top updates as you type and pick a vibe, so you see the pod before it exists.", via: via("house", "House lights"),
+      html: house(`${hdBack("New pod")}<div class="body" style="gap:12px">
+        <div class="pad"><div class="prev-sleeve">${sleeve({ t: "Wild Yeast", g: GELS.pink, size: 64, fs: 18 })}<span style="min-width:0"><b style="display:block;font:780 16px/1.1 var(--f-display);font-stretch:92%">The history of sourdough</b><span class="muted small">Girl gossip, Mia and Jordan, 10 min</span></span></div></div>
+        <div class="pad" style="display:flex;flex-direction:column;gap:6px"><span class="lbl">What's it about?</span><div class="card" style="padding:12px;font-size:14px;line-height:1.4">The history of sourdough: wild yeast, the Gold Rush, and why San Francisco loaves taste different.<div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap"><span class="attach">${ic("file", "s")}bread-notes.pdf</span><span class="attach">${ic("link", "s")}sfgate.com</span></div></div></div>
+        <div class="pad" style="display:flex;flex-direction:column;gap:6px"><span class="lbl">Pick a vibe</span>
+          <div class="gels">${[["Girl gossip", GELS.pink, 1], ["Late-night radio", GELS.blue], ["Sports play-by-play", GELS.flame], ["True crime", GELS.steel], ["Nature documentary", GELS.moss], ["Rival professors", GELS.straw]].map(([n, g, on]) => `<span class="gel ${on ? "on" : ""}" style="--g:${g}">${n}</span>`).join("")}</div></div>
+      </div>`),
+    },
+    {
+      name: "Create: hosts, length, audience", route: "/new (lower down)", chg: "Length shows as minutes on the studio clock; the Go live bar always says what it costs.", via: via("golive", "Go live", "Leads to"),
+      html: house(`${hdBack("New pod")}<div class="body" style="gap:13px">
+        <div class="pad" style="display:flex;flex-direction:column;gap:6px"><span class="lbl">Who's hosting?</span><div class="hostc"><span><span class="av" style="background:#FFB257">M</span><span><b>Mia</b><small>The baker</small></span></span><span><span class="av" style="background:#9CC2FF">J</span><span><b>Jordan</b><small>The skeptic</small></span></span></div></div>
+        <div class="pad" style="display:flex;flex-direction:column;gap:6px"><span class="lbl">How long?</span><div class="lenpick">${[5, 10, 15].map((m) => `<span class="${m === 10 ? "on" : ""}">${ring("ring", (i) => i < m)}${m} min<small>${m} credits</small></span>`).join("")}</div></div>
+        <div class="pad" style="display:flex;flex-direction:column;gap:6px"><span class="lbl">Who can listen?</span><div class="vis3"><span>${ic("lock")}Only me</span><span>${ic("people")}Connections</span><span class="on">${ic("globe")}Anyone</span></div></div>
+        <div class="pad" style="display:flex;flex-direction:column;gap:6px"><span class="lbl">Album</span><div class="field" style="color:var(--h-ink)">Kitchen science<span style="margin-left:auto">${ic("chevD", "s")}</span></div></div>
+      </div><div class="gobar"><p>Uses 10 credits. You have 60.</p><span class="btn pri block" style="height:52px;font-size:17px"><span class="rec"></span>Go live</span><span style="font-size:13px;font-weight:700;color:var(--h-ink2)">Save as a draft</span></div>`),
+    },
+    {
+      name: "Draft", route: "/show/:id (draft)", chg: "A draft is its sleeve, ready to go; deleting is a quiet link, never next to Go live.", via: via("house", "House lights"),
+      html: house(`${hdBack("Library", ic("more"))}<div class="body" style="gap:12px;align-items:center;text-align:center;padding-top:6px">
+        ${sleeve({ t: "Notes for Friday's Pitch", g: GELS.straw, size: 200, fs: 44, h: "Grace" })}
+        <div class="pad"><span class="chip" style="height:24px;font-size:11px">Draft</span><h3 class="h1" style="margin-top:8px">Notes for Friday's pitch</h3><p class="muted small" style="margin-top:4px">Inspirational talk, 1 host, 10 minutes</p></div>
+      </div><div class="gobar"><p>Uses 10 credits. You have 60.</p><span class="btn pri block" style="height:52px;font-size:17px"><span class="rec"></span>Go live</span><span style="font-size:13px;font-weight:700;color:var(--h-ink2)">Edit draft</span></div>`),
+    },
+    {
+      isUpd: true, name: "Co-host setup", route: "/cohost", chg: "Pick a mode as a gel, see your co-host's persona, and choose whether they open by welcoming listeners to your show by name.", via: via("house", "House lights"),
+      html: house(`${hdBack("Co-host live")}<div class="body" style="gap:12px">
+        <div class="pad"><h3 class="h1">Talk it through with a co-host</h3><p class="muted small" style="margin-top:6px">You talk, they talk back in real time. Hang up and it becomes an edited episode.</p></div>
+        <div class="pad"><div class="field" style="color:var(--h-ink);height:auto;padding:12px 14px">Why I quit my job to bake bread</div></div>
+        <div class="pad"><div class="card" style="padding:10px;display:flex;gap:10px;align-items:center"><span class="av" style="width:42px;height:42px;background:#B69CFF;font-size:16px">A</span><span style="flex:1"><b style="font-size:14px">Ada</b><br><span class="muted small">Warm, curious, asks the follow-up you're avoiding</span></span>${ic("edit", "s")}</div></div>
+        <div class="pad" style="display:flex;flex-direction:column;gap:6px"><span class="lbl">How should it go?</span><div class="gels" style="grid-template-columns:repeat(3,1fr)">${[["Banter", GELS.pink, 1], ["Interview me", GELS.sky], ["Debate me", GELS.flame]].map(([n, g, on]) => `<span class="gel ${on ? "on" : ""}" style="--g:${g}">${n}</span>`).join("")}</div></div>
+        <div class="pad"><div class="card" style="padding:12px"><div class="swrow"><span style="flex:1"><b>Open with your show intro, Walk &amp; Talk</b><span class="d">Ada welcomes listeners to your show by name. Your theme is added when you hang up.</span></span><span class="sw on"></span></div></div></div>
+      </div><div class="gobar"><p>${ic("mic", "s")} Uses your microphone. Headphones help.</p><span class="btn pri block" style="height:52px;font-size:17px"><span class="rec"></span>Start the call</span></div>`),
+    },
+  ]);
+
+  flow("Listening", "The stage: captions light up word by word, the gel follows the chapter, and every control sits under your thumb.", [
+    {
+      name: "Tune in", route: "/show/:id", chg: "One big target inside the studio clock. The tap is what lets the browser play sound.", via: via("tune", "Tuning in"),
+      html: stage(`${stageTop()}${sEp()}<div style="flex:1;display:grid;place-items:center"><div style="position:relative;width:220px;height:220px;display:grid;place-items:center">${ring("ring", (i) => i <= 42).replace("<svg", '<svg style="position:absolute;inset:0;width:100%;height:100%"')}<span class="play" style="width:96px;height:96px">${ic("play", "l")}</span></div></div>
+        <div style="text-align:center;padding:0 24px 40px"><b style="font:800 22px/1.05 var(--f-display);font-stretch:90%">Tune in</b><p class="s-dim" style="margin-top:6px;font-size:13.5px">Mia and Jordan are 1 minute 42 seconds in. You'll join live.</p></div>`),
+    },
+    {
+      name: "Live", route: "/show/:id", chg: "Words light as they're said; long lines narrow instead of shrinking. Hosts' rings move with their voices.", via: via("house", "House lights"),
+      html: `<div class="scr st" data-live style="--gel:${GELS.pink}">${stageTop()}${sEp()}<section class="s-caps"><div class="s-prev"></div><div class="nowwrap"></div></section>${chaps}${hostsRow}${sBar}<span class="island"></span></div>`,
+    },
+    {
+      name: "Now playing", route: "/show/:id, episode row", chg: "Cover, transport, then the transcript and call-ins as cards. Drag down to go back.", via: via("np", "Now playing"),
+      html: stage(`<header class="np-top">${ic("chevD")}<span class="from">Playing live from<b>Your pods</b></span>${ic("more")}</header>
+        ${sleeve({ t: "Wild Yeast", g: GELS.pink, cls: "np-cover", size: 0 })}
+        <div class="np-meta"><b>Wild Yeast and the Gold Rush</b><span>Mia and Jordan</span></div>
+        <div class="scrub"><div class="bar"><b style="width:100%"></b></div><div class="tm"><span>Chapter 2, The Gold Rush</span><span style="color:#fff;font-weight:800"><span style="color:#FF6A4D">&#9679;</span> LIVE</span></div></div>
+        <div class="tr">${ic("back15", "l")}<span class="play">${ic("pause", "l", 2.6)}</span>${ic("chat", "l")}</div>
+        <div class="np-sec"><h4>Transcript</h4><div class="tl"><p><small>Jordan</small>That's not a flex. That's a custody arrangement.</p><p class="cur"><small>Mia</small>Okay, but listen. Miners in 1849 carried starter in pouches.</p></div></div>`),
+    },
+    {
+      name: "Replay", route: "/show/:id (finished)", chg: "Chapter marks on the scrubber, a real timeline, and the transcript follows the playhead.", via: via("house", "House lights"),
+      html: stage(`<header class="np-top">${ic("chevD")}<span class="from">Replay from<b>Kitchen science</b></span>${ic("share")}</header>
+        ${sleeve({ t: "Why Bread Goes Stale", g: GELS.tung, cls: "np-cover", size: 0 })}
+        <div class="np-meta"><b>Why bread goes stale</b><span>Mia and Jordan, 10:02</span></div>
+        <div class="scrub"><div class="bar"><b style="width:38%"></b><span class="mk" style="left:22%"></span><span class="mk" style="left:51%"></span><span class="mk" style="left:77%"></span><i style="left:38%"></i></div><div class="tm"><span>3:48</span><span>Starch, explained</span><span>-6:14</span></div></div>
+        <div class="tr">${ic("back15", "l")}<span class="play">${ic("pause", "l", 2.6)}</span><span style="font-weight:800;font-size:13px">1&times;</span></div>
+        <div class="np-sec"><h4>Chapters</h4><div class="tl"><p style="font-size:14px">Cold open <small style="display:inline;color:var(--on-dim)">0:00</small></p><p class="cur" style="font-size:14px">Starch, explained <small style="display:inline">2:12</small></p></div></div>`, GELS.tung),
+    },
+    {
+      isNew: true, name: "Show notes", route: "Now playing / Studio, any finished pod", chg: "Who made it and from what, what the research drew on (links only ever to web pages), and the theme music by name.", via: via("np", "Now playing"),
+      html: stage(`<header class="np-top">${ic("chevD")}<span class="from">Replay from<b>Your pods</b></span>${ic("share")}</header>
+        <div style="display:flex;gap:12px;align-items:center;padding:16px 16px 0">${sleeve({ t: "Bread", g: GELS.sky, cls: "sm" })}<span style="flex:1;min-width:0"><b style="display:block;font:780 17px/1.1 var(--f-display);font-stretch:92%">Bread, Banter and Bad Puns</b><span class="s-dim" style="font-size:12.5px">Idea breakdown, 15:02</span></span><span class="play" style="width:46px;height:46px">${ic("pause", "s", 2.6)}</span></div>
+        <div class="scrub" style="margin:12px 16px 0"><div class="bar"><b style="width:22%"></b><span class="mk" style="left:12%"></span><span class="mk" style="left:40%"></span><span class="mk" style="left:71%"></span><i style="left:22%"></i></div></div>
+        <div class="np-sec"><h4>Show notes</h4>
+          <p style="display:flex;gap:8px;align-items:flex-start;font-size:13px">${ic("mic", "s")}<span>Made from a 2:14 voice memo by Marc.</span></p>
+          <span class="lbl" style="color:var(--on-dim)">What the research drew on</span>
+          <div class="notes-list"><span><span class="t">How miners carried sourdough west</span><small>breadhistory.example</small></span><span><span class="t">The bacterium named after a city</span><small>foodscience.example</small></span><span><span class="t">Rye, wheat and the sour taste</span><small>bakerslab.example</small></span></div>
+          <p class="s-dim" style="font-size:12px">Theme music: Morning walk, from Walk &amp; Talk.</p></div>
+        <div class="np-sec"><h4>Chapters</h4><div class="tl"><p class="cur" style="font-size:14px">Cold open: a pet you can eat <small style="display:inline">0:00</small></p><p style="font-size:14px">Wild yeast, explained <small style="display:inline;color:var(--on-dim)">1:48</small></p></div></div>`, GELS.sky),
+    },
+  ]);
+
+  flow("Taking part", "Sheets rise over the stage while the show keeps playing behind them. Call-ins wait on lit phone lines.", [
+    {
+      name: "Call-in on a line", route: "/show/:id", chg: "Your message waits on a lit line with an honest ETA; the lamp turns red when it's read.", via: via("callin", "A call-in's journey"),
+      html: stage(`${stageTop()}${sEp()}${capsStatic("Mia", "Marc wants to know: his grandma's starter is from Alaska. Does that count?", "Reading your call-in", "Jordan: Which is why prospectors got called sourdoughs.")}
+        <div style="padding:0 12px 8px;display:flex;flex-direction:column;gap:6px"><div class="line air"><span class="lamp"></span><span class="msg">My grandma's starter is from Alaska. Does that count?</span><span class="stt" style="color:#fff">On air</span></div><div class="line wait"><span class="lamp"></span><span class="msg">Kayla: is rye starter different?</span><span class="stt">about 40 s</span></div></div>${hostsRow}${sBar}`),
+    },
+    {
+      name: "Add context", route: "sheet", chg: "Four ways in, one sliding control; the show recedes but keeps playing.", via: via("sheet", "Sheets"),
+      html: `<div class="scr" style="background:#000"><div class="recede">${stage(`${stageTop()}${sEp()}${capsStatic("Jordan", "The nickname stuck to the people, not just the bread.")}${hostsRow}${sBar}`)}</div><div class="scrim"></div>
+        <div class="sheet"><span class="grab"></span><h3>Add context<span class="x">${ic("close", "s")}</span></h3><div class="seg"><span>Note</span><span>File</span><span class="on">Link</span><span>Photo</span></div>
+        <div class="area">https://</div><p class="muted small">The hosts read the page and bring it in from their next line.</p><span class="btn white block">Add to the show</span></div><span class="island"></span></div>`,
+    },
+    {
+      name: "Restyle", route: "sheet, producer only", chg: "Pick a new gel and watch the stage behind the sheet change color before you confirm.", via: via("sheet", "Sheets"),
+      html: `<div class="scr" style="background:#000"><div class="recede">${stage(`${stageTop()}${sEp()}${capsStatic("Mia", "Okay. New energy. Let's do this like a nature documentary.")}${hostsRow}${sBar}`, GELS.moss)}</div><div class="scrim" style="background:rgba(4,5,10,.35)"></div>
+        <div class="sheet"><span class="grab"></span><h3>Restyle the show<span class="x">${ic("close", "s")}</span></h3>
+        <div class="gels">${[["Girl gossip", GELS.pink], ["Late-night radio", GELS.blue], ["Nature documentary", GELS.moss, 1], ["Bedtime story", GELS.lav], ["Rival professors", GELS.straw], ["Morning radio chaos", GELS.sky]].map(([n, g, on]) => `<span class="gel ${on ? "on" : ""}" style="--g:${g}">${n}</span>`).join("")}</div>
+        <span class="btn white block">Switch at the next line</span></div><span class="island"></span></div>`,
+    },
+    {
+      name: "Share", route: "sheet", chg: "Who can listen and the link in one place; picking connections is a checklist, not a second sheet.", via: via("sheet", "Sheets"),
+      html: `<div class="scr" style="background:#000"><div class="recede">${stage(`${stageTop()}${sEp()}${capsStatic("Jordan", "Science gave a microbe a hometown.")}${hostsRow}${sBar}`)}</div><div class="scrim"></div>
+        <div class="sheet"><span class="grab"></span><h3>Share<span class="x">${ic("close", "s")}</span></h3>
+        <span class="opt"><span class="rd"></span><span><b>Only me and people I pick</b><span>Private</span></span></span>
+        <span class="opt"><span class="rd"></span><span><b>My connections</b><span>14 people</span></span></span>
+        <span class="opt on"><span class="rd"></span><span><b>Anyone with the link</b><span>Also listed in Discover</span></span></span>
+        <div style="display:flex;gap:8px"><span class="area" style="min-height:0;height:44px;flex:1;display:flex;align-items:center;padding:0 12px;color:#B9BCC8;font-size:12.5px;white-space:nowrap;overflow:hidden">impromptu.app/show/gYa2AL</span><span class="btn white">${ic("copy", "s")}Copy</span></div></div><span class="island"></span></div>`,
+    },
+  ]);
+
+  flow("Co-host call", "A phone call with one AI co-host. Their avatar sits inside the studio clock and breathes with their voice.", [
+    {
+      name: "On the call", route: "/cohost/:id", chg: "Their ring follows their voice, yours sits on the mute button; minutes left are on the clock.", via: via("golive", "Go live"),
+      html: `<div class="scr st" data-call style="--gel:${GELS.lav}">${stageTop(`<span class="tally"><i></i>ON AIR</span>`, `<span class="s-dim" style="margin-left:auto">8:18 left</span>`)}
+        <div class="call-host">${ring("ring", (i) => i < 22)}<span class="big">A</span></div><div class="call-name"><b>Ada</b><span>Your co-host, banter</span></div>
+        <section class="s-caps" style="padding-top:4px"><div class="s-prev">You: I just think nobody tells you how much of baking is waiting.</div><div class="nowwrap"><div class="s-who"><i></i>Ada</div><div class="s-now" style="font-size:24px"><span class="w said">So</span> <span class="w said">the</span> <span class="w said">bread</span> <span class="w said">is</span> <span class="w now" style="--wp:.6">teaching</span> <span class="w">you</span> <span class="w">patience.</span> <span class="w">Rude.</span></div></div></section>
+        <div class="modes"><span class="on">Banter</span><span>Interview me</span><span>Debate me</span></div>
+        <div class="callbar"><span class="cb"><span class="rnd">${ic("micOff")}</span>Mute</span><span class="hang">${ic("phoneOff", "l")}</span><span class="cb"><span class="rnd">${ic("volume")}</span>Speaker</span></div><span class="island"></span></div>`,
+    },
+    {
+      isUpd: true, name: "Making your episode", route: "/cohost/:id (editing)", chg: "You watch the cut happen: listen back, chapters, flubs out, then your theme goes under the welcome and the sign-off as the levels settle.", via: via("edit", "Making the episode"),
+      html: `<div class="scr" style="background:#0B0C12;color:#fff;display:flex;flex-direction:column">
+        <h3 style="margin:54px 18px 0;font:800 26px/1 var(--f-display);font-stretch:86%">Making your episode</h3><p style="margin:6px 18px 0;color:#A6ACBC;font-size:13px">Found 6 flubs and 41 seconds of dead air.</p>
+        <p style="margin:16px 18px 0;font:800 22px/1.05 var(--f-display);font-stretch:84%;color:#CFE3FF">Bread, Banter and Bad Puns</p>
+        <div style="position:relative;margin:10px 12px 0;height:110px;border-radius:14px;background:#12141C;padding:12px 8px;display:flex;align-items:center;gap:2px">${Array.from({ length: 70 }, (_, i) => { const h = (0.25 + ((Math.sin(i * 12.9898) * 43758.5453) % 1 + 1) % 1 * 0.65); const cut = (i > 24 && i < 28) || (i > 50 && i < 53); return `<span style="flex:1;height:100%;display:flex;align-items:center"><i style="display:block;width:100%;height:${(h * 100).toFixed(0)}%;border-radius:2px;background:${cut ? "#FF3B30" : Math.floor(i / 9) % 2 ? "#FFB257" : "#9CC2FF"}"></i></span>`; }).join("")}
+          <span style="position:absolute;left:8px;bottom:6px;width:16%;height:10px;border-radius:5px;background:linear-gradient(90deg,#B69CFF,rgba(182,156,255,.2))" title="Your theme under the welcome"></span><span style="position:absolute;right:8px;bottom:6px;width:12%;height:10px;border-radius:5px;background:linear-gradient(270deg,#B69CFF,rgba(182,156,255,.2))" title="The outro under the sign-off"></span></div>
+        <p style="margin:6px 18px 0;font-size:11.5px;color:#8C92A3;display:flex;gap:6px;align-items:center"><i style="width:14px;height:6px;border-radius:3px;background:#B69CFF;display:inline-block"></i>Your Walk &amp; Talk theme, under the welcome and the sign-off</p>
+        <ol style="margin:16px 18px 0;display:flex;flex-direction:column;gap:9px;font-size:13.5px;font-weight:650">
+          ${[["Listening back", "d"], ["Writing the title, show notes and chapters", "d"], ["Cutting flubs, crosstalk and dead air", "n"], ["Levelling and mastering", ""]].map(([s, st]) => `<li style="display:flex;gap:9px;align-items:center;color:${st === "d" ? "#A6ACBC" : st === "n" ? "#fff" : "#5E6577"}"><span style="width:20px;height:20px;border-radius:50%;background:${st === "d" ? "#9CC2FF" : st === "n" ? "#9CC2FF" : "#1E2230"};display:grid;place-items:center;color:#0B0C12">${st === "d" ? ic("check", "s", 3) : ""}</span>${s}</li>`).join("")}</ol>
+        <span class="island"></span></div>`,
+    },
+    {
+      name: "Episode ready", route: "/show/:id", chg: "The recording lands as a sleeve with what was cut; the unedited call stays available to you.", via: via("edit", "Making the episode"),
+      html: stage(`<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:40px 22px 0;text-align:center">
+        ${sleeve({ t: "Bread, Banter and Bad Puns", g: GELS.sky, size: 200, fs: 40, h: "You and Ada" })}
+        <b style="font:800 24px/1.05 var(--f-display);font-stretch:88%">Your episode is ready</b><p class="s-dim" style="font-size:13.5px">8 minutes 19 seconds, opening on your Walk &amp; Talk theme. Cut 6 flubs and 41 seconds of dead air.</p></div>
+        <div style="padding:0 18px 30px;display:flex;flex-direction:column;gap:8px"><span class="btn white block">${ic("play", "s")}Listen to it</span><span class="btn ghost block">Share</span><span style="text-align:center;font-size:12.5px;color:var(--on-dim);font-weight:700">Download the unedited call</span></div>`, GELS.sky),
+    },
+  ]);
+
+  flow("You", "Your account, credits, personas, people and numbers. It all lives under one tab instead of a long menu sheet.", [
+    {
+      isUpd: true, name: "You", route: "account tab", chg: "Credits read as minutes of pods; the ledger names what each change was for (pods made, original music, refunds with their reason).", via: via("lists", "Loading lists"),
+      html: house(`<header class="hd"><span class="title">You</span></header><div class="body" style="gap:12px">
+        <div class="pad" style="display:flex;gap:12px;align-items:center"><span class="av ink" style="width:52px;height:52px;font-size:20px">M</span><span style="flex:1"><b style="font:780 19px/1.1 var(--f-display);font-stretch:92%">Marc Castro</b><br><span class="muted small">marc@example.com</span></span><span class="chip" style="height:24px;font-size:11px">Admin</span></div>
+        <div class="pad"><div class="card" style="padding:12px;display:flex;gap:12px;align-items:center"><div style="position:relative;width:64px;height:64px">${ring("ring", (i) => i < 60 * (60 / 90))}<b style="position:absolute;inset:0;display:grid;place-items:center;font:800 20px var(--f-display);font-stretch:86%">60</b></div><span style="flex:1"><b style="font-size:14px">60 credits</b><br><span class="muted small">About an hour of pods. 1 credit a minute.</span></span></div></div>
+        <div class="pad" style="font-size:12.5px;display:grid;gap:5px"><span style="display:flex;justify-content:space-between"><span class="muted">Refund: research wasn't needed, today</span><b style="color:#1E8A5A">+3</b></span><span style="display:flex;justify-content:space-between"><span class="muted">Pod made, today</span><b>-15</b></span><span style="display:flex;justify-content:space-between"><span class="muted">Original music, yesterday</span><b>-5</b></span></div>
+        <div class="pad rows" style="gap:0">${[["sparkle", "Briefings"], ["mic", "Show intro"], ["mic", "Pod from a voice memo"], ["user", "Personas"], ["people", "Connections", "2 new"], ["bars", "Stats"], ["shield", "Admin"]].map(([i, l, b]) => `<div class="r" style="padding:9px 0;box-shadow:0 1px 0 var(--h-line)">${ic(i)}<b style="font-size:14px;flex:1">${l}</b>${b ? `<span class="newp">${b.toUpperCase()}</span>` : ""}${ic("chevR", "s")}</div>`).join("")}</div>
+      </div>${tabbar("You")}`),
+    },
+    {
+      name: "Personas", route: "/personas", chg: "Hosts you've built, then a premade shelf; voice and gender read at a glance.", via: via("lists", "Loading lists"),
+      html: house(`${hdBack("You", '<span class="btn pri sm">' + ic("plus", "s", 2.6) + "New</span>")}<div class="body" style="gap:12px">
+        <div class="pad"><h3 class="h1">Personas</h3><p class="muted small" style="margin-top:4px">Hosts you can reuse in any pod. Their private notes reach the writers, never listeners.</p></div>
+        <div class="pad" style="display:flex;flex-direction:column;gap:8px">${[["M", "#FFB257", "Mia", "The baker. Loves fermentation, hates shortcuts.", "Warm voice, female"], ["J", "#9CC2FF", "Jordan", "The skeptic. Asks for the source every time.", "Bright voice, male"], ["A", "#B69CFF", "Ada", "Asks the follow-up you're avoiding.", "Calm voice, female"]].map(([a, c, n, d, v]) => `<div class="card" style="padding:11px;display:flex;gap:10px"><span class="av" style="width:40px;height:40px;background:${c};font-size:16px">${a}</span><span style="flex:1;min-width:0"><b style="font-size:14px">${n}</b><br><span class="muted small">${d}</span><br><span style="font-size:11px;font-weight:700;color:var(--h-ink3)">${v}</span></span></div>`).join("")}</div>
+        <div class="pad"><div class="h2">Premade<span class="more">8 more</span></div></div>
+        <div class="pad rowx">${[["Dr. Elena Vance", "#4FD1A5"], ["Grace Okafor", "#F2C14E"], ["Theo", "#7C83FF"]].map(([n, c]) => `<span class="card" style="flex:none;width:118px;padding:10px;display:flex;flex-direction:column;gap:6px"><span class="av" style="background:${c}">${n[0]}</span><b style="font-size:12.5px">${n}</b></span>`).join("")}</div>
+      </div>`),
+    },
+    {
+      name: "Connections", route: "/connections", chg: "Requests on top with one-tap accept; your invite link is a copy button, not a form.", via: via("lists", "Loading lists"),
+      html: house(`${hdBack("You")}<div class="body" style="gap:12px">
+        <div class="pad"><h3 class="h1">Connections</h3><p class="muted small" style="margin-top:4px">People you share pods with. Both of you have to agree.</p></div>
+        <div class="pad"><div class="h2">Waiting for you</div></div>
+        <div class="pad" style="display:flex;flex-direction:column;gap:8px">${[["K", "#FFB257", "Kayla Brooks"], ["R", "#B69CFF", "Ruby Tan"]].map(([a, c, n]) => `<div class="card" style="padding:10px;display:flex;gap:10px;align-items:center"><span class="av" style="background:${c}">${a}</span><b style="flex:1;font-size:13.5px">${n}</b><span class="btn sec sm">Not now</span><span class="btn pri sm">Accept</span></div>`).join("")}</div>
+        <div class="pad"><div class="card" style="padding:12px;display:flex;flex-direction:column;gap:8px"><b style="font-size:14px">Invite someone</b><div style="display:flex;gap:8px"><span class="field" style="flex:1;height:38px;font-size:12px">impromptu.app/invite/7bbe</span><span class="btn pri sm">${ic("copy", "s")}Copy</span></div></div></div>
+        <div class="pad"><div class="h2">14 connections</div><div class="rows">${[["T", "#9CC2FF", "Theo"], ["D", "#4FD1A5", "Dre"]].map(([a, c, n]) => `<div class="r"><span class="av" style="background:${c}">${a}</span><b style="flex:1">${n}</b>${ic("more")}</div>`).join("")}</div></div>
+      </div>`),
+    },
+    {
+      name: "Pod stats", route: "/show/:id/stats", chg: "Three numbers, listeners over time with a hover readout, where people left, and who listened.", via: via("lists", "Loading lists"),
+      html: house(`${hdBack("Stats")}<div class="body" style="gap:11px">
+        <div class="pad"><h3 class="h1" style="font-size:22px">Wild Yeast and the Gold Rush</h3><p class="muted small">Live, 10 minutes, public</p></div>
+        <div class="pad tiles"><div class="tile"><b>212</b><span>Listeners</span></div><div class="tile"><b>128</b><span>At the peak</span></div><div class="tile"><b>7:40</b><span>Average stay</span></div></div>
+        <div class="pad"><div class="card chart" data-chart><span class="lbl" style="display:block;padding:2px 2px 6px">Listening at once</span><svg viewBox="0 0 270 120" role="img" aria-label="Listeners over the 10 minutes, rising to a peak of 128 around minute 6"></svg><span class="tip"></span></div></div>
+        <div class="pad"><div class="card" style="padding:11px;display:flex;flex-direction:column;gap:8px"><span class="lbl">Where people left</span><div class="drop">${[["Cold open", 18], ["Wild yeast", 9], ["The Gold Rush", 24], ["San Francisco", 6]].map(([n, v]) => `<div><span>${n}</span><i style="width:${v / 24 * 100}%"></i><em>${v}</em></div>`).join("")}</div></div></div>
+      </div>`),
+    },
+    {
+      name: "Admin", route: "/admin", chg: "Find a person, see their credits, grant more. Every grant asks for a note so the ledger explains itself.", via: via("lists", "Loading lists"),
+      html: house(`${hdBack("You")}<div class="body" style="gap:12px">
+        <div class="pad"><h3 class="h1">Admin</h3><p class="muted small" style="margin-top:4px">Grant demo credits and take pods down.</p></div>
+        <div class="pad"><div class="field">${ic("search", "s")}Search people by name or email</div></div>
+        <div class="pad rows">${[["A", "#9CC2FF", "Ada Lovell", "ada@example.com", 0], ["K", "#FFB257", "Kayla Brooks", "kayla@example.com", 25], ["T", "#7C83FF", "Theo Park", "theo@example.com", 140]].map(([a, c, n, e, cr]) => `<div class="r" style="padding:9px 0;box-shadow:0 1px 0 var(--h-line)"><span class="av" style="background:${c}">${a}</span><span class="tx"><b>${n}</b><span class="m">${e}</span></span><span class="credits" style="margin:0"><i></i>${cr}</span></div>`).join("")}</div>
+        <div class="pad"><div class="card" style="padding:12px;display:flex;flex-direction:column;gap:8px"><b style="font-size:14px">Give Ada credits</b><div class="seg"><span>10</span><span class="on">30</span><span>60</span><span>Other</span></div><div class="field" style="height:38px;font-size:12.5px">Note: Demo for the cooking club</div><span class="btn pri block">Grant 30 credits</span></div></div>
+      </div>`),
+    },
+  ]);
+
+  flow("Desktop", "At 1024 px and up, a left rail replaces the tab bar and the live show becomes the studio: stage, details, and a side panel for call-ins and the rundown.", [
+    {
+      name: "Home, desktop", route: "/ at 1024 px and up", chg: "Composer and Live now side by side; your pods as a shelf of sleeves.", via: via("boot", "Opening the app"), wide: true,
+      html: `<div class="desk"><div class="desk-in hz"><div class="dk-shell">
+        <nav class="rail">${wm()}<a class="on">${ic("home")}Home</a><a>${ic("compass")}Discover</a><a>${ic("lib")}Library</a><a>${ic("user")}You</a><span class="btn pri block"><span class="rec"></span>New pod</span>
+          <div class="foot"><span class="av ink">M</span><span><b>Marc</b><br><span class="muted">60 credits</span></span></div></nav>
+        <main class="dk-main"><div class="dk-hero"><div style="display:flex;flex-direction:column;gap:16px"><h3 class="h1">Hi Marc. What should today's pod be about?</h3>
+          <div class="card composer" style="padding:16px"><span class="area" style="font-size:17px;min-height:80px">Paste notes, drop a file, add a link, or type a topic</span><div style="display:flex;align-items:center;gap:8px"><div class="tools"><span class="tool">${ic("file", "s")}</span><span class="tool">${ic("link", "s")}</span><span class="tool">${ic("photo", "s")}</span></div><span style="flex:1"></span><span class="btn sec">${ic("mic", "s")}Co-host live</span><span class="btn pri"><span class="rec"></span>Start a pod</span></div></div></div>
+          <div style="display:flex;flex-direction:column;gap:10px"><div class="h2"><span class="dot"></span>Live now</div>${sleeve({ t: "Wild Yeast and the Gold Rush", g: GELS.pink, h: "Mia and Jordan, 128 listening", live: true, size: 300, fs: 66 })}</div></div>
+          <div class="h2" style="font-size:20px">Your pods<span class="more">Library</span></div>
+          <div class="dk-grid">${[["Why Bridges Sing", GELS.moss], ["First Apartment", GELS.flame], ["The Case for Naps", GELS.lav], ["Cats or Dogs", GELS.blue], ["Friday's Pitch", GELS.straw], ["Salt, Explained", GELS.sky]].map(([t, g]) => sleeve({ t, g, size: 0 })).join("")}</div>
+        </main></div></div></div>`,
+    },
+    {
+      name: "Studio, desktop", route: "/show/:id at 1024 px and up", chg: "Big captions on a 16:9 stage; call-ins wait on lines in the side panel with the rundown and transcript a tab away.", via: via("house", "House lights"), wide: true,
+      html: `<div class="desk"><div class="desk-in"><div class="studio" data-studio>
+        <nav class="mini-rail"><span class="wm" style="font-size:34px;color:#fff" aria-label="impromptu"><span class="iw" aria-hidden="true"><span class="i">i</span><span class="tittle"></span></span></span>${ic("home")}${ic("compass")}${ic("lib")}${ic("user")}</nav>
+        <div style="display:flex;flex-direction:column;gap:16px;min-width:0">
+          <div class="player st" style="--gel:${GELS.pink}"><div class="pl-top"><span class="tally"><i></i>ON AIR</span><span class="clock">${ring("ring", (i) => i <= 42)}<span>1:42</span></span><span class="s-dim">Chapter 2, The Gold Rush</span><span class="s-dim" style="margin-left:auto">128 listening</span></div>
+            <section class="s-caps"><div class="s-prev"></div><div class="nowwrap"></div></section>
+            <div class="pl-bot">${chaps.replace('class="chaps"', 'class="chaps" style="padding:0 0 10px"')}<div style="display:flex;align-items:center;gap:14px">${ic("back15")}${ic("pause", "", 2.6)}<span class="s-dim">Live</span><span style="flex:1"></span>${ic("volume")}${ic("restyle")}</div></div></div>
+          <div style="display:flex;align-items:center;gap:14px"><div style="flex:1"><b style="font:800 30px/1 var(--f-display);font-stretch:88%">Wild Yeast and the Gold Rush</b><p style="color:#9AA1B2;font-size:15px;margin-top:6px">Friends chatting with Mia and Jordan. Public.</p></div><span class="btn ghost">${ic("file", "s")}Add context</span><span class="btn white">${ic("mic", "s")}Interrupt</span></div>
+        </div>
+        <aside class="panel"><div class="tabs"><span class="on">Call-ins</span><span>Context</span><span>Rundown</span><span>Transcript</span></div>
+          <div class="pb"><div class="line air" style="--on-dim:#B9BCC8"><span class="lamp"></span><span class="msg">Marc: my grandma's starter is from Alaska</span><span class="stt" style="color:#fff">On air</span></div><div class="line wait" style="--on-dim:#B9BCC8"><span class="lamp"></span><span class="msg">Kayla: is rye starter different?</span><span class="stt">about 40 s</span></div>
+            ${[["R", "#B69CFF", "Ruby", "2:10", "The Gold Rush part is my favorite so far"], ["D", "#4FD1A5", "Dre", "1:52", "Do bakeries share starters?"]].map(([a, c, n, t, x]) => `<div class="callin"><span class="av" style="background:${c}">${a}</span><span class="tx"><b>${n}</b><small>${t}</small><p>${x}</p></span></div>`).join("")}
+          </div><div style="padding:12px;box-shadow:inset 0 1px 0 #252836;display:flex;gap:8px"><span class="s-field" style="--on-dim:#9AA1B2">Call in to the hosts</span><span class="rnd white">${ic("mic")}</span></div></aside>
+      </div></div></div>`,
+    },
+  ]);
+
+  // =================================================================================
+  // Round 2: features added since the first pass (briefings, interrupting, research and
+  // call-in promises, the seekable timeline, voice memos, show intros)
+  // =================================================================================
+  const bars = (n, seed = 1, lo = 0.2, cls = "") => Array.from({ length: n }, (_, i) => {
+    const v = ((Math.sin((i + 1) * 12.9898 * seed) * 43758.5453) % 1 + 1) % 1;
+    return `<i class="${cls && i < n * 0.4 ? cls : ""}" style="height:${Math.round((lo + v * (1 - lo)) * 100)}%"></i>`;
+  }).join("");
+  const words = (text, frac = 0.6) => text.split(" ").map((w, i, a) => `<span class="w ${i < a.length * frac ? "said" : i < a.length * frac + 1 ? "now" : ""}" style="--wp:.5">${w}</span>`).join(" ");
+  const chaseLamp = `<span class="lampx chase"><svg viewBox="0 0 18 18" aria-hidden="true">${Array.from({ length: 8 }, (_, i) => { const a = (i / 8) * Math.PI * 2; return `<circle cx="${9 + 7 * Math.cos(a)}" cy="${9 + 7 * Math.sin(a)}" r="1.6" opacity="${(0.15 + i / 8 * 0.85).toFixed(2)}"/>`; }).join("")}</svg></span>`;
+  const gsugg = (terms) => `<div class="gsugg"><small>Google's Search Suggestions render here as Google sends them (sandboxed, unstyled by us)</small><span class="chips">${terms.map((t) => `<span class="chip">${t}</span>`).join("")}</span></div>`;
+  const flowBy = (name) => FLOWS.find((f) => f.name === name);
+  const recTool = `<span class="tool" style="background:#FFE3E0" title="Record a voice memo"><i style="width:12px;height:12px;border-radius:50%;background:#FF3B30;display:block"></i></span>`;
+
+  flowBy("Arriving").boards.splice(2, 0, {
+    isNew: true, name: "Home, briefing waiting", route: "/ in the morning", chg: "A ready briefing sits above the composer; the composer gains a record button for voice memos.", via: via("watch", "Checking your watchlist"),
+    html: house(`${hd()}<div class="body" style="gap:13px"><div class="pad"><h3 class="h1">Morning, Marc.</h3></div>
+      <div class="pad"><div class="brief-ready"><span class="play" style="background:#fff;color:#141720">${ic("play", "l")}</span><span style="flex:1;min-width:0"><b>Your briefing is ready</b><span class="m">Morning roundup. 6 updates from 4 sites, 10 min.</span></span></div></div>
+      <div class="pad"><div class="card composer"><span class="area">What should today's pod be about?</span>
+        <div class="tools">${recTool}<span class="tool">${ic("file", "s")}</span><span class="tool">${ic("link", "s")}</span><span class="tool">${ic("photo", "s")}</span></div>
+        <div class="go"><span class="btn pri" style="flex:1"><span class="rec"></span>Start a pod</span><span class="btn sec">${ic("mic", "s")}Co-host</span></div></div></div>
+      <div class="pad"><div class="h2"><span class="dot"></span>Live now<span class="more">See all</span></div></div>
+      <div class="pad rowx">${sleeve({ t: "Wild Yeast and the Gold Rush", g: GELS.pink, h: "Mia and Jordan", live: true, size: 128 })}${sleeve({ t: "Night Shift Radio", g: GELS.blue, h: "Theo", live: true, size: 128 })}</div>
+    </div>${tabbar("Home", true)}`),
+  });
+
+  flowBy("Making a pod").boards.splice(2, 0, {
+    isNew: true, isUpd: true, name: "Create: research and intro", route: "/new (extras)", chg: "Research is one switch with its price on it; the show intro is one switch with its name on it. Live pods pick their theme for you, so there's no music choice here. A voice memo is one tap away.", via: via("golive", "Go live", "Leads to"),
+    html: house(`${hdBack("New pod")}<div class="body" style="gap:13px">
+      <div class="pad"><div class="card" style="padding:11px 12px;display:flex;gap:10px;align-items:center"><span class="av" style="background:#FFE3E0;color:#C81E3A">${ic("mic", "s")}</span><span style="flex:1;font-size:13px;font-weight:700">Got a rough voice memo? Turn it into a finished episode</span>${ic("chevR", "s")}</div></div>
+      <div class="pad" style="display:flex;flex-direction:column;gap:6px"><span class="lbl">Research</span>
+        <div class="card" style="padding:12px"><div class="swrow"><span style="flex:1"><b>${ic("search", "s")} Let the hosts look things up</b><span class="d">When a call-in or a chapter needs facts your source doesn't have, they search Google while they keep talking, then say where it came from. +0.5 credits a minute.</span></span><span class="sw on"></span></div></div></div>
+      <div class="pad" style="display:flex;flex-direction:column;gap:6px"><span class="lbl">Intro</span>
+        <div class="card" style="padding:12px"><div class="swrow"><span style="flex:1"><b>Open with your show intro, Walk &amp; Talk</b><span class="d">Your theme plays while the hosts get ready, then they welcome listeners by name. <u>Edit</u></span></span><span class="sw on"></span></div></div></div>
+      <div class="pad"><p class="muted small">No show intro yet? Every pod still opens with a studio theme and the hosts' welcome. <u>Name your show</u> and they'll welcome listeners to it.</p></div>
+    </div><div class="gobar"><p>Uses 15 credits: 10 for the pod, 5 for research. You have 60.</p><span class="btn pri block" style="height:52px;font-size:17px"><span class="rec"></span>Go live</span></div>`),
+  });
+
+  flow("Voice memo", "Talk into your phone on a walk; get back a finished, researched, scored pod. Recording is a stage moment; the options and the outline review are house screens; production runs on a lamp spine you can leave.", [
+    {
+      isNew: true, name: "Voice memo", route: "/memo", chg: "Record here or upload from your phone's voice memos app. The recorder is a small stage, so tapping it grows into the full recording screen.", via: via("house", "House lights"),
+      html: house(`${hdBack("New pod")}<div class="body" style="gap:12px">
+        <div class="pad"><h3 class="h1">Make a pod from a voice memo</h3><p class="muted small" style="margin-top:6px">Talk it through, rough is fine. The hosts look things up, shape it into a story and record a finished episode, music and all.</p></div>
+        <div class="pad"><div class="memo-start"><div class="rec">${ring("ring", () => false, 2.2)}<span class="rb">${ic("mic", "l")}</span></div><b style="font-size:15px">Tap to record</b><p>Say what's on your mind: the idea, why it matters to you, what you wonder about. A couple of minutes is plenty.</p></div></div>
+        <div class="pad"><span class="btn sec block">${ic("file", "s")}Upload a recording</span><p class="muted" style="font-size:11.5px;margin-top:8px">On a walk with your phone locked? Record in your phone's voice memos app, then upload it here. Up to 14 MB and 10 minutes.</p></div>
+      </div>`),
+    },
+    {
+      isNew: true, isUpd: true, name: "Recording", route: "/memo", chg: "The record button sits in the studio clock; one dot is ten seconds, so the ring is the 10-minute limit. Pause holds the ring where it is.", via: via("memo", "Recording a memo"),
+      html: stage(`<header class="s-top"><span class="back" style="display:inline-flex;align-items:center;gap:4px;font-weight:700;font-size:14px">${ic("chevL", "s", 2.4)}New pod</span><span class="s-dim" style="margin-left:auto">Voice memo</span></header>
+        <div style="flex:1;display:flex;flex-direction:column;justify-content:center;gap:16px">
+          <div style="text-align:center"><b style="font:800 54px/1 var(--f-display);font-stretch:80%;font-variant-numeric:tabular-nums">2:14</b><p class="s-dim" style="margin-top:6px;font-size:13px">Up to 10 minutes. Each dot is ten seconds.</p></div>
+          <div class="rec">${ring("ring", (i) => i < 14, 2.4)}<span class="rb stop"><i></i></span></div>
+          <div class="levels">${bars(26, 3, 0.15)}</div></div>
+        <div style="padding:0 18px 10px;display:flex;gap:8px"><span class="btn ghost" style="flex:1">${ic("pause", "s", 2.6)}Pause</span><span class="btn white" style="flex:1">${ic("check", "s", 2.6)}Done</span></div>
+        <p style="text-align:center;padding-bottom:24px;font-size:13px;font-weight:700;color:var(--on-dim)">Start over</p>`, GELS.tung),
+    },
+    {
+      isNew: true, isUpd: true, name: "Memo options", route: "/memo (after recording)", chg: "One page: your memo plays at the top; music says what it costs and how long it takes; the format can be picked from what you said; intro and review are one switch each.", via: via("memo", "Recording a memo"),
+      html: house(`${hdBack("Voice memo")}<div class="body" style="gap:11px">
+        <div class="pad"><div class="memo-chip"><span class="pb">${ic("play", "s")}</span><span class="wv">${bars(34, 5, 0.2, "p")}</span><span style="font-size:12px;font-weight:800;font-variant-numeric:tabular-nums">2:14</span></div>
+          <div style="display:flex;gap:14px;margin-top:6px;font-size:12px;font-weight:700;color:var(--h-ink2)"><span>${ic("mic", "s")} Record again</span><span>${ic("file", "s")} Choose another</span></div></div>
+        <div class="pad" style="display:flex;flex-direction:column;gap:6px"><span class="lbl">How long?</span><div class="lenpick">${[5, 10, 15].map((m) => `<span class="${m === 15 ? "on" : ""}">${ring("ring", (i) => i < m)}${m} min<small>${m} credits</small></span>`).join("")}</div></div>
+        <div class="pad" style="display:flex;flex-direction:column;gap:6px"><span class="lbl">Theme music</span>
+          <span class="radio2 on"><span class="rd"></span><span><b>Your show's theme</b><span class="d">The theme from your show intro.</span></span></span>
+          <span class="radio2"><span class="rd"></span><span><b>Original music, +5 credits</b><span class="d">Made for this episode and yours to reuse. Takes a few extra minutes.</span></span></span></div>
+        <div class="pad" style="display:flex;flex-direction:column;gap:6px"><span class="lbl">Format, optional</span><div class="chips"><span class="chip on" style="box-shadow:none">${ic("sparkle", "s")}From my memo</span><span class="chip">Idea breakdown</span><span class="chip">Science deep-dive</span></div></div>
+        <div class="pad"><div class="card" style="padding:12px;display:grid;gap:12px"><div class="swrow"><span style="flex:1"><b>Open with Walk &amp; Talk</b><span class="d">Your show intro</span></span><span class="sw on"></span></div><div class="swrow"><span style="flex:1"><b>Review the outline first</b><span class="d">Credits are used when you press Produce.</span></span><span class="sw on"></span></div></div></div>
+      </div><div class="gobar"><p>Uses 15 credits when you press Produce. You have 60.</p><span class="btn pri block" style="height:52px;font-size:17px"><span class="rec"></span>Make my pod</span></div>`),
+    },
+    {
+      isNew: true, name: "Making your pod", route: "/show/:id (being made)", chg: "Each stage is a lamp on a spine and shows what it produced: a line from your memo, what research found, the title and chapters.", via: via("memomake", "Making a pod from a memo"),
+      html: `<div class="scr" style="background:#0B0C12;color:#fff;display:flex;flex-direction:column;--gel-text:#CFE3FF">
+        <p style="margin:52px 18px 0;font-size:12.5px;font-weight:700;color:#8C92A3">Making your pod</p>
+        <h3 style="margin:5px 18px 0;font:800 28px/1 var(--f-display);font-stretch:84%">Bread, Banter and Bad Puns</h3>
+        <div style="margin:14px auto 12px;width:104px;height:104px;position:relative">${ring("ring", (i) => i < 33 && i % 8 !== 7, 2.6)}<b style="position:absolute;inset:0;display:grid;place-items:center;font:800 22px var(--f-display);font-stretch:86%">55%</b></div>
+        <ol class="spine">
+          <li class="done"><span class="lampx"></span><span>Listening to your memo<small>"&hellip;so bread is basically a pet you can eat."</small></span></li>
+          <li class="done"><span class="lampx"></span><span>Looking things up<small>9 facts, 2 to double-check</small></span></li>
+          <li class="done"><span class="lampx"></span><span>Planning the episode<small>6 chapters, 15 minutes</small></span></li>
+          <li class="now"><span class="lampx amber blink"></span><span>Recording the hosts<small>Chapter 3 of 6</small></span></li>
+          <li><span class="lampx"></span><span>Adding the music</span></li>
+          <li><span class="lampx"></span><span>Mixing</span></li>
+          <li><span class="lampx"></span><span>Saving the episode</span></li></ol>
+        <p style="margin:auto 18px 24px;font-size:12.5px;color:#8C92A3;text-align:center">You can leave this page. It'll be in Your pods when it's ready.<br><u style="color:#C9CDD8">Stop and delete</u></p><span class="island"></span></div>`,
+    },
+    {
+      isNew: true, isUpd: true, name: "Review the outline", route: "/show/:id (review)", chg: "The idea in one line, findings with their outlet and an honest flag, chapters you can retitle, move and remove. Nothing is charged until Produce.", via: via("memomake", "Making a pod from a memo"),
+      html: house(`${hdBack("Your pods")}<div class="body" style="gap:11px">
+        <div class="pad"><span class="chip" style="height:24px;font-size:11px">Ready for you to review</span><h3 class="h1" style="margin-top:8px">Check the outline</h3><p class="muted small" style="margin-top:4px">Nothing's recorded yet. Change anything you like, then press Produce.</p></div>
+        <div class="pad"><div class="idea"><b>The idea:</b> sourdough is a living link to the Gold Rush. <u style="color:var(--h-ink2)">What we heard (2:14)</u></div></div>
+        <div class="pad"><div class="card" style="padding:10px 12px"><span class="lbl">What the research found</span>
+          <div class="finding"><span class="ck">${ic("check", "s", 3)}</span><span>Miners carried starter in pouches during the 1849 Gold Rush.<br><span class="src">Bread history archive, 2021</span></span></div>
+          <div class="finding"><span class="ck off"></span><span>Long-fermented sourdough is safe for coeliacs.<br><span class="src">Food science journal, 2023</span><span class="flagp amber">SOURCES DISAGREE</span></span></div>
+          ${gsugg(["sourdough gold rush miners"])}</div></div>
+        <div class="pad" style="display:flex;flex-direction:column;gap:6px"><span class="lbl">The outline</span>
+          ${[["Cold open: a pet you can eat", "Why a jar of flour and water outlives its owners"], ["Wild yeast, explained", "What's actually alive in a starter"], ["The Gold Rush", "Miners, pouches and a nickname"]].map(([t, d], i) => `<div class="beatrow"><span class="n">${i + 1}</span><span><b>${t}</b><span class="d">${d}</span></span><span class="tools">${ic("chevU", "s")}${ic("chevD", "s")}${ic("trash", "s")}</span></div>`).join("")}
+          <span class="btn sec sm" style="align-self:flex-start">${ic("plus", "s", 2.6)}Add a chapter</span></div>
+      </div><div class="gobar"><p>Uses 15 credits. You have 60.</p><span class="btn pri block" style="height:52px;font-size:17px"><span class="rec"></span>Produce</span></div>`),
+    },
+    {
+      isNew: true, isUpd: true, name: "Didn't get made", route: "/show/:id (failed)", chg: "Says where it stopped, that the credits came back, and what trying again costs. Try again resumes from the outline instead of starting over.", via: via("memomake", "Making a pod from a memo"),
+      html: `<div class="scr" style="background:#0B0C12;color:#fff;display:flex;flex-direction:column">
+        <p style="margin:52px 18px 0;font-size:12.5px;font-weight:700;color:#8C92A3">Voice memo</p>
+        <h3 style="margin:5px 18px 0;font:800 28px/1 var(--f-display);font-stretch:84%">Didn't get made</h3>
+        <p style="margin:8px 18px 0;color:#A6ACBC;font-size:13.5px">It stopped while recording the hosts. The credits it used are back in your account.</p>
+        <ol class="spine" style="margin-top:22px">
+          <li class="done"><span class="lampx"></span><span>Listening to your memo</span></li><li class="done"><span class="lampx"></span><span>Looking things up</span></li>
+          <li class="done"><span class="lampx"></span><span>Planning the episode</span></li><li class="now"><span class="lampx red"></span><span>Recording the hosts<small style="color:#FF9C8A">The voice service didn't answer.</small></span></li>
+          <li><span class="lampx"></span><span>Adding the music</span></li></ol>
+        <div style="margin-top:auto;padding:0 18px 30px;display:flex;flex-direction:column;gap:8px"><p style="text-align:center;font-size:12.5px;color:#8C92A3">Trying again picks up from the outline and uses 15 credits. You have 60.</p><span class="btn white block">${ic("sparkle", "s")}Try again</span><span style="text-align:center;font-size:13px;font-weight:700;color:#A6ACBC">Delete</span></div><span class="island"></span></div>`,
+    },
+  ], true);
+
+  flow("Steering a live pod", "The producer can cut in by voice or text; call-ins the hosts promise to come back to stay on a lit line until they do; with Research on, answers arrive with their sources; and the timeline can be dragged back.", [
+    {
+      isNew: true, name: "Interrupt the show", route: "sheet, producer only", chg: "The show holds for you. Hold the button to talk: the studio clock follows your voice; let go and the hosts answer.", via: via("interrupt", "Interrupt the show"),
+      html: `<div class="scr" style="background:#000"><div class="recede">${stage(`${stageTop(`<span class="tally" style="background:#2B1412;color:#7A3E37;box-shadow:none"><i style="background:#7A3E37"></i>ON AIR</span>`, `<span class="s-dim" style="margin-left:auto">Paused for you</span>`)}${sEp()}${capsStatic("Mia", "And the tang? That's a bacterium named after the city.")}${hostsRow}${sBar}`)}</div><div class="scrim"></div>
+        <div class="sheet"><span class="grab"></span><h3>Interrupt the show<span class="x">${ic("close", "s")}</span></h3>
+          <p class="muted small">The show's paused. Ask the hosts anything, or tell them where to take it. They answer, then carry on.</p>
+          <div class="talkbtn on">${ring("ring", (i) => i < 10 || i > 50, 2.6)}<span class="btn-t">${ic("mic", "l")}</span></div>
+          <p style="text-align:center;font-weight:800;font-size:13px;margin-top:-6px">Listening. Let go to send.</p>
+          <div style="display:flex;gap:8px"><span class="area" style="min-height:0;height:44px;flex:1;display:flex;align-items:center;padding:0 12px;color:#fff">Why does sourdough keep longer?</span><span class="btn white">Ask</span></div>
+          <div class="chips"><span class="chip">${ic("plus", "s", 2.4)}Go deeper</span><span class="chip">${ic("jumpLive", "s")}Move on</span><span class="chip">${ic("restyle", "s")}Steer</span></div></div><span class="island"></span></div>`,
+    },
+    {
+      isNew: true, name: "Your detour, on air", route: "/show/:id", chg: "The hosts answer you by name; the chapter bar shows the detour as its own amber piece, and the transcript marks it.", via: via("interrupt", "Interrupt the show"),
+      html: stage(`${stageTop()}${sEp("Wild Yeast and the Gold Rush", "Your detour, then back to the Gold Rush")}
+        <section class="s-caps"><div class="s-prev"><span class="pill-amber">YOU ASKED</span> Why does sourdough keep longer than normal bread?</div>
+          <div><div class="s-who"><i></i>Jordan<span class="pill-amber">Answering you</span></div><div class="s-now">${words("Good question. The acid from the bacteria slows mold down, so a loaf keeps for days.", 0.55)}</div></div></section>
+        <div class="chap-x"><i class="done"></i><i><b style="width:58%"></b></i><span class="det"></span><i></i><i></i></div>${hostsRow}${sBar}`),
+    },
+    {
+      isNew: true, name: "Call-ins, every state", route: "sheet / Now playing", chg: "One lamp language for the whole queue, including the two new states: looking it up, and coming back to it.", via: via("lookup", "Looking it up"),
+      html: `<div class="scr" style="background:#000"><div class="recede">${stage(`${stageTop()}${sEp()}${capsStatic("Jordan", "The nickname stuck to the people, not just the bread.")}${hostsRow}${sBar}`)}</div><div class="scrim"></div>
+        <div class="sheet"><span class="grab"></span><h3>Call-ins<span class="x">${ic("close", "s")}</span></h3>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <div class="line"><span class="lampx red"></span><span class="msg">Marc: my grandma's starter is from Alaska</span><span class="stt" style="color:#fff">On air</span></div>
+            <div class="line"><span class="lampx amber"></span><span class="msg">Dre: do bakeries share starters?</span><span class="stt">Up next, 0:20</span></div>
+            <div class="line"><span class="lampx" style="background:none;box-shadow:none;position:relative">${chaseLamp.replace('class="lampx chase"', 'class="lampx chase" style="position:absolute;inset:0"')}</span><span class="msg">Kayla: is rye starter different?</span><span class="stt">Looking it up</span></div>
+            <div class="line"><span class="lampx amber"></span><span class="msg">Ruby: what about gluten-free?</span><span class="stt ret">${ic("ret", "s")}Coming back</span></div>
+            <div class="line"><span class="lampx amber blink"></span><span class="msg">Theo: best flour for beginners?</span><span class="stt">about 1 min</span></div>
+            <div class="line missed"><span class="lampx"></span><span class="msg">Ada: does sourdough freeze well?</span><span class="stt">Not answered</span></div></div>
+          <p class="muted small">The hosts read every call-in. If they say they'll come back to one, it stays on its line until they do.</p></div><span class="island"></span></div>`,
+    },
+    {
+      isNew: true, name: "Research desk", route: "Now playing, Context", chg: "Each lookup says who it was for, where the facts came from, and carries Google's suggestions as Google requires.", via: via("lookup", "Looking it up"),
+      html: stage(`<header class="np-top">${ic("chevD")}<span class="from">Playing live from<b>Your pods</b></span>${ic("more")}</header>
+        <div style="padding:14px 16px 0"><div class="seg"><span>Transcript</span><span>Call-ins</span><span class="on">Context</span></div></div>
+        <div class="np-sec" style="margin-top:12px"><div style="display:flex;gap:10px;align-items:center"><span class="rnd" style="width:36px;height:36px;border-radius:10px">${ic("search", "s")}</span><span style="flex:1;min-width:0"><b style="font-size:14px">Rye vs wheat starters</b><br><span class="s-dim" style="font-size:12px">Looked up for Kayla's call-in</span></span></div>
+          <div class="srcs" style="margin-top:2px"><span>${ic("globe", "s")}kingarthurbaking.com</span><span>${ic("globe", "s")}seriouseats.com</span></div>${gsugg(["rye sourdough starter", "rye vs wheat starter"])}</div>
+        <div class="np-sec"><div style="display:flex;gap:10px;align-items:center"><span class="rnd" style="width:36px;height:36px;border-radius:10px">${ic("search", "s")}</span><span style="flex:1;min-width:0"><b style="font-size:14px">Fog and fermentation</b><br><span class="s-dim" style="font-size:12px">For "Why San Francisco tastes different"</span></span><span class="pill-amber">FOR LATER</span></div></div>
+        <div class="np-sec"><div style="display:flex;gap:10px;align-items:center"><span class="rnd" style="width:36px;height:36px;border-radius:10px">${ic("file", "s")}</span><span style="flex:1"><b style="font-size:14px">bread-notes.pdf</b><br><span class="s-dim" style="font-size:12px">Main source, in use</span></span></div></div>`),
+    },
+    {
+      isNew: true, name: "Scrubbing back", route: "Now playing / Live", chg: "Drag the chapter bar: a bubble says where you'll land; Back to live snaps you to the edge. Chapters that have happened can be tapped.", via: via("scrub", "Scrubbing back"),
+      html: stage(`<header class="np-top">${ic("chevD")}<span class="from">Playing live from<b>Your pods</b></span>${ic("more")}</header>
+        ${sleeve({ t: "Wild Yeast", g: GELS.pink, cls: "np-cover", size: 0 })}
+        <div class="np-meta"><b>Wild Yeast and the Gold Rush</b><span>Mia and Jordan</span></div>
+        <div class="scrubx" style="margin-top:46px"><div class="bar"><i><b style="width:100%"></b></i><i><b style="width:36%"></b></i><i></i><i></i></div><span class="ghost" style="left:57%"></span><span class="knob" style="left:34%"></span><span class="bub" style="left:34%">-2:10, The Gold Rush</span></div>
+        <div style="display:flex;justify-content:space-between;margin:12px 22px 0;font-size:11.5px;color:var(--on-dim)"><span>Up to 5 minutes back</span><span style="color:#fff;font-weight:800">Live 4:52</span></div>
+        <div class="tr" style="gap:18px">${ic("back15", "l")}<span class="play">${ic("pause", "l", 2.6)}</span><span class="behind">${ic("jumpLive", "s")}Back to live</span></div>
+        <div style="padding:16px 16px 0"><div class="jumpc"><span>Cold open<small>${ic("play", "s")}0:00</small></span><span class="now">The Gold Rush<small>Now</small></span><span>Wild yeast<small>Next</small></span></div></div>`),
+    },
+  ], true);
+
+  flow("Briefings", "A private pod made for you from your watchlist and topics. Make one now or have one waiting each morning; only you can hear it, and it's deleted after two days.", [
+    {
+      isNew: true, name: "Briefings", route: "/briefings", chg: "Today's briefing first; making one is a template, a length on the clock, and one button that states the cost.", via: via("watch", "Checking your watchlist"),
+      html: house(`${hdBack("You")}<div class="body" style="gap:12px">
+        <div class="pad"><h3 class="h1">Briefings</h3><p class="muted small" style="margin-top:4px">A private pod made just for you. Only you can hear it, and it's deleted after two days.</p></div>
+        <div class="pad"><div class="brief-ready"><span class="play" style="background:#fff;color:#141720">${ic("play", "l")}</span><span style="flex:1;min-width:0"><b>Morning roundup</b><span class="m">Ready since 6:40. 6 updates, 10 min. Deleted in 41 h.</span></span></div></div>
+        <div class="pad"><div class="card" style="padding:12px;display:grid;gap:10px"><b style="font:780 16px/1 var(--f-display);font-stretch:94%">Make one now</b>
+          <div class="chips"><span class="chip on">Morning roundup</span><span class="chip">Commute</span><span class="chip">Deep-dive</span></div>
+          <div class="lenpick">${[5, 10, 15].map((m) => `<span class="${m === 10 ? "on" : ""}">${ring("ring", (i) => i < m)}${m} min<small>${m / 5} credit${m === 5 ? "" : "s"}</small></span>`).join("")}</div>
+          <span class="btn pri block">${ic("play", "s")}Make my briefing, 2 credits</span>
+          <p class="muted" style="font-size:11.5px;text-align:center">It goes live as it's made, so you can cut in with a question.</p></div></div>
+        <div class="pad"><div class="card" style="padding:12px"><div class="swrow"><span style="flex:1"><b>Ready every morning</b><span class="d">Weekdays at 7:00, Morning roundup, 10 min</span></span><span class="sw on"></span></div></div></div>
+      </div>`),
+    },
+    {
+      isNew: true, name: "Every morning", route: "/briefings, schedule", chg: "The time is the hero; days are one row; the cost and the skip rule are said plainly next to Save.", via: via("sheet", "Sheets"),
+      html: house(`${hdBack("Briefings")}<div class="body" style="gap:14px">
+        <div class="pad"><div class="swrow"><span style="flex:1"><b style="font:780 18px/1.1 var(--f-display);font-stretch:92%">Have one ready every morning</b><span class="d">On. One is waiting at the time you set.</span></span><span class="sw on"></span></div></div>
+        <div class="pad" style="text-align:center"><span class="lbl">Ready by</span><div class="timebig">7:00</div><span class="muted small">Pacific time</span></div>
+        <div class="pad" style="display:flex;flex-direction:column;gap:6px"><span class="lbl">Days</span><div class="days">${["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d, i) => `<span class="${i < 5 ? "on" : ""}">${d}</span>`).join("")}</div></div>
+        <div class="pad" style="display:flex;flex-direction:column;gap:6px"><span class="lbl">Template</span><div class="field" style="color:var(--h-ink)">Morning roundup<span style="margin-left:auto">${ic("chevD", "s")}</span></div></div>
+        <div class="pad"><p class="muted small">Made 20 minutes ahead. 2 credits each, charged when it's made. If you're out of credits that morning, it's skipped.</p></div>
+      </div><div class="gobar"><span class="btn pri block">Save: ready weekdays at 7:00</span><p>Next one ready by Thursday, 7:00</p></div>`),
+    },
+    {
+      isNew: true, name: "Watchlist", route: "/briefings, watchlist", chg: "Each watch has the lamp a call-in has: amber with a count when updates are waiting, grey when quiet or paused.", via: via("watch", "Checking your watchlist"),
+      html: house(`${hdBack("Briefings")}<div class="body" style="gap:10px">
+        <div class="pad"><h3 class="h1">Watchlist</h3><p class="muted small" style="margin-top:4px">Sites, pages and news searches. Each briefing reports what's new since the last one.</p></div>
+        <div class="pad"><div class="field" style="padding-right:5px">A site, a page, or words to search for<span class="btn pri sm" style="margin-left:auto">${ic("plus", "s", 2.6)}Watch</span></div></div>
+        <div class="pad chips"><span class="chip on">Work it out</span><span class="chip">New posts</span><span class="chip">Page changes</span><span class="chip">News search</span></div>
+        <div class="pad">
+          <div class="watch"><span class="lampx amber"></span><span style="min-width:0"><b>Ferment Lab</b><span class="k">fermentlab.blog, new posts</span><ul><li>New: <u>Rye starters, ranked</u></li><li>New: <u>Why your loaf came out flat</u></li></ul></span><span class="cnt-badge">3</span></div>
+          <div class="watch"><span class="lampx amber"></span><span style="min-width:0"><b>Acme Ovens pricing</b><span class="k">acmeovens.example/pricing, changes</span><span class="wst" style="display:block">Changed 2 h ago</span></span><span class="cnt-badge">1</span></div>
+          <div class="watch"><span class="lampx amber"></span><span style="min-width:0"><b>"climate tech funding"</b><span class="k">News search, with Google</span>${gsugg(["climate tech funding"])}</span><span class="cnt-badge">2</span></div>
+          <div class="watch"><span class="lampx"></span><span style="min-width:0"><b>Old Bakers Forum</b><span class="wst warn" style="display:block">Paused: the site asks crawlers not to visit.</span></span>${ic("more", "s")}</div>
+        </div>
+      </div>`),
+    },
+    {
+      isNew: true, name: "Briefing template", route: "sheet", chg: "What's in it is a checklist of segments with a line each; topics are plain words; the sheet rises over the house.", via: via("sheet", "Sheets"),
+      html: `<div class="scr hz"><div class="recede">${house(`${hdBack("You")}<div class="body" style="gap:12px"><div class="pad"><h3 class="h1">Briefings</h3></div><div class="pad"><div class="brief-ready"><span class="play" style="background:#fff;color:#141720">${ic("play", "l")}</span><span><b>Morning roundup</b></span></div></div></div>`)}</div><div class="scrim"></div>
+        <div class="sheet house"><span class="grab"></span><h3>New template<span class="x">${ic("close", "s")}</span></h3>
+          <div class="field" style="color:var(--h-ink)">My commute</div>
+          <span class="lbl">What's in it</span>
+          <div style="display:grid;gap:6px">${[["Watchlist roundup", "What's new on the sites you watch", 1], ["Deep-dive", "One of your topics, explored properly", 1], ["Quick hits", "Three fast takes on your topics", 0], ["Try this today", "One small, practical thing to try", 1], ["Your own segment", "You name it and say what it covers", 0]].map(([t, d, on]) => `<span class="secpick ${on ? "on" : ""}"><span class="ck">${on ? ic("check", "s", 3) : ""}</span><span><b>${t}</b><span class="d">${d}</span></span></span>`).join("")}</div>
+          <span class="lbl">Topics you care about</span><div class="field" style="height:auto;padding:10px 14px;color:var(--h-ink)">Trail running, Spanish, climate tech</div>
+          <span class="btn pri block">Save template</span></div><span class="island"></span></div>`,
+    },
+    {
+      isNew: true, isUpd: true, name: "Briefing on air", route: "/show/:id (briefing)", chg: "The morning gel, a private badge instead of a listener count, each section named, every fact with its source. It opens on a theme matched to the template's mood, never your show intro: a briefing is yours, not your show's.", via: via("watch", "Checking your watchlist"),
+      html: stage(`${stageTop(`<span class="tally"><i></i>ON AIR</span>`, `<span class="private" style="margin-left:auto">${ic("lock", "s")}Only you</span>`)}${sEp("Morning roundup", "Watchlist roundup, 1 of 4")}
+        <section class="s-caps"><div class="s-prev">Jordan: Morning, Marc. Four things changed overnight, starting with your oven people.</div>
+          <div><div class="s-who"><i></i>Mia</div><div class="s-now" style="font-size:25px">${words("Acme Ovens raised the price of their pro model by ninety dollars. The old price is still on their sale page, for now.", 0.5)}</div>
+          <div class="srcs"><span>${ic("globe", "s")}acmeovens.example/pricing</span><span>Changed 2 h ago</span></div></div></section>
+        ${chaps}${hostsRow}
+        <div class="s-bar"><span class="s-field">Deleted in 47 hours</span><span class="rnd white" style="width:auto;padding:0 16px;border-radius:999px;font-weight:800;gap:6px;display:flex;font-size:14px">${ic("mic", "s")}Interrupt</span></div>`, "#6FB3FF"),
+    },
+  ], true);
+
+  flow("Show intro", "Every pod opens with a few seconds of theme music and the hosts' welcome. Name your show once and every pod welcomes listeners to it.", [
+    {
+      isNew: true, isUpd: true, name: "Your show intro", route: "/intro", chg: "Your show's card plays its own intro and quotes the welcome the hosts will give; theme music is tiles you can hear, starting with one matched to each pod; one switch for new pods.", via: via("lists", "Loading lists"),
+      html: house(`${hdBack("You")}<div class="body" style="gap:11px">
+        <div class="pad"><h3 class="h1">Your show intro</h3></div>
+        <div class="pad"><div class="intro-card" style="--gel:#FFB257"><div class="nm">Walk &amp; Talk</div><p class="ln">"Welcome to Walk &amp; Talk, the show where big ideas start on a walk."</p><div class="wv">${bars(40, 7, 0.15)}</div><span class="play" style="position:absolute;right:14px;top:14px;width:44px;height:44px">${ic("play", "s")}</span></div></div>
+        <div class="pad" style="display:flex;flex-direction:column;gap:6px"><span class="lbl">Show name</span><div class="field" style="color:var(--h-ink)">Walk &amp; Talk</div></div>
+        <div class="pad" style="display:flex;flex-direction:column;gap:6px"><span class="lbl">Your intro line, optional</span><div class="field" style="color:var(--h-ink)">the show where big ideas start on a walk</div></div>
+        <div class="pad" style="display:flex;flex-direction:column;gap:6px"><span class="lbl">Theme music</span><div class="theme-row">${[["Matched to each pod", "linear-gradient(90deg,#FF6B9A,#6FB3FF,#4FD1A5)"], ["Morning walk", GELS.tung, 1], ["Big ideas", GELS.flame]].map(([n, g, on]) => `<span class="${on ? "on" : ""}"><i class="sw2" style="background:${g}">${ic("play", "s")}</i>${n}</span>`).join("")}</div></div>
+        <div class="pad"><div class="swrow"><span style="flex:1"><b>Use it on new pods</b><span class="d">You can still switch it off for any one pod.</span></span><span class="sw on"></span></div></div>
+      </div>`),
+    },
+    {
+      isNew: true, isUpd: true, name: "Intro on air", route: "/show/:id, first seconds", chg: "Your show's name owns the stage while the theme plays (on a live pod, while the hosts are still planning), then hands over to the welcome. Memo pods and co-host episodes have it mixed in; briefings open on a theme matched to their template.", via: via("intro", "Show intro"),
+      html: stage(`${stageTop()}<div class="title-card"><span class="pre">Mia and Jordan present</span><div class="nm">Walk &amp; Talk</div><div class="wv">${bars(30, 9, 0.2)}</div><span class="ep">Wild Yeast and the Gold Rush</span></div>
+        <section class="s-caps" style="flex:0 0 auto;padding-bottom:12px"><div><div class="s-who"><i></i>Mia</div><div class="s-now" style="font-size:21px">${words("Welcome to Walk and Talk, the show where big ideas start on a walk. I'm Mia.", 0.45)}</div></div></section>
+        ${chaps.replace('<i class="done"></i><i><b style="width:42%"></b></i>', '<i><b style="width:4%"></b></i><i></i>')}${hostsRow}${sBar}`, GELS.tung),
+    },
+  ], true);
+
+  const ORDER = ["Arriving", "Library", "Making a pod", "Voice memo", "Listening", "Steering a live pod", "Taking part", "Briefings", "Co-host call", "Show intro", "You", "Desktop"];
+  FLOWS.sort((a, b) => ORDER.indexOf(a.name) - ORDER.indexOf(b.name));
+
+  // ---- render --------------------------------------------------------------------------------
+  $("#flows").innerHTML = FLOWS.map((f) => `<section class="flow" aria-labelledby="f-${f.name.replace(/\W/g, "")}">
+      <div class="flow-head"><h2 id="f-${f.name.replace(/\W/g, "")}">${f.name}${f.isNew ? '<span class="new-tag">NEW</span>' : ""}</h2><p>${f.blurb}</p></div>
+      <div class="boards">${f.boards.map((b) => `<figure class="board ${b.wide ? "wide" : ""}" style="margin:0">
+        ${b.wide ? b.html : `<div class="phone">${b.html}</div>`}
+        <figcaption class="cap"><b>${b.name}${b.isNew ? '<span class="new-tag">NEW</span>' : ""}${b.isUpd ? '<span class="new-tag upd">UPDATED</span>' : ""}</b><span class="route">${b.route}</span><span class="chg">${b.chg}</span>${b.via}</figcaption></figure>`).join("")}</div></section>`).join("");
+
+  // ---- House lights ------------------------------------------------------------------------
+  const root = $("#root"), sw = $("#lights");
+  const setLights = (down) => { root.classList.toggle("lights-down", down); sw.setAttribute("aria-checked", String(down)); $("#lights-v").textContent = down ? "Down" : "Up"; };
+  const dark = matchMedia("(prefers-color-scheme: dark)").matches && document.documentElement.dataset.theme !== "light";
+  setLights(dark || document.documentElement.dataset.theme === "dark");
+  sw.addEventListener("click", () => setLights(sw.getAttribute("aria-checked") !== "true"));
+
+  // ---- stats chart: one series, crosshair readout on hover ------------------------------------
+  (() => {
+    const box = $("[data-chart]"); if (!box) return;
+    const svg = $("svg", box), tip = $(".tip", box);
+    const data = [6, 31, 58, 84, 102, 119, 128, 124, 109, 94, 71];   // listeners at each minute, 0 to 10
+    const W = 270, H = 120, L = 22, R = 8, T = 8, B = 18, max = 150;
+    const x = (i) => L + (i / (data.length - 1)) * (W - L - R), y = (v) => T + (1 - v / max) * (H - T - B);
+    const pts = data.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+    let g = '<g class="grid">' + [0, 50, 100, 150].map((v) => `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/>`).join("") + "</g>";
+    g += '<g class="ax">' + [0, 50, 100, 150].map((v) => `<text x="${L - 5}" y="${y(v) + 3}" text-anchor="end">${v}</text>`).join("") + [0, 5, 10].map((m) => `<text x="${x(m)}" y="${H - 3}" text-anchor="middle">${m}:00</text>`).join("") + "</g>";
+    g += `<polygon class="area" points="${x(0)},${y(0)} ${pts} ${x(data.length - 1)},${y(0)}"/><polyline class="ln" points="${pts}"/>`;
+    g += `<circle class="end" cx="${x(6)}" cy="${y(128)}" r="4"/><line class="xh" y1="${T}" y2="${H - B}"/><rect x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}" fill="transparent" data-hit/>`;
+    svg.innerHTML = g;
+    const xh = $(".xh", svg), hit = $("[data-hit]", svg);
+    hit.addEventListener("pointermove", (e) => {
+      const r = svg.getBoundingClientRect(), px = ((e.clientX - r.left) / r.width) * W;
+      const i = Math.max(0, Math.min(data.length - 1, Math.round(((px - L) / (W - L - R)) * (data.length - 1))));
+      xh.setAttribute("x1", x(i)); xh.setAttribute("x2", x(i)); xh.style.opacity = 1;
+      tip.textContent = `${i}:00, ${data[i]} listening`; tip.style.opacity = 1;
+      tip.style.left = `${10 + (x(i) / W) * (r.width)}px`;
+    });
+    hit.addEventListener("pointerleave", () => { xh.style.opacity = 0; tip.style.opacity = 0; });
+  })();
+
+  // ---- live captions on the Live and Studio boards, and the co-host's voice ring ---------------
+  const LINES = [
+    { who: "Mia", h: 0, text: "Okay, but listen. Miners in 1849 carried starter in pouches around their necks to keep it warm." },
+    { who: "Jordan", h: 1, text: "Which is why prospectors got called sourdoughs. The nickname stuck to the people, not just the bread." },
+    { who: "Mia", h: 0, text: "And the tang? That's a bacterium named after the city. Lactobacillus sanfranciscensis." },
+  ];
+  const tl = (() => { let t = 0.3; return LINES.map((l) => { const words = l.text.split(" "), st = []; for (const w of words) { st.push(t); t += 0.16 + 0.048 * w.replace(/[^\w']/g, "").length + (/[.?!]$/.test(w) ? 0.34 : /[,;:]$/.test(w) ? 0.16 : 0); } const o = { ...l, words, st, end: t }; t += 0.55; return o; }); })();
+  const TOTAL = tl[tl.length - 1].end + 1.5;
+  const players = $$("[data-live], [data-studio] .player").map((el) => ({ el, wrap: $(".nowwrap", el), prev: $(".s-prev", el), li: -1, spans: [], hosts: $$(".host", el.closest(".scr") || el) }));
+  const call = $("[data-call] .big");
+  const hash = (n) => { const v = Math.sin(n * 127.1) * 43758.5453; return v - Math.floor(v); };
+  let t = 2, last = performance.now();
+  function frame(now) {
+    const calm = mq.matches;
+    t += Math.min(0.05, (now - last) / 1000); last = now;
+    if (t > TOTAL) t = 0;
+    let li = 0; tl.forEach((l, k) => { if (l.st[0] <= t) li = k; });
+    const L = tl[li];
+    let wi = L.words.length, wp = 1, lv = 0;
+    if (t < L.end) { wi = 0; L.st.forEach((s, k) => { if (s <= t) wi = k; }); const e = L.st[wi + 1] ?? L.end; wp = Math.min(1, (t - L.st[wi]) / (e - L.st[wi])); lv = Math.pow(Math.sin(Math.PI * Math.min(wp * 1.18, 1)), 0.6) * (0.5 + 0.5 * hash(li * 31 + wi)); }
+    if (calm) { wi = L.words.length; lv = 0; }
+    for (const p of players) {
+      if (p.li !== li) {
+        const old = tl[p.li];
+        p.prev.textContent = old ? `${old.who}: ${old.text}` : "";
+        p.wrap.innerHTML = `<div class="s-who"><i></i>${L.who}</div><div class="s-now">${L.words.map((w) => `<span class="w">${w}</span>`).join(" ")}</div>`;
+        p.spans = $$(".w", p.wrap); p.li = li;
+        if (!calm) p.wrap.animate([{ opacity: 0, transform: "translateY(14px)" }, { opacity: 1, transform: "none" }], { duration: 520, easing: "cubic-bezier(.16,1,.3,1)" });
+        // narrow before shrinking
+        const max = p.wrap.parentElement.clientHeight - p.prev.offsetHeight - 24, inner = $(".s-now", p.wrap);
+        p.wrap.style.fontSize = "";
+        const fits = () => p.wrap.offsetHeight <= max && p.wrap.scrollWidth <= p.wrap.clientWidth;
+        let ok = false;
+        for (const s of [100, 90, 80, 70, 62]) { p.wrap.style.fontStretch = s + "%"; if ((ok = fits())) break; }
+        for (let z = 0.92; !ok && z >= 0.6; z -= 0.08) { inner.style.fontSize = `${z}em`; ok = fits(); }
+      }
+      p.spans.forEach((s, k) => { const c = k < wi ? "w said" : k === wi ? "w now" : "w"; if (s.className !== c) s.className = c; });
+      $(".s-now", p.wrap)?.style.setProperty("--wp", wp.toFixed(3));
+      p.el.style.setProperty("--level", lv.toFixed(3));
+      p.hosts.forEach((h, k) => { const talk = t < L.end && L.h === k; h.classList.toggle("talk", talk); h.style.setProperty("--lv", talk ? lv.toFixed(3) : "0"); });
+    }
+    if (call) call.style.setProperty("--lv", calm ? "0" : (0.25 + 0.75 * Math.abs(Math.sin(now / 170) * Math.sin(now / 410))).toFixed(3));
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
