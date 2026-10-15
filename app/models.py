@@ -26,6 +26,13 @@ class HostRequest(BaseModel):
     context: str = Field(default="", max_length=NOTES_CHARS)
 
 
+class OutlineBeat(BaseModel):
+    """A beat the planner must keep (a briefing's run of show), rather than invent."""
+    title: str = Field(min_length=1, max_length=80)
+    notes: str = Field(default="", max_length=600)
+    minutes: float = Field(default=1.0, gt=0, le=15)
+
+
 class ShowRequest(BaseModel):
     source: str = Field(min_length=1)
     style: str = Field(min_length=1, max_length=2_000)
@@ -38,6 +45,8 @@ class ShowRequest(BaseModel):
     language: str = Field(default="English", max_length=60)
     # Display names of the files and links the source was built from.
     source_names: list[str] = Field(default_factory=list, max_length=20)
+    # A fixed run of show. Empty: the planner chooses the beats.
+    outline: list[OutlineBeat] = Field(default_factory=list, max_length=8)
 
     @field_validator("language")
     @classmethod

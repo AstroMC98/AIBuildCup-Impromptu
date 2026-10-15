@@ -13,9 +13,12 @@ Users (users/{uid}): uid, email, name, photo, credits, created_at, last_seen
   styles/{id}       name, prompt, accent
   connections/{uid} the other user: status (connected | pending_in | pending_out), name, email, photo, since
   feed_seen_at      on the user document: when they last opened their Subscriptions feed
+  watches/{id}, watch_pages/{id}, briefing_templates/{id}   personal briefings (watch.py,
+                    briefing.py); briefing_schedule / _due_at / _ready_by on the user document
 Shows (shows/{id}): see main.create_show for the full document. Access fields:
   owner_uid, owner_name, visibility (private | connections | public), shared_with [uid]
   Organizing: album_ids [album id], tags [label]
+  Briefings: kind "briefing" and expires_at; always private, deleted once expired
   Children: segments (by seq), comments (by id), context (by id; text in context/{id}.txt),
             sessions (one per listen: live socket or replay; see stats.py)
 Albums (albums/{id}): owner_uid, owner_name, title, description, visibility, accent, created_at
@@ -99,6 +102,9 @@ class Store(Protocol):
     async def get_edge(self, uid: str, other: str) -> dict | None: ...
     async def put_edge(self, uid: str, other: str, edge: dict) -> None: ...
     async def delete_edge(self, uid: str, other: str) -> None: ...
+    # briefings (see briefing.py)
+    async def users_due_for_briefing(self, before: float, limit: int = 50) -> list[dict]: ...
+    async def expired_shows(self, before: float, limit: int = 100) -> list[dict]: ...
 
 
 def make_store(settings: Settings) -> Store:

@@ -50,3 +50,14 @@ class LiveClock:
     @property
     def playing(self) -> bool:
         return self.listening > 0 and self.live < self.audio_end
+
+
+class RenderClock(LiveClock):
+    """For a pod made with nobody listening (a scheduled briefing): the playhead is
+    always at the end of the voiced audio, so each segment is voiced the moment it's
+    written and the whole show is made as fast as the models allow."""
+
+    def tick(self) -> float:
+        self._t = self._now()
+        self.live = float(self.audio_end)
+        return self.live

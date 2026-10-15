@@ -90,6 +90,18 @@ async def interactions(req: Request):
     if '"type": "audio"' in json.dumps(body.get("input")):
         return _reply("FAKE TRANSCRIPT: why did the serpent talk?")
 
+    if any(t.get("type") == "google_search" for t in body.get("tools") or []):   # a briefing's news search
+        asked = re.search(r"about: (.+)", str(body.get("input", "")))
+        topic = asked.group(1).strip() if asked else "the news"
+        items = [{"title": f"{topic} story {i}", "source": f"Outlet {i}", "url": f"https://outlet{i}.example/{i}",
+                  "published": "2026-10-14", "summary": f"Summary {i} about {topic}."} for i in (1, 2, 3, 4)]
+        return JSONResponse({"id": f"t{next(_calls)}", "status": "completed", "steps": [
+            {"type": "google_search_call", "id": "c1", "arguments": {"queries": [topic]}},
+            {"type": "google_search_result", "call_id": "c1",
+             "result": [{"search_suggestions": "<div class=\"fake-suggestions\">FAKE SUGGESTIONS</div>"}]},
+            {"type": "model_output", "content": [{"type": "text", "text": json.dumps({"items": items})}]},
+        ]})
+
     props = body.get("response_format", {}).get("schema", {}).get("properties", {})
 
     if "beats" in props and "hosts" not in props:  # a re-plan after the producer steered
@@ -102,13 +114,16 @@ async def interactions(req: Request):
         n = props["hosts"]["minItems"]
         hosts = [{"name": "Kayla", "gender": "female", "persona": "Lives for drama.", "voice": "Leda"},
                  {"name": "Brit", "gender": "female", "persona": "Fact-checks everything.", "voice": "Kore"}][:n]
+        # A briefing's planner input carries its run of show: keep those beats (shortened for tests).
+        given = re.findall(r"^\d+\. (.+?) \| [\d.]+ min \|", str(body.get("input", "")), re.MULTILINE)
+        beats = [(t, 0.4) for t in given] or [("Cold open", 0.3), ("The garden", 0.6), ("The fallout", 0.6),
+                                             ("Sign-off", 0.5)]
         return _reply(json.dumps({
             "title": "Genesis, But Make It Messy",
             "tagline": "The first family had the first group chat.",
             "about": "Kayla and Brit spill everything from Genesis 1 to 3.",
             "hosts": hosts,
-            "beats": [{"title": t, "notes": "...", "minutes": m}
-                      for t, m in (("Cold open", 0.3), ("The garden", 0.6), ("The fallout", 0.6), ("Sign-off", 0.5))],
+            "beats": [{"title": t, "notes": "...", "minutes": m} for t, m in beats],
             "cold_open": [{"speaker": h["name"], "text": f"COLD OPEN from {h['name']}."} for h in hosts * 2][:3],
             "reactions": [{"speaker": hosts[i % n]["name"], "kind": k, "text": f"REACTION {k}!"}
                           for i, k in enumerate(("ask", "deeper", "steer", "move_on"))],

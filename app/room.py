@@ -35,7 +35,7 @@ from fastapi import WebSocket
 
 from .audio import Mp3Writer, PcmWindow
 from .catalog import PRESETS_BY_ID, accent_for, style_label
-from .clock import LiveClock
+from .clock import LiveClock, RenderClock
 from .config import Settings
 from .limits import (
     COMMENT_CHARS, CONTEXT_CHARS_PER_SHOW, CONTEXT_ITEMS_PER_SHOW, OUTBOUND_QUEUE_BYTES,
@@ -174,6 +174,7 @@ class ShowRoom:
         settings: Settings,
         store: Store,
         on_closed: Callable[[str], None],
+        headless: bool = False,
     ):
         self.id: str = doc["id"]
         self.doc = doc
@@ -181,8 +182,10 @@ class ShowRoom:
         self.store = store
         self.rate = settings.sample_rate
         self._on_closed = on_closed
+        # headless: made with nobody listening (a scheduled briefing), as fast as it can go
+        self.headless = headless
 
-        self.clock = LiveClock(self.rate, settings.clock_speed)
+        self.clock = RenderClock(self.rate) if headless else LiveClock(self.rate, settings.clock_speed)
         self.wake = asyncio.Event()
         self.conns: dict[int, Conn] = {}
         self.pcm = PcmWindow()
@@ -569,7 +572,8 @@ class ShowRoom:
         owner = self.doc.get("owner_uid")
         if not charged or not owner:
             return 0
-        used = math.ceil(duration_s / 60 * self.settings.credits_per_minute) if duration_s else 0
+        rate = self.doc.get("credits_per_minute") or self.settings.credits_per_minute   # briefings: 1 per 5 min
+        used = math.ceil(duration_s / 60 * rate) if duration_s else 0
         refund = max(0, charged - used)
         if refund:
             try:
@@ -598,7 +602,8 @@ class ShowRoom:
 
                 if self.ended_reason is None:
                     self._sample_listeners()
-                    idle = not self.conns and now - self._idle_since > self.settings.idle_end_seconds
+                    idle = (not self.headless and not self.conns
+                            and now - self._idle_since > self.settings.idle_end_seconds)
                     if idle and not self.runner.end_urgent:
                         log.info("show %s: nobody listening; signing off", self.id)
                         self._end_reason = "idle"
@@ -717,6 +722,8 @@ class ShowRoom:
             "shared_with": d.get("shared_with", []),
             "album_ids": d.get("album_ids", []),
             "tags": d.get("tags", []),
+            "kind": d.get("kind", "pod"),
+            "expires_at": d.get("expires_at"),
         }
 
     def snapshot(self, conn: Conn, backfill_from: int) -> dict:

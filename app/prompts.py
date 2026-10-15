@@ -170,6 +170,19 @@ def planner_system(req: ShowRequest, source: str) -> str:
 PLANNER_INPUT = "Plan the episode."
 
 
+def planner_input(req: ShowRequest) -> str:
+    """With an outline (a briefing's run of show), the beats are given, not invented."""
+    if not req.outline:
+        return PLANNER_INPUT
+    beats = "\n".join(f"{i}. {b.title} | {b.minutes:g} min | {b.notes}" for i, b in enumerate(req.outline, start=1))
+    return (
+        "Plan the episode with exactly these beats, in this order, keeping their titles and "
+        "lengths (title | minutes | what it covers). Write each beat's notes from the SOURCE: "
+        "which items or topics it covers and in what order. Ignore the beat count in your rules.\n"
+        f"RUN OF SHOW:\n{beats}"
+    )
+
+
 def _traits(h: HostRequest | Host) -> str:
     """'; likes: ...; specialties: ...; skills: ...' for whichever are filled in."""
     parts = [(label, getattr(h, key, "").strip())
@@ -441,7 +454,39 @@ Return only the words they said, cleaned of filler (um, uh) and false starts, in
 language they spoke. If nothing intelligible was said, return an empty string."""
 
 
+NEWS_SEARCH_SYSTEM = """\
+You find recent news with Google Search for one listener's personal briefing. Report \
+only what the search results say: real stories from real publications, with their \
+real links. Never invent a story, a quote, a date or a link. If nothing recent matches, \
+return no items."""
+
+
+def news_search_input(query: str, days: int, language: str) -> str:
+    return (f"Search for news from the last {days} day{'s' if days != 1 else ''} about: {query}\n"
+            f"Return up to 5 distinct stories, newest first, in {language}. Skip duplicates of the same "
+            "story from different outlets, and skip anything older than that window.")
+
+
 # ---- JSON schemas (inline, no $refs, so structured output stays predictable) --
+
+def news_schema() -> dict:
+    return {
+        "type": "object",
+        "properties": {"items": {"type": "array", "maxItems": 5, "items": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "description": "The story's headline."},
+                "source": {"type": "string", "description": "The publication."},
+                "url": {"type": "string", "description": "The story's link, from the search results."},
+                "published": {"type": "string", "description": "ISO date, if known."},
+                "summary": {"type": "string", "description": "One or two factual sentences."},
+            },
+            "required": ["title", "source", "summary"],
+        }}},
+        "required": ["items"],
+    }
+
+
 
 def plan_schema(host_count: int) -> dict:
     return {

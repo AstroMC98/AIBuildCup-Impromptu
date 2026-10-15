@@ -78,6 +78,16 @@ accounts at once in different browsers. Grant yourself credits on the **Admin** 
   up. **Go deeper** gives the current chapter more time, **Move on** skips ahead, and
   **Steer** ("argue the other side") re-plans the rest of the episode. Audio that was
   voiced but never heard is dropped, so the recording is exactly what was heard.
+- **Briefings**: a private pod made just for you from your **watchlist**: sites to
+  monitor (new posts, via their RSS/Atom feed or new headline links), links to watch
+  (what was added or removed on a pricing page, a status page, an agenda), and
+  **searches** to follow in the news (Gemini with Google Search). Pick a premade
+  **briefing template** (Morning roundup, Five-minute focus, Weekend deep-dive, Industry
+  watch) or make your own: hosts, style, your topics, and what's in it. Make one on
+  demand (it goes live, so you can interrupt it), or set a time and days and one is
+  waiting for you, made ahead with nobody listening. 1 credit per 5 minutes, unused
+  5-minute blocks refunded. Briefings are never shared or listed with your pods, and
+  are deleted after 48 hours.
 - **Your pods / Shared / Discover**: every pod is saved (audio, transcript, call-ins,
   context) to replay or download.
 
@@ -167,12 +177,13 @@ What the script sets up:
 | Piece | What | Why |
 |---|---|---|
 | Cloud Run `podcasts` | the app, 1 instance, 2 vCPU, 2 GiB, 60-min request timeout | WebSockets + the live pod loop |
-| Firestore (native) | `shows/{id}` (+ segments, comments, context, sessions), `users/{uid}` (+ ledger, personas, styles, connections), `albums/{id}`, `subscriptions/{id}` | accounts, credits, library, transcripts, albums, following, listening stats |
+| Firestore (native) | `shows/{id}` (+ segments, comments, context, sessions), `users/{uid}` (+ ledger, personas, styles, connections, watches, watch_pages, briefing_templates), `albums/{id}`, `subscriptions/{id}` | accounts, credits, library, transcripts, albums, following, listening stats, briefings |
+| Cloud Tasks `briefings-wake` | one task per scheduled briefing start, calling `/healthz` | wakes the scaled-to-zero service to make a scheduled briefing |
 | Firestore security rules | deny all browser access (`deploy/firestore.rules`, released on every run) | the app only uses Firestore from the server; the Firebase web key is public |
 | Cloud Storage `gs://PROJECT-podcasts` | source text, context text, `episode.mp3` | replays and downloads (served by signed URL) |
 | Secret Manager | `gemini-api-key`, `session-secret` | injected as env vars |
 | Firebase Authentication | Google + email sign-in | accounts; the server verifies ID tokens itself |
-| Service account `podcasts-run` | Firestore user, bucket object admin, secret accessor, token creator on itself | least privilege; the last one signs replay URLs |
+| Service account `podcasts-run` | Firestore user, bucket object admin, secret accessor, token creator on itself, Cloud Tasks enqueuer | least privilege; token creator signs replay URLs, enqueuer books wake-ups |
 | Artifact Registry `podcasts` | container images | |
 
 To change a setting later (admins, signup credits), re-run the script with new values.
@@ -203,6 +214,15 @@ own access control.
   sort in the app, so Firestore needs no composite indexes. Past a few thousand pods per
   list, add an index on (visibility, created_at) and page the queries.
 - Gemini TTS voices at most two speakers per request, so pods have one or two hosts.
+- **Scheduled briefings wake the service.** Cloud Run scales to zero, so saving a
+  schedule books a Cloud Task (queue `briefings-wake`, made by `deploy.sh`) that calls
+  `/healthz` at the start time; that starts an instance, whose briefing loop makes the
+  briefing headless and books the next day's wake-up. Nothing stays warm in between:
+  with `--no-cpu-throttling` an idle instance is billed, so pinging every few minutes
+  would cost far more. Expired briefings are deleted by the same loop.
+- **Search watches cost real Google Search grounding.** Each check of a search is one
+  grounded Gemini call (it may run a few Google queries), made only when a briefing
+  needs fresh results or you press Check now; each person keeps at most 5 searches.
 
 ## Security notes
 
@@ -231,6 +251,17 @@ own access control.
   language or format, and they skip hateful or private ones. The creator can remove a
   queued call-in; admins can delete any pod.
 - Photos are described once by Gemini; only the description is stored.
+- Watched sites and links go through the same public-address guard as listener links,
+  name the app in the User-Agent, honor robots.txt, use conditional requests, and space
+  out requests to a host. Feeds are parsed with `defusedxml` (no entity tricks). What
+  they say reaches the writers fenced as material to report on, never as instructions,
+  and the hosts summarize and name the source rather than read articles out.
+- Search watches use Grounding with Google Search. Google asks apps to show the Search
+  Suggestions that come with grounded results: they're shown on the watch and on each
+  briefing that used them, rendered from Google's HTML in a sandboxed iframe (no
+  scripts; links open in a new tab).
+- Briefings are always private: they can't be re-shared or put in albums, they're left
+  out of every list, and they're deleted after `BRIEFING_KEEP_HOURS`.
 - Looking someone up by email tells you whether they have an account. Fine for a demo;
   for a public launch, send requests by invite link only.
 
@@ -254,6 +285,12 @@ own access control.
 | `MAX_LIVE_SHOWS` | `3` | live pods at once |
 | `MAX_LISTENERS` | `50` | listeners per pod |
 | `IDLE_END_SECONDS` | `300` | nobody connected this long: the hosts sign off and it's saved |
+| `BRIEFING_MINUTES_PER_CREDIT` | `5` | a briefing costs 1 credit per this many minutes |
+| `BRIEFING_KEEP_HOURS` | `48` | briefings are deleted after this long |
+| `BRIEFING_LEAD_MINUTES` | `30` | a scheduled briefing starts being made this long before its time |
+| `BRIEFING_POLL_SECONDS` | `60` | how often due schedules and expired briefings are checked |
+| `PUBLIC_URL` | | the app's address: in the watch fetcher's User-Agent, and what wake-ups call (`deploy.sh` sets it) |
+| `WAKE_QUEUE` | | Cloud Tasks queue that wakes Cloud Run for scheduled briefings (`deploy.sh` sets it; blank locally) |
 
 If you hit 429s from the TTS model, raise `SEGMENT_SECONDS` (fewer, longer calls) or
 switch to the lite TTS model.
@@ -264,6 +301,10 @@ switch to the lite TTS model.
 python -m tests.unit_test      # clock, limits, sessions, Firebase checks, credits, connections,
                                # access rules, SSRF guard, audio, store, show loop, prompts
 python -m tests.smoke_test     # full pods over real sockets against a Gemini stub
+python -m tests.briefing_test  # watchlist (a fake web: feeds, page diffs, robots.txt, search),
+                               # run of show, schedules, wake-ups, expiry
+python -m tests.briefing_smoke # briefings end to end: on demand, private, refunds, a search,
+                               # a scheduled one made with nobody listening
 python -m tests.store_contract # LocalStore; with FIRESTORE_EMULATOR_HOST set, GcpStore too
 ```
 
@@ -316,6 +357,9 @@ app/
   limits.py    rate limits and size caps
   store/       Store interface; local.py (JSON on disk), gcp.py (Firestore + GCS)
   stats.py     listening stats from listening sessions
+  briefing.py  personal briefings: templates, run of show, source, schedules, expiry
+  watch.py     the watchlist: feeds, page changes, headline links, news searches; polite fetching
+  wake.py      Cloud Tasks wake-ups for scheduled briefings on Cloud Run
   catalog.py   voices (with gender), vocal tags, style presets, templates, premade personas
   config.py    settings from env / .env
 static/        no build step: index.html, css/, js/ (ES modules)
@@ -326,9 +370,10 @@ static/        no build step: index.html, css/, js/ (ES modules)
   js/social.js     subscribe button, creator chip, album cards
   js/views/        login, library (home, Following, header, account menu), create, show (phone:
                    live-mobile + now-playing; desktop: studio), saved (personas, styles), albums,
-                   creator, stats, connections, admin
+                   creator, stats, connections, admin, briefings (make, schedule, watchlist, templates)
 deploy/deploy.sh   one-command Cloud Run setup
 deploy/firestore.rules  deny-all browser access, released by deploy.sh
 tests/           fake_gemini.py (Interactions API stub), smoke_test.py, unit_test.py,
-                 store_contract.py (LocalStore vs Firestore emulator), live_test.py (real Gemini)
+                 store_contract.py (LocalStore vs Firestore emulator), live_test.py (real Gemini),
+                 briefing_test.py, briefing_smoke.py
 ```

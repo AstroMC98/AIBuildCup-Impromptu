@@ -183,7 +183,7 @@ export function mountStudio(root, ctl) {
       r.set("about", `${s.show.about}|${s.show.tagline}`, () => s.show.about || s.show.tagline || "");
       r.set("avatars", `${s.version}`, () => hostAvatars(s, 40));
       r.set("hostnames", s.hostNames(), () => s.hostNames() || "Hosts coming up");
-      const by = s.producer ? VISIBILITY_LABEL[s.show.visibility] || "" : "";
+      const by = !s.producer ? "" : s.show.kind === "briefing" ? "Your briefing" : VISIBILITY_LABEL[s.show.visibility] || "";
       r.set("creator", creatorBarKey(s), () => creatorBar(s, ctl.id));
       const meta = [by, s.style?.label || s.show.style_label, s.show.minutes ? `about ${s.show.minutes} minutes` : ""]
         .filter(Boolean).join(" · ");

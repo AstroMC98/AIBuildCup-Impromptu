@@ -260,6 +260,16 @@ class GcpStore:
         query = self.db.collection("users").order_by("created_at", direction=firestore.Query.DESCENDING).limit(limit)
         return [snap.to_dict() async for snap in query.stream()]
 
+    # ---- briefings (single-field range queries: no composite index needed) -------------------
+
+    async def users_due_for_briefing(self, before: float, limit: int = 50) -> list[dict]:
+        query = self.db.collection("users").where(filter=FieldFilter("briefing_due_at", "<=", before)).limit(limit)
+        return [snap.to_dict() async for snap in query.stream()]
+
+    async def expired_shows(self, before: float, limit: int = 100) -> list[dict]:
+        query = self.db.collection("shows").where(filter=FieldFilter("expires_at", "<=", before)).limit(limit)
+        return [snap.to_dict() async for snap in query.stream()]
+
     async def adjust_credits(self, uid: str, amount: int, *, reason: str, show_id: str | None = None,
                              by: str | None = None, note: str = "") -> int:
         """Add (or, negative, spend) credits in one transaction with its ledger entry."""

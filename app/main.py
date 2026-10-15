@@ -1,7 +1,7 @@
 """HTTP + WebSocket surface.
 
 Pages (all serve the single-page UI)
-GET  /  /discover  /following  /new  /login  /personas  /styles  /connections  /admin
+GET  /  /discover  /following  /new  /login  /personas  /styles  /connections  /admin  /briefings
 GET  /albums  /stats  /show/{id}  /show/{id}/stats  /album/{id}  /creator/{uid}  /invite/{uid}
 
 API ("you" = the signed-in user; pods are visible per accounts.can_view)
@@ -38,6 +38,12 @@ POST   /api/shows/{id}/context           signed-in listeners: text|file|link|pho
 GET    /api/shows/{id}/audio             the MP3 (so far, while live)
 GET    /api/admin/users?q=               admin
 POST   /api/admin/users/{uid}/credits {amount, note}   admin
+GET    /api/briefings                    your briefings (private, kept 48 h), schedule, templates
+POST   /api/briefings {template_id, minutes?, tz}   make one now: it goes live (1 credit / 5 min)
+PUT    /api/briefings/schedule {enabled, time, days, tz, template_id, minutes}   have one ready daily
+GET|POST /api/briefing-templates  PUT|DELETE /api/briefing-templates/{id}   your briefing templates
+GET|POST /api/watches  PATCH|DELETE /api/watches/{id}  POST /api/watches/{id}/check
+                                         sites to monitor and links to watch, for briefings
 WS     /ws/show/{id}                     one connection per listener of a live pod
 
 WebSocket protocol
@@ -74,7 +80,9 @@ import re
 import secrets
 import time
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from fastapi import Body, FastAPI, File, Form, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse, Response
@@ -88,6 +96,9 @@ from . import ingest as ingest_mod
 from .accounts import Accounts, User
 from .auth import COOKIE, SESSION_MAX_AGE, Auth, AuthError, client_ip, same_origin
 from . import stats as stats_mod
+from . import briefing
+from . import wake as wake_mod
+from . import watch as watch_mod
 from .catalog import (
     GENDERS, HOST_COLORS, PERSONA_PRESETS, STYLE_PRESETS, TEMPLATES, TEMPLATES_BY_ID, VOICE_GENDER, VOICE_INFO,
     VOICES, accent_for, style_label,
@@ -145,7 +156,9 @@ async def lifespan(_: FastAPI):
     stale = await store.mark_interrupted(set())
     if stale:
         log.info("marked %d shows that were live before a restart as interrupted", stale)
+    briefings = asyncio.create_task(_briefing_loop())
     yield
+    briefings.cancel()
     await rooms.shutdown(timeout=6.0)
 
 
@@ -333,6 +346,9 @@ def _public_doc(doc: dict) -> dict:
         "visibility": doc.get("visibility", "private"),
         "shared_with": doc.get("shared_with", []),
         "template": doc.get("template"),
+        "kind": doc.get("kind", "pod"),
+        "expires_at": doc.get("expires_at"),
+        "briefing": doc.get("briefing"),
     }
 
 
@@ -341,6 +357,7 @@ def _list_item(d: dict) -> dict:
     live = bool(room and room.ended_reason is None)
     return {
         "id": d["id"],
+        "kind": d.get("kind", "pod"),
         "title": d.get("title", ""),
         "status": "live" if live else d.get("status"),
         "vibe": d.get("vibe"),
@@ -715,6 +732,410 @@ async def admin_grant(uid: str, body: CreditGrant, request: Request) -> dict:
     return {"credits": balance}
 
 
+# ---- personal briefings (see briefing.py and watch.py) ---------------------------------------
+# A private pod made for one listener from the sites and links they watch, in a template
+# they pick or make. On demand by default; with a schedule it's made headless shortly
+# before the listener's time. Always private, never in pod lists, deleted after
+# BRIEFING_KEEP_HOURS. 1 credit per BRIEFING_MINUTES_PER_CREDIT minutes.
+
+async def _search_news(query: str, days: int) -> tuple[list[dict], str]:
+    """Search watches: Gemini with Grounding with Google Search."""
+    model = gemini_or_none()
+    if model is None:
+        raise SourceError("News search needs the Gemini API key.")
+    return await model.search_news(query, days)
+
+
+fetcher = watch_mod.Fetcher(contact=settings.public_url, searcher=_search_news)
+waker = wake_mod.Waker(settings.wake_queue, settings.public_url)   # Cloud Run: book a wake-up per scheduled start
+WATCH_ADD_LIMIT = Limiter(rate=1 / 5, burst=5)      # adding a watch fetches the page (or searches)
+WATCH_CHECK_LIMIT = Limiter(rate=1 / 20, burst=3)   # "Check now"
+_dispatching = asyncio.Lock()
+WATCH_FIELDS = ("id", "url", "label", "kind", "feed_url", "query", "title", "created_at", "last_checked",
+                "last_changed", "status", "note", "paused", "failures", "suggestions")
+
+
+def _no_briefings(docs: list[dict]) -> list[dict]:
+    return [d for d in docs if d.get("kind") != "briefing"]
+
+
+def _not_a_briefing(doc: dict) -> None:
+    if doc.get("kind") == "briefing":
+        raise HTTPException(status_code=422, detail="Briefings are just for you: they can't be shared or put in albums.")
+
+
+def _learn_contact(request: Request) -> None:
+    """The watch fetcher names this app in its User-Agent."""
+    if not settings.public_url:
+        fetcher.contact = str(request.base_url)
+
+
+def _validation_detail(exc: ValidationError) -> str:
+    return "; ".join(str(e["msg"]).removeprefix("Value error, ") for e in exc.errors())
+
+
+def _watch_out(w: dict) -> dict:
+    pending = w.get("pending") or []
+    return {**{k: w.get(k) for k in WATCH_FIELDS}, "waiting": len(pending),
+            "pending": [{k: u.get(k) for k in ("kind", "title", "url", "site", "found_at")} for u in pending]}
+
+
+def _briefing_out(d: dict) -> dict:
+    d = _fresh(d)
+    room = rooms.get(d["id"])
+    return {**_list_item(d), "expires_at": d.get("expires_at"), "has_audio": bool(d.get("audio")),
+            "rendering": bool(room and room.headless and room.ended_reason is None),
+            "briefing": d.get("briefing") or {}}
+
+
+async def _refresh_watches(uid: str, *, force: bool = False) -> list[dict]:
+    """Check the watches that are due, save what changed, and return all of them."""
+    watches = await store.list_items(uid, "watches")
+    pages = {p["id"]: p for p in await store.list_items(uid, "watch_pages")}
+    by_id = {w["id"]: w for w in watches}
+    for w, page, _ in await watch_mod.check_all(fetcher, watches, pages, force=force):
+        by_id[w["id"]] = w
+        await store.put_item(uid, "watches", w)
+        if page is not None and page is not pages.get(w["id"]):
+            await store.put_item(uid, "watch_pages", page)
+    return list(by_id.values())
+
+
+async def _make_briefing(user: User, template: dict, minutes: int, tz: str, *,
+                         headless: bool, ready_by: float | None = None) -> dict:
+    """Charge, gather the watchlist, compose, and start the room (live, or headless)."""
+    cost = briefing.cost(minutes, settings.briefing_minutes_per_credit)
+    if user.credits < cost:
+        raise HTTPException(status_code=402, detail=(
+            f"A {minutes}-minute briefing needs {cost} credit{'s' if cost != 1 else ''} and you have {user.credits}."))
+    model = _check_capacity()
+    watches = await _refresh_watches(user.uid)
+    updates = briefing.pick_updates(watches)
+    when = datetime.now(ZoneInfo(tz))
+    source = briefing.compose_source(user.name, template, updates, when)
+    req = briefing.request_for(template, minutes, source, len(updates))
+    show_id = secrets.token_urlsafe(9)
+    now = time.time()
+    doc = {
+        "id": show_id,
+        "kind": "briefing",
+        "owner_uid": user.uid,
+        "owner_name": user.name,
+        "visibility": "private",
+        "shared_with": [],
+        "template": None,
+        "album_ids": [],
+        "tags": [],
+        "status": "live",
+        "ended_reason": None,
+        "created_at": now,
+        "started_at": now,
+        "ended_at": None,
+        "expires_at": (ready_by or now) + settings.briefing_keep_hours * 3600,
+        "request": req.model_dump(exclude={"source"}),
+        "source": {"chars": len(source), "names": req.source_names},
+        "title": f"{when.strftime('%A')} briefing",
+        "tagline": "",
+        "about": "",
+        "accent": req.accent or accent_for(req.vibe, req.style),
+        "vibe": req.vibe,
+        "style": req.style,
+        "style_label": req.style_label or style_label(req.vibe),
+        "style_history": [],
+        "hosts": [{"name": h.name, "persona": h.persona, "voice": h.voice, "gender": h.gender} for h in req.hosts],
+        "beats": [],
+        "minutes": minutes,
+        "language": req.language,
+        "credits_charged": 0,
+        "credits_per_minute": 1 / settings.briefing_minutes_per_credit,   # refunds use this rate
+        "samples": 0,
+        "duration_s": 0,
+        "audio": None,
+        "counts": {},
+        "briefing": {
+            "template_id": template["id"], "template": template["name"], "scheduled": headless, "ready_by": ready_by,
+            "updates": [{k: u.get(k) for k in ("kind", "via", "label", "site", "title", "url")} for u in updates],
+            "search_suggestions": briefing.search_suggestions(watches, updates),
+        },
+    }
+    try:
+        await accounts.adjust_credits(user.uid, -cost, reason="briefing", show_id=show_id)
+    except InsufficientCredits as exc:
+        raise HTTPException(status_code=402, detail=f"This briefing needs {exc.needed} credits and you have {exc.balance}.") from exc
+    doc["credits_charged"] = cost
+    try:
+        await store.create_show(doc)
+        await store.put_text(show_id, "source.txt", source)
+    except Exception:
+        await accounts.adjust_credits(user.uid, cost, reason="refund", show_id=show_id, note="Couldn't start")
+        raise
+    rooms.add(ShowRoom(doc=doc, request=req, source=source, gemini=model, settings=settings, store=store,
+                       on_closed=rooms.remove, headless=headless))
+    # What this briefing covers isn't waiting any more.
+    used = {(u.get("watch_id"), u.get("found_at"), u.get("url")) for u in updates}
+    for w in watches:
+        keep = [u for u in w.get("pending") or [] if (w["id"], u.get("found_at"), u.get("url")) not in used]
+        if len(keep) != len(w.get("pending") or []):
+            await store.put_item(user.uid, "watches", {**w, "pending": keep})
+    log.info("briefing %s for %s: %d min, %d updates, %s", show_id, user.uid, minutes, len(updates),
+             "headless" if headless else "live")
+    return doc
+
+
+async def _dispatch_briefings() -> None:
+    """Make every scheduled briefing whose start time has come."""
+    async with _dispatching:
+        now = time.time()
+        for u in await store.users_due_for_briefing(now):
+            if rooms.live_count() >= settings.max_live_shows:
+                return   # full: these wait for the next round
+            schedule = u.get("briefing_schedule") or {}
+            ready_by = float(u.get("briefing_ready_by") or now)
+            last: dict = {"at": now, "ready_by": ready_by}
+            user = await accounts.get(u["uid"])
+            if user is None:
+                continue
+            template = briefing.find_template(schedule.get("template_id", ""),
+                                              await store.list_items(user.uid, "briefing_templates"))
+            if now > ready_by + briefing.LATE_SECONDS:
+                last["error"] = "Missed: the studio was offline at the time."
+            elif template is None:
+                last["error"] = "Its template was deleted. Pick another one."
+            else:
+                try:
+                    doc = await _make_briefing(user, template, int(schedule.get("minutes") or template["minutes"]),
+                                               schedule.get("tz") or "UTC", headless=True, ready_by=ready_by)
+                    last["show_id"] = doc["id"]
+                except HTTPException as exc:
+                    last["error"] = str(exc.detail)
+                except Exception:
+                    log.exception("scheduled briefing for %s failed", user.uid)
+                    last["error"] = "Something went wrong making it."
+            # Next one: after this one, and never one that's already hopelessly late.
+            after = max(ready_by, now - briefing.LATE_SECONDS)
+            nxt = briefing.schedule_fields(schedule, after, settings.briefing_lead_minutes)
+            await store.update_user(user.uid, {**nxt, "briefing_last": last})
+            await waker.at(nxt["briefing_due_at"])
+            accounts.forget(user.uid)
+
+
+async def _briefing_loop() -> None:
+    while True:
+        try:
+            await _dispatch_briefings()
+            removed = await briefing.delete_expired(store, rooms.ids(), time.time())
+            if removed:
+                log.info("deleted %d expired briefings", removed)
+        except Exception:
+            log.exception("briefing round failed")
+        await asyncio.sleep(settings.briefing_poll_seconds)
+
+
+@app.get("/briefings")
+async def briefings_page() -> FileResponse:
+    return _index()
+
+
+@app.get("/api/briefings")
+async def list_briefings(request: Request) -> dict:
+    user = await require_user(request)
+    now = time.time()
+    docs = [d for d in await store.list_shows(owner_uid=user.uid, limit=500)
+            if d.get("kind") == "briefing" and (d.get("expires_at") or 0) > now]
+    me_doc = await store.get_user(user.uid) or {}
+    watches = await store.list_items(user.uid, "watches")
+    return {
+        "briefings": [_briefing_out(d) for d in docs],
+        "schedule": {**briefing.ScheduleIn().model_dump(), **(me_doc.get("briefing_schedule") or {})},
+        "next_ready_by": me_doc.get("briefing_ready_by"),
+        "last": me_doc.get("briefing_last"),
+        "premade": briefing.TEMPLATES,
+        "templates": await store.list_items(user.uid, "briefing_templates"),
+        "lengths": list(briefing.LENGTHS),
+        "minutes_per_credit": settings.briefing_minutes_per_credit,
+        "keep_hours": settings.briefing_keep_hours,
+        "lead_minutes": settings.briefing_lead_minutes,
+        "watches": len(watches),
+        "waiting": len(briefing.pick_updates(watches)),
+    }
+
+
+@app.post("/api/briefings")
+async def make_briefing(body: briefing.MakeBriefing, request: Request) -> dict:
+    _require_origin(request)
+    user = await require_user(request)
+    _learn_contact(request)
+    template = briefing.find_template(body.template_id, await store.list_items(user.uid, "briefing_templates"))
+    if template is None:
+        raise HTTPException(status_code=404, detail="No such briefing template.")
+    doc = await _make_briefing(user, template, body.minutes or int(template.get("minutes") or 5), body.tz,
+                               headless=False)
+    return {"id": doc["id"], "credits": (await accounts.get(user.uid)).credits}  # type: ignore[union-attr]
+
+
+@app.put("/api/briefings/schedule")
+async def set_briefing_schedule(body: briefing.ScheduleIn, request: Request) -> dict:
+    _require_origin(request)
+    user = await require_user(request)
+    if body.enabled:
+        if not body.days:
+            raise HTTPException(status_code=422, detail="Pick at least one day.")
+        if briefing.find_template(body.template_id, await store.list_items(user.uid, "briefing_templates")) is None:
+            raise HTTPException(status_code=422, detail="Pick a template for it.")
+    fields = briefing.schedule_fields(body.model_dump(), time.time(), settings.briefing_lead_minutes)
+    await store.update_user(user.uid, fields)
+    await waker.at(fields["briefing_due_at"])
+    return {"schedule": fields["briefing_schedule"], "next_ready_by": fields["briefing_ready_by"]}
+
+
+def _clean_template(payload: dict) -> dict:
+    try:
+        data = briefing.TemplateIn.model_validate(payload).model_dump()
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=_validation_detail(exc)) from exc
+    return {k: v.strip() if isinstance(v, str) else v for k, v in data.items()}
+
+
+@app.get("/api/briefing-templates")
+async def list_briefing_templates(request: Request) -> dict:
+    user = await require_user(request)
+    return {"items": await store.list_items(user.uid, "briefing_templates"), "premade": briefing.TEMPLATES}
+
+
+@app.post("/api/briefing-templates")
+async def create_briefing_template(request: Request, payload: dict = Body(...)) -> dict:
+    _require_origin(request)
+    user = await require_user(request)
+    data = _clean_template(payload)
+    if len(await store.list_items(user.uid, "briefing_templates")) >= briefing.MAX_TEMPLATES:
+        raise HTTPException(status_code=422, detail=f"You can keep up to {briefing.MAX_TEMPLATES} briefing templates.")
+    item = {"id": secrets.token_urlsafe(8), "created_at": time.time(), **data}
+    await store.put_item(user.uid, "briefing_templates", item)
+    return item
+
+
+@app.put("/api/briefing-templates/{template_id}")
+async def update_briefing_template(template_id: str, request: Request, payload: dict = Body(...)) -> dict:
+    _require_origin(request)
+    user = await require_user(request)
+    data = _clean_template(payload)
+    existing = next((t for t in await store.list_items(user.uid, "briefing_templates") if t["id"] == template_id), None)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="No such briefing template.")
+    item = {**existing, **data, "updated_at": time.time()}
+    await store.put_item(user.uid, "briefing_templates", item)
+    return item
+
+
+@app.delete("/api/briefing-templates/{template_id}")
+async def delete_briefing_template(template_id: str, request: Request) -> dict:
+    _require_origin(request)
+    user = await require_user(request)
+    try:
+        await store.delete_item(user.uid, "briefing_templates", template_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="No such briefing template.") from exc
+    return {"ok": True}
+
+
+async def _watch_or_404(uid: str, watch_id: str) -> dict:
+    w = next((w for w in await store.list_items(uid, "watches") if w["id"] == watch_id), None)
+    if w is None:
+        raise HTTPException(status_code=404, detail="No such watch.")
+    return w
+
+
+@app.get("/api/watches")
+async def list_watches(request: Request) -> dict:
+    user = await require_user(request)
+    return {"watches": [_watch_out(w) for w in await store.list_items(user.uid, "watches")],
+            "max": watch_mod.MAX_WATCHES, "max_searches": watch_mod.MAX_SEARCHES}
+
+
+@app.post("/api/watches")
+async def add_watch(body: briefing.WatchIn, request: Request) -> dict:
+    _require_origin(request)
+    user = await require_user(request)
+    _learn_contact(request)
+    if not WATCH_ADD_LIMIT.take(user.uid):
+        raise HTTPException(status_code=429, detail="That's a lot of links at once. Wait a moment.")
+    watches = await store.list_items(user.uid, "watches")
+    if len(watches) >= watch_mod.MAX_WATCHES:
+        raise HTTPException(status_code=422, detail=f"You can watch up to {watch_mod.MAX_WATCHES} sites, links and searches.")
+    try:
+        if body.is_search:
+            if sum(w.get("kind") == "search" for w in watches) >= watch_mod.MAX_SEARCHES:
+                raise SourceError(f"You can keep up to {watch_mod.MAX_SEARCHES} searches.")
+            found = watch_mod.search_watch(body.url)
+        else:
+            url = body.url.strip()
+            if not re.match(r"^[a-z][a-z0-9+.-]*://", url, re.IGNORECASE):
+                url = "https://" + url
+            found = await fetcher.detect(url, body.mode)
+    except SourceError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if any(w["url"] == found["url"] or (found["feed_url"] and w.get("feed_url") == found["feed_url"]) for w in watches):
+        raise HTTPException(status_code=422, detail="You're already watching that.")
+    w = {
+        "id": secrets.token_urlsafe(8), "url": found["url"], "label": body.label.strip() or found["title"],
+        "kind": found["kind"], "feed_url": found["feed_url"], "query": found.get("query"), "title": found["title"],
+        "created_at": time.time(), "status": "ok", "note": "", "failures": 0, "paused": False, "seen": [], "pending": [],
+    }
+    # First look: a site's (or a search's) latest stories count as news once; a page gets
+    # the text later checks compare with.
+    w, page, _ = await fetcher.check(w, None)
+    await store.put_item(user.uid, "watches", w)
+    if page is not None:
+        await store.put_item(user.uid, "watch_pages", page)
+    return {"watch": _watch_out(w), "found": found["found"]}
+
+
+@app.patch("/api/watches/{watch_id}")
+async def update_watch(watch_id: str, body: briefing.WatchPatch, request: Request) -> dict:
+    _require_origin(request)
+    user = await require_user(request)
+    w = await _watch_or_404(user.uid, watch_id)
+    if body.label is not None:
+        w["label"] = body.label.strip() or w.get("title") or w["url"]
+    if body.paused is not None:
+        w["paused"] = body.paused
+        if not body.paused:   # resuming starts the failure count over
+            w.update(failures=0, status="ok", note="")
+    await store.put_item(user.uid, "watches", w)
+    return {"watch": _watch_out(w)}
+
+
+@app.delete("/api/watches/{watch_id}")
+async def delete_watch(watch_id: str, request: Request) -> dict:
+    _require_origin(request)
+    user = await require_user(request)
+    try:
+        await store.delete_item(user.uid, "watches", watch_id)
+        await store.delete_item(user.uid, "watch_pages", watch_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="No such watch.") from exc
+    return {"ok": True}
+
+
+@app.post("/api/watches/{watch_id}/check")
+async def check_watch(watch_id: str, request: Request) -> dict:
+    _require_origin(request)
+    user = await require_user(request)
+    _learn_contact(request)
+    if not WATCH_CHECK_LIMIT.take(user.uid):
+        raise HTTPException(status_code=429, detail="You just checked. Give it a minute.")
+    was = await _watch_or_404(user.uid, watch_id)
+    pages = {p["id"]: p for p in await store.list_items(user.uid, "watch_pages")}
+    w, page, new = await fetcher.check({**was, "paused": False}, pages.get(watch_id))
+    # A pause you chose stays; one from failing checks lifts once a check works again.
+    auto_paused = str(was.get("note") or "").startswith("Paused after")
+    w["paused"] = bool(w.get("paused")) or (bool(was.get("paused")) and not (auto_paused and w["status"] == "ok"))
+    await store.put_item(user.uid, "watches", w)
+    if page is not None:
+        await store.put_item(user.uid, "watch_pages", page)
+    return {"watch": _watch_out(w), "new": len(new)}
+
+
 # ---- creating pods --------------------------------------------------------------------------
 
 @app.post("/api/extract")
@@ -822,7 +1243,7 @@ async def list_shows(request: Request, scope: str = "mine") -> dict:
         by_conns = await store.list_shows(owner_in=conns, visibility="connections", limit=200) if conns else []
         docs = list({d["id"]: d for d in named + by_conns if d.get("owner_uid") != user.uid}.values())
     else:
-        docs = await store.list_shows(owner_uid=user.uid, limit=500)
+        docs = _no_briefings(await store.list_shows(owner_uid=user.uid, limit=500))  # those are on /briefings
     by_id = {d["id"]: d for d in docs}
     for show_id in rooms.ids():  # live docs are fresher than the stored copies
         room = rooms.get(show_id)
@@ -860,6 +1281,7 @@ async def share_show(show_id: str, body: ShareSettings, request: Request) -> dic
     user = await require_user(request)
     doc, room = await _show_doc(show_id)
     _owner(doc, user)
+    _not_a_briefing(doc)
     fields = {"visibility": body.visibility, "shared_with": await _clean_share_list(user, body.shared_with)}
     if body.visibility == "public" and doc.get("visibility") != "public":
         fields["published_at"] = time.time()
@@ -874,6 +1296,7 @@ async def organize_show(show_id: str, body: Organize, request: Request) -> dict:
     user = await require_user(request)
     doc, _ = await _show_doc(show_id)
     _owner(doc, user)
+    _not_a_briefing(doc)
     fields: dict = {}
     if body.album_ids is not None:
         fields["album_ids"] = await _owned_album_ids(user, body.album_ids)
@@ -976,7 +1399,7 @@ async def creator_page(uid: str, request: Request) -> dict:
     if other is None:
         raise HTTPException(status_code=404, detail="No such creator.")
     viewer = await current_user(request)
-    shows = await _visible(viewer, await store.list_shows(owner_uid=uid, limit=300))
+    shows = await _visible(viewer, _no_briefings(await store.list_shows(owner_uid=uid, limit=300)))
     albums = [a for a in await store.list_albums(owner_uid=uid) if await accounts.can_view(viewer, a)]
     counts: dict[str, int] = {}
     for d in shows:
@@ -1110,7 +1533,8 @@ async def show_stats(show_id: str, request: Request) -> dict:
 @app.get("/api/me/stats")
 async def my_stats(request: Request) -> dict:
     user = await require_user(request)
-    docs = [_fresh(d) for d in await store.list_shows(owner_uid=user.uid, limit=60) if d.get("status") != "draft"]
+    docs = [_fresh(d) for d in _no_briefings(await store.list_shows(owner_uid=user.uid, limit=60))
+            if d.get("status") != "draft"]
     all_sessions = await asyncio.gather(*(store.list_sessions(d["id"]) for d in docs))
     rows = [stats_mod.overview_row(d, stats_mod.summarize(d, ss)) for d, ss in zip(docs, all_sessions)]
     albums = await store.list_albums(owner_uid=user.uid)

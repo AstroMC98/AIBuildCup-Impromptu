@@ -94,6 +94,18 @@ export const api = {
   unsubscribe: (kind, targetId) => call("DELETE", `/api/subscriptions/${id(kind)}/${id(targetId)}`),
   feed: () => call("GET", "/api/feed"),
   feedSeen: () => call("POST", "/api/feed/seen"),
+  // personal briefings and the watchlist they're made from
+  briefings: () => call("GET", "/api/briefings"),
+  makeBriefing: (body) => call("POST", "/api/briefings", { json: body }),
+  setSchedule: (body) => call("PUT", "/api/briefings/schedule", { json: body }),
+  createBriefingTemplate: (body) => call("POST", "/api/briefing-templates", { json: body }),
+  updateBriefingTemplate: (tid, body) => call("PUT", `/api/briefing-templates/${id(tid)}`, { json: body }),
+  deleteBriefingTemplate: (tid) => call("DELETE", `/api/briefing-templates/${id(tid)}`),
+  watches: () => call("GET", "/api/watches"),
+  addWatch: (body) => call("POST", "/api/watches", { json: body }),
+  updateWatch: (wid, body) => call("PATCH", `/api/watches/${id(wid)}`, { json: body }),
+  removeWatch: (wid) => call("DELETE", `/api/watches/${id(wid)}`),
+  checkWatch: (wid) => call("POST", `/api/watches/${id(wid)}/check`),
   // admin
   adminUsers: (q = "") => call("GET", `/api/admin/users?q=${id(q)}`),
   grant: (uid, amount, note) => call("POST", `/api/admin/users/${id(uid)}/credits`, { json: { amount, note } }),

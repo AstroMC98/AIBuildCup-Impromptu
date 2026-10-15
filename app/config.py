@@ -58,6 +58,20 @@ class Settings(BaseSettings):
     # Credits every new account starts with. 0 = new accounts are free accounts.
     signup_credits: int = 0
 
+    # ---- personal briefings (see briefing.py) ---------------------------------
+    briefing_minutes_per_credit: int = 5   # a 5-minute briefing costs 1 credit
+    briefing_keep_hours: float = 48.0      # then it's deleted
+    # A scheduled briefing starts rendering this long before the time it's wanted.
+    briefing_lead_minutes: float = 30.0
+    # How often scheduled briefings and expired ones are looked for.
+    briefing_poll_seconds: float = 60.0
+    # This app's public address: named in the watch fetcher's User-Agent, and what
+    # wake-ups call. Blank = the address the last request came in on.
+    public_url: str = ""
+    # Cloud Tasks queue (projects/P/locations/R/queues/Q) that wakes the server for
+    # scheduled briefings on Cloud Run. Blank (local) = no wake-ups needed.
+    wake_queue: str = ""
+
     # ---- storage ------------------------------------------------------------
     storage_backend: Literal["local", "gcp"] = "local"
     data_dir: str = "data"

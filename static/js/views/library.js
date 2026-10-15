@@ -84,6 +84,7 @@ export async function openAccountSheet() {
     <nav class="menu">
       <a class="menu-item" href="/" data-link>${icon("mic", 20)}Your pods</a>
       <a class="menu-item" href="/following" data-link>${icon("heart", 20)}Following</a>
+      <a class="menu-item" href="/briefings" data-link>${icon("sparkle", 20)}Briefings <span class="faint">made just for you</span></a>
       <a class="menu-item" href="/albums" data-link>${icon("bars", 20)}Albums</a>
       <a class="menu-item" href="/stats" data-link>${icon("people", 20)}Stats</a>
       <a class="menu-item" href="/creator/${me.uid}" data-link>${icon("user", 20)}Your creator page</a>
@@ -112,6 +113,7 @@ function ledgerLabel(e) {
   const when = fmtAgo(e.at);
   switch (e.reason) {
     case "pod": return `Pod went live · ${when}`;
+    case "briefing": return `Briefing · ${when}`;
     case "refund": return `Unused minutes back · ${when}`;
     case "signup": return `Welcome credits · ${when}`;
     case "grant": return `${e.note || "Credits added"} · ${when}`;

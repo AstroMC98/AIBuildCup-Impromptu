@@ -214,6 +214,12 @@ const VIS = [
 /** Owners choose who can listen; everyone can copy the link (it only opens for people with access). */
 export async function openShareSheet(ctl) {
   const s = ctl.store;
+  if (s.show.kind === "briefing") {
+    openSheet({ title: "Just for you", body: html`<p class="muted">Briefings are private: they can't be shared,
+      and they're deleted ${s.show.expires_at ? `${Math.max(1, Math.ceil((s.show.expires_at - Date.now() / 1000) / 3600))} hours from now`
+        : "after two days"}. Download the audio if you want to keep it.</p>` });
+    return;
+  }
   const owner = s.producer;
   const state = { visibility: s.show.visibility || "private", shared: [...(s.show.shared_with || [])] };
   let connections = null;
@@ -310,16 +316,19 @@ export function openMoreSheet(ctl) {
   const div = document.createElement("div");
   div.className = "menu";
   const live = ctl.live && !s.ended;
+  const briefing = s.show.kind === "briefing";
   setHtml(div, html`
     <button type="button" class="menu-item" data-dl-audio>${icon("download", 20)}Download audio${live ? " so far" : ""}</button>
     <button type="button" class="menu-item" data-dl-text>${icon("note", 20)}Download transcript</button>
-    <button type="button" class="menu-item" data-share>${icon("share", 20)}Share</button>
+    ${briefing ? html`<a class="menu-item" href="/briefings" data-link>${icon("sparkle", 20)}Your briefings</a>`
+      : html`<button type="button" class="menu-item" data-share>${icon("share", 20)}Share</button>`}
     ${s.producer && live ? html`
       <button type="button" class="menu-item" data-wrap>${icon("chat", 20)}Wrap it up <span class="faint">The hosts sign off soon</span></button>
       <button type="button" class="menu-item danger" data-stop>${icon("stop", 20)}Stop now</button>` : ""}
     ${s.producer ? html`
+      ${briefing ? "" : html`
       <a class="menu-item" href="/show/${ctl.id}/stats" data-link>${icon("people", 20)}Stats <span class="faint">who listened, when they left</span></a>
-      <button type="button" class="menu-item" data-organize>${icon("bars", 20)}Albums and tags</button>
+      <button type="button" class="menu-item" data-organize>${icon("bars", 20)}Albums and tags</button>`}
       <a class="menu-item" href="/new" data-link>${icon("plus", 20)}Start a new pod</a>` : ""}
     ${!s.producer && s.creator ? html`
       <a class="menu-item" href="/creator/${s.creator.uid}" data-link>${icon("user", 20)}More from ${s.creator.name}</a>` : ""}`);

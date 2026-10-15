@@ -304,6 +304,21 @@ class LocalStore:
             return users[:limit]
         return await asyncio.to_thread(run)
 
+    # ---- briefings ---------------------------------------------------------------------------
+
+    async def users_due_for_briefing(self, before: float, limit: int = 50) -> list[dict]:
+        due = [u for u in await self.list_users(limit=100_000)
+               if isinstance(u.get("briefing_due_at"), (int, float)) and u["briefing_due_at"] <= before]
+        due.sort(key=lambda u: u["briefing_due_at"])
+        return due[:limit]
+
+    async def expired_shows(self, before: float, limit: int = 100) -> list[dict]:
+        def run() -> list[dict]:
+            return [d for p in self.root.glob("*/show.json")
+                    if (d := _read_json(p)) and isinstance(d.get("expires_at"), (int, float))
+                    and d["expires_at"] <= before][:limit]
+        return await asyncio.to_thread(run)
+
     async def adjust_credits(self, uid: str, amount: int, *, reason: str, show_id: str | None = None,
                              by: str | None = None, note: str = "") -> int:
         """Add (or, negative, spend) credits. Spending more than the balance raises."""

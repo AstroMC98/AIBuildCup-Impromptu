@@ -62,7 +62,7 @@ class Gemini:
     async def plan_show(self, req: ShowRequest, source: str) -> ShowPlan:
         data = await self._json_call(
             system=prompts.planner_system(req, source),
-            user=prompts.PLANNER_INPUT,
+            user=prompts.planner_input(req),
             schema=prompts.plan_schema(len(req.hosts)),
         )
         try:
@@ -142,6 +142,32 @@ class Gemini:
             generation_config={"thinking_level": "low"},
         )
         return (interaction.output_text or "").strip()[:1000]
+
+    async def search_news(self, query: str, days: int, language: str = "English") -> tuple[list[dict], str]:
+        """Recent stories for a briefing's search string, with Grounding with Google Search.
+        Returns (items, the Search Suggestions HTML Google asks apps to show next to
+        grounded results). Items: title, source, url, published, summary."""
+        interaction = await self.client.aio.interactions.create(
+            model=self.settings.script_model,
+            system_instruction=prompts.NEWS_SEARCH_SYSTEM,
+            input=prompts.news_search_input(query, days, language),
+            tools=[{"type": "google_search"}],
+            response_format={"type": "text", "mime_type": "application/json", "schema": prompts.news_schema()},
+            generation_config={"thinking_level": "low"},
+        )
+        suggestions = ""
+        for step in getattr(interaction, "steps", None) or []:
+            if getattr(step, "type", "") == "google_search_result":
+                for result in getattr(step, "result", None) or []:
+                    suggestions = suggestions or (getattr(result, "search_suggestions", "") or "")
+        items = []
+        for item in _parse_json(interaction.output_text).get("items", [])[:5]:
+            title, source = str(item.get("title", "")).strip(), str(item.get("source", "")).strip()
+            if title and source:
+                items.append({"title": title[:200], "source": source[:80], "url": str(item.get("url") or "")[:2000],
+                              "published": str(item.get("published") or "")[:40],
+                              "summary": str(item.get("summary") or "")[:700]})
+        return items, suggestions
 
     # ---- images -------------------------------------------------------------
 
