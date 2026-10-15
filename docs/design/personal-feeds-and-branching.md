@@ -505,8 +505,10 @@ differs from the plan in these ways:
 **Headless rendering.** `ShowRoom(headless=True)` uses a `RenderClock` whose playhead is
 always at the end of the voiced audio, so every segment is voiced as soon as it's
 written, and the room never signs off for lack of listeners. Nothing in the show loop
-changed. Against the stub it renders far faster than real time; with real Gemini it's
-bounded by writing and speech time, which hasn't been measured for a headless render yet.
+changed. *Measured with real Gemini:* a scheduled 5-minute briefing (a real feed and a
+real news search) started rendering 3 s after its time came up and made 290 s of audio
+in 160 s, about 1.8x faster than real time, so a 15-minute one takes about 8 minutes,
+well inside the 30-minute lead. The news search took about 12 s; adding the feed, under 4 s.
 
 **Search strings.** Each check is one grounded call (`llm.search_news`, about 13 s, a few
 Google queries) asking for up to 5 recent stories as JSON. A story whose headline (case
