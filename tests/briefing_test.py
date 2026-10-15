@@ -299,6 +299,22 @@ async def _():
         assert [w["id"] for w, _, _ in results] == ["c"]
 
 
+@check("check_all reports each watch as it's checked, so a waiting page can light it")
+async def _():
+    web = Web()
+    with PublicDns():
+        f = fetcher(web)
+        found = await f.detect("https://news.example/")
+        seen = []
+
+        async def on_checked(w, page, updates):
+            seen.append((w["id"], w["last_checked"] > 0))
+
+        results = await watch.check_all(f, [new_watch(found, "a"), new_watch(found, "b")], {}, on_checked=on_checked)
+        assert sorted(seen) == [("a", True), ("b", True)]
+        assert sorted(w["id"] for w, _, _ in results) == ["a", "b"]
+
+
 # ---- the briefing itself ----------------------------------------------------------------------
 
 @check("every template's run of show adds up exactly, at every length, busy day or quiet")

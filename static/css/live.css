@@ -107,6 +107,11 @@
   .lm-bar { display: flex; align-items: center; gap: 8px; padding: 0 12px 14px; }
   .lm-bar .callin-form { flex: 1; min-width: 0; padding: 0; }
   .lm-bar [data-attach] { display: none; }   /* on phones, Add context lives in More */
+  /* a briefing: just for you, so its time left sits where the call-in field would be */
+  .lm-bar.brief { justify-content: space-between; gap: 12px; padding-left: 16px; }
+  .lm-expiry { display: inline-flex; align-items: center; gap: 8px; min-width: 0; font-size: 13.5px; font-weight: 650; color: var(--fg-2); }
+  .lm-expiry svg { flex: none; }
+  .lm-ask { height: 48px; padding: 0 20px; flex: none; }
   .lm-heart { position: relative; }
   .lm-count {
     position: absolute; top: -5px; right: -5px; min-width: 20px; height: 18px; padding: 0 5px; border-radius: 9px;

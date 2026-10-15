@@ -109,10 +109,35 @@ export async function briefingsView(root) {
       <p class="muted small">${d.watches
         ? `${plural(d.waiting, "update")} waiting from ${d.watches === 1 ? "1 watched site or link" : `${d.watches} watched sites and links`}.`
         : "Your watchlist is empty, so this one is all about your topics. Add sites and links below."}</p>
+      <div class="watch-check" data-check role="status" aria-live="polite" ${st.busy && st.watches.length ? "" : "hidden"}></div>
       <p class="error" role="alert" data-make-error></p>
       <button class="btn white big block" type="button" data-make-go ${st.busy ? "disabled" : ""}>
-        ${icon("play", 18, 2.4)}${st.busy ? "Checking your watchlist…" : `Make my briefing · ${plural(cost, "credit")}`}</button>
+        ${st.busy ? html`<span class="lamp chase" aria-hidden="true"></span>${st.watches.length ? "Checking your watchlist…" : "Getting it ready…"}`
+          : html`${icon("play", 18, 2.4)}Make my briefing · ${plural(cost, "credit")}`}</button>
       <p class="faint small">It goes live as it's made, so you can cut in with a question any time.</p>`);
+    renderCheck();
+  };
+
+  // While a briefing is made, each watch's lamp lights as it's checked (the page polls the
+  // watchlist): amber with its count of new updates, or dark with nothing new.
+  const checkState = (w) => {
+    if (w.paused) return { lamp: "", says: "Paused" };
+    const due = st.checkFrom - (w.last_checked || 0) >= st.recheck;
+    if (due && (w.last_checked || 0) < st.checkFrom) return { lamp: "chase", says: "Checking" };
+    if (w.status && w.status !== "ok") return { lamp: "red", says: "Couldn't check" };
+    return w.waiting ? { lamp: "amber", says: `${w.waiting} new` } : { lamp: "", says: "Nothing new" };
+  };
+  const renderCheck = () => {
+    const box = el.querySelector("[data-check]");
+    if (!box || box.hidden) return;
+    setHtml(box, html`<ul>${st.watches.map((w) => {
+      const s = checkState(w);
+      const pop = s.lamp === "amber" && !st.lit.has(w.id);   // a lamp pops on once, not on every poll
+      if (pop) st.lit.add(w.id);
+      return html`<li class="wc-row ${s.lamp} ${pop ? "pop" : ""}"><span class="lamp ${s.lamp}" aria-hidden="true"></span>
+        <span class="ellipsis">${w.kind === "search" ? `“${w.query || w.title}”` : w.label || w.title || hostOf(w.url)}</span>
+        <span class="wc-says">${s.says}</span></li>`;
+    })}</ul>`);
   };
 
   // ---- the schedule ---------------------------------------------------------------------------
@@ -267,6 +292,7 @@ export async function briefingsView(root) {
     st.watches = watches.watches;
     st.watchMax = watches.max;
     st.searchMax = watches.max_searches;
+    st.recheck = watches.recheck_seconds || 900;
     if (!st.sched) {
       st.sched = { ...data.schedule, days: [...(data.schedule.days || [])] };
       if (!data.schedule.enabled && data.schedule.tz === "UTC") st.sched.tz = browserZone();
@@ -411,13 +437,26 @@ export async function briefingsView(root) {
   async function makeNow() {
     if (st.busy) return;
     st.busy = true;
+    st.checkFrom = Date.now() / 1000;
+    st.lit = new Set(st.watches.filter((w) => checkState(w).lamp === "amber").map((w) => w.id));
     renderMake();
     unlockAudio();   // this click lets the live briefing play as soon as it opens
+    const poll = setInterval(async () => {
+      try {
+        st.watches = (await api.watches()).watches;
+        renderCheck();
+      } catch { /* the next poll will do */ }
+    }, 700);
     try {
       const r = await api.makeBriefing({ template_id: st.pick.template, minutes: st.pick.minutes, tz: browserZone() });
+      clearInterval(poll);
+      st.watches = (await api.watches().catch(() => ({ watches: st.watches }))).watches;
+      renderCheck();
       session.refresh();
+      await new Promise((done) => setTimeout(done, st.watches.length ? 500 : 0));   // a beat to see the last lamps land
       navigate(`/show/${r.id}`);
     } catch (ex) {
+      clearInterval(poll);
       st.busy = false;
       renderMake();
       el.querySelector("[data-make-error]").textContent = ex.message;

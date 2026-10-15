@@ -982,15 +982,19 @@ def _briefing_out(d: dict) -> dict:
 
 
 async def _refresh_watches(uid: str, *, force: bool = False) -> list[dict]:
-    """Check the watches that are due, save what changed, and return all of them."""
+    """Check the watches that are due, saving each as soon as it's checked (the briefings
+    page polls /api/watches to light each one's lamp), and return all of them."""
     watches = await store.list_items(uid, "watches")
     pages = {p["id"]: p for p in await store.list_items(uid, "watch_pages")}
     by_id = {w["id"]: w for w in watches}
-    for w, page, _ in await watch_mod.check_all(fetcher, watches, pages, force=force):
+
+    async def save(w: dict, page: dict | None, _updates: list[dict]) -> None:
         by_id[w["id"]] = w
         await store.put_item(uid, "watches", w)
         if page is not None and page is not pages.get(w["id"]):
             await store.put_item(uid, "watch_pages", page)
+
+    await watch_mod.check_all(fetcher, watches, pages, force=force, on_checked=save)
     return list(by_id.values())
 
 
@@ -1246,7 +1250,8 @@ async def _watch_or_404(uid: str, watch_id: str) -> dict:
 async def list_watches(request: Request) -> dict:
     user = await require_user(request)
     return {"watches": [_watch_out(w) for w in await store.list_items(user.uid, "watches")],
-            "max": watch_mod.MAX_WATCHES, "max_searches": watch_mod.MAX_SEARCHES}
+            "max": watch_mod.MAX_WATCHES, "max_searches": watch_mod.MAX_SEARCHES,
+            "recheck_seconds": watch_mod.RECHECK_SECONDS}
 
 
 @app.post("/api/watches")

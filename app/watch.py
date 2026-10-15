@@ -498,9 +498,12 @@ class Fetcher:
 
 
 async def check_all(fetcher: Fetcher, watches: list[dict], pages: dict[str, dict], *,
-                    force: bool = False, budget: float = 30.0) -> list[tuple[dict, dict | None, list[dict]]]:
+                    force: bool = False, budget: float = 30.0,
+                    on_checked: Callable[[dict, dict | None, list[dict]], Awaitable[None]] | None = None,
+                    ) -> list[tuple[dict, dict | None, list[dict]]]:
     """Check every active watch not checked in the last RECHECK_SECONDS, a few at a time,
-    giving up on whatever is still running after `budget` seconds."""
+    giving up on whatever is still running after `budget` seconds. on_checked runs as each
+    one finishes (so it can be saved, and a waiting page can show it), not at the end."""
     now = time.time()
     due = [w for w in watches if not w.get("paused")
            and (force or now - float(w.get("last_checked") or 0) >= RECHECK_SECONDS)]
@@ -508,7 +511,10 @@ async def check_all(fetcher: Fetcher, watches: list[dict], pages: dict[str, dict
 
     async def one(w: dict):
         async with gate:
-            return await fetcher.check(w, pages.get(w["id"]))
+            result = await fetcher.check(w, pages.get(w["id"]))
+        if on_checked is not None:
+            await on_checked(*result)
+        return result
 
     tasks = [asyncio.create_task(one(w)) for w in due]
     if not tasks:

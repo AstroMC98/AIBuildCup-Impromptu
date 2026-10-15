@@ -27,6 +27,9 @@ export function mountMobile(root, ctl) {
   }
 
   const s = ctl.store;
+  // A briefing is just for its owner: no listeners or hearts, and its time left where the
+  // call-in field would be, with Interrupt as the main button.
+  const brief = s.show.kind === "briefing";
   const el = document.createElement("div");
   el.className = "live-m stage";
   setHtml(el, html`
@@ -48,11 +51,16 @@ export function mountMobile(root, ctl) {
     <div class="lm-behind" data-r="behind"></div>
     <div class="chapter-bar thin" data-r="chapters" aria-hidden="true"></div>
     <div class="lm-hosts" data-r="hosts"></div>
-    <div class="lm-bar">
-      ${callinForm(ctl, { id: "lm-callin" })}
-      <button class="round-btn ghost lm-heart" type="button" data-action="react" data-heart aria-label="React">${icon("heart")}<span class="lm-count" data-r="hearts"></span></button>
-      ${s.producer ? html`<button class="round-btn white lm-interrupt" type="button" data-action="interrupt" aria-label="Interrupt the show">${icon("mic")}</button>` : ""}
-    </div>
+    ${brief ? html`
+      <div class="lm-bar brief">
+        <span class="lm-expiry">${icon("lock", 15, 2.2)}<span>Just for you, deleted in <span data-r="expiry"></span></span></span>
+        ${s.producer ? html`<button class="btn white lm-ask" type="button" data-action="interrupt">${icon("mic", 18, 2.2)}Interrupt</button>` : ""}
+      </div>` : html`
+      <div class="lm-bar">
+        ${callinForm(ctl, { id: "lm-callin" })}
+        <button class="round-btn ghost lm-heart" type="button" data-action="react" data-heart aria-label="React">${icon("heart")}<span class="lm-count" data-r="hearts"></span></button>
+        ${s.producer ? html`<button class="round-btn white lm-interrupt" type="button" data-action="interrupt" aria-label="Interrupt the show">${icon("mic")}</button>` : ""}
+      </div>`}
     <div class="tune-in" data-r="tunein" hidden></div>
     <div class="np-overlay stage" data-np hidden></div>`);
   root.append(el);
@@ -140,9 +148,15 @@ export function mountMobile(root, ctl) {
       np?.frame(pos);
     },
     onEvent(e) {
-      r.set("listeners", `${s.listeners}`, () => (s.listeners > 1 ? `${s.listeners} listening` : ""));
-      if (e.type === "react" && e.burst) floatHearts(el.querySelector("[data-heart]"), e.burst);
-      odometer(r.el("hearts"), s.hearts);
+      if (brief) {
+        r.set("listeners", "brief", () => "Only you");
+        const hours = Math.max(1, Math.ceil(((s.show.expires_at || Date.now() / 1000 + 172800) - Date.now() / 1000) / 3600));
+        r.set("expiry", hours, () => `${hours} hour${hours === 1 ? "" : "s"}`);
+      } else {
+        r.set("listeners", `${s.listeners}`, () => (s.listeners > 1 ? `${s.listeners} listening` : ""));
+        if (e.type === "react" && e.burst) floatHearts(el.querySelector("[data-heart]"), e.burst);
+        odometer(r.el("hearts"), s.hearts);
+      }
       renderTune();
       np?.onEvent(e);
     },
