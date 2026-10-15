@@ -275,6 +275,13 @@ class ShowRoom:
             seg["samples"] = None
             self.segments[seg["seq"]] = seg
             self.persist.segment(seg)
+        elif kind == "line":
+            # Where a line starts in its segment's audio (saved with the segment at its end).
+            seg = self.segments.get(event["seq"])
+            if seg is not None:
+                starts = seg.setdefault("line_starts", [])
+                del starts[event["idx"]:]
+                starts.append(event["at"])
         elif kind == "segment_end":
             seg = self.segments.get(event["seq"])
             if seg is not None:
@@ -495,6 +502,8 @@ class ShowRoom:
         if cut and cut["seq"] in self.segments:
             seg = self.segments[cut["seq"]]
             seg.update(lines=cut["lines"], samples=cut["samples"])
+            if "line_starts" in cut:
+                seg["line_starts"] = cut["line_starts"]
             self.persist.segment(seg)
         self.chapters = {i: s for i, s in self.chapters.items() if s < at}
         self.doc["beats"] = self._beats_with_times()

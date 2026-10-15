@@ -78,6 +78,8 @@ WRITE_RETRY_DELAYS = (2.0, 5.0) # transient API failures get two more tries
 WRITE_TIMEOUT_SECONDS = 15.0
 PLAN_TIMEOUT_SECONDS = 45.0     # plans take ~11 s; listeners are waiting on Go live
 SPEECH_STALL_SECONDS = 15.0     # speech that stops streaming this long is skipped
+SPEECH_AHEAD = 3                # lines voiced at once: the one playing and a couple ahead
+LINE_GAP_SECONDS = 0.12         # a breath between lines (each line is voiced on its own)
 # A rewrite costs a writer call plus the wait for first audio. Both are measured as the
 # show runs; these are the starting guesses, and the margin covers a slow call.
 WRITE_SECONDS_GUESS = 8.0
@@ -153,6 +155,7 @@ class Draft:
     prev_style_acked: int = 0
     held: bool = False          # input arrived too late to rewrite this one
     samples: int | None = None  # voiced length, once known
+    line_starts: list[int] = field(default_factory=list)   # each line's first sample, from the segment's start
     transcript_len: int = 0     # transcript length before this segment (for rewinding)
     prev_beat_lines: int = 0
     advanced: bool = False      # it finished a beat and moved the show on
@@ -165,10 +168,13 @@ def _spoken_words(lines: list[Line]) -> int:
     return sum(len(VOCAL_TAG.sub("", ln.text).split()) for ln in lines)
 
 
-def _lines_heard(lines: list[Line], fraction: float) -> int:
+def _lines_heard(lines: list[Line], fraction: float, starts: list[int] | None = None, offset: int = 0) -> int:
     """How many lines of a segment the listener had started hearing, `fraction` of the
-    way through its audio. Weighted by spoken length exactly as the captions are
-    (static/js/live/store.js), so the server and every screen cut at the same line."""
+    way (`offset` samples) through its audio. With the lines' real starts, exactly;
+    without them, weighted by spoken length as the captions are (static/js/live/store.js),
+    so the server and every screen cut at the same line."""
+    if starts:
+        return max(1, min(len(lines), sum(1 for s in starts if s <= offset)))
     weights = [max(8, len(" ".join(ASIDE.sub("", VOCAL_TAG.sub("", ln.text)).split()))) for ln in lines]
     target = fraction * sum(weights)
     heard, start = 0, 0.0
@@ -834,34 +840,78 @@ class ShowRunner:
         })
 
     async def _speak(self, draft: Draft) -> None:
+        """Voice the segment a line at a time, each line in its own speaker's voice, a few
+        lines ahead in parallel, pushed in order. Every line's first sample is announced
+        ("line"), so the captions and the speaker label follow the audio exactly. (One
+        multi-speaker call for the whole segment says nothing about where each line
+        starts, so the captions had to guess from character counts, and drifted.)"""
         assert self.plan is not None
         hosts = self.plan.hosts
+        by_name = {h.name: h for h in hosts}
         samples = 0
         cancelled = False
         started = time.monotonic()
+        gap = b"\x00\x00" * int(LINE_GAP_SECONDS * self.rate)
 
         async def stream_once() -> bool:
             """Voice the segment; False if the show stopped partway."""
             nonlocal samples
-            carry = b""
-            stream = self.gemini.stream_speech(draft.lines, hosts)
-            while True:
-                try:
-                    chunk = await asyncio.wait_for(anext(stream), SPEECH_STALL_SECONDS)
-                except StopAsyncIteration:
-                    return True
-                if self._stopped:
-                    return False
-                if not samples and not carry:
-                    lag = time.monotonic() - started
-                    self.speech_lag_s = 0.5 * self.speech_lag_s + 0.5 * lag
-                    log.info("segment %d speech started after %.1fs", draft.seq, lag)
-                data = carry + chunk
-                cut = len(data) - (len(data) % 2)  # keep 16-bit samples whole
-                carry = data[cut:]
-                if cut:
-                    self.room.push_audio(draft.seq, data[:cut])
-                    samples += cut // 2
+            draft.line_starts = []
+            queues: list[asyncio.Queue] = [asyncio.Queue() for _ in draft.lines]
+            gate = asyncio.Semaphore(SPEECH_AHEAD)
+
+            async def fetch(i: int) -> None:
+                line = draft.lines[i]
+                voice = [by_name.get(line.speaker, hosts[0])]
+                async with gate:   # first come, first served: earlier lines go first
+                    for attempt in range(2):   # a line that fails before any audio gets one more try
+                        got = False
+                        try:
+                            async for chunk in self.gemini.stream_speech([line], voice):
+                                got = True
+                                queues[i].put_nowait(chunk)
+                            queues[i].put_nowait(None)
+                            return
+                        except asyncio.CancelledError:
+                            raise
+                        except Exception as exc:  # the line that plays when it's due raises it
+                            if got or attempt:
+                                queues[i].put_nowait(exc)
+                                return
+                            log.warning("speech for segment %d line %d failed before any audio (%s); trying again",
+                                        draft.seq, i, exc)
+
+            tasks = [asyncio.create_task(fetch(i)) for i in range(len(draft.lines))]
+            try:
+                for i in range(len(draft.lines)):
+                    if i:
+                        self.room.push_audio(draft.seq, gap)
+                        samples += len(gap) // 2
+                    draft.line_starts.append(samples)
+                    self.room.publish({"type": "line", "seq": draft.seq, "idx": i, "at": samples})
+                    carry = b""
+                    while True:
+                        chunk = await asyncio.wait_for(queues[i].get(), SPEECH_STALL_SECONDS)
+                        if chunk is None:
+                            break
+                        if isinstance(chunk, Exception):
+                            raise chunk
+                        if self._stopped:
+                            return False
+                        if not samples and not carry:
+                            lag = time.monotonic() - started
+                            self.speech_lag_s = 0.5 * self.speech_lag_s + 0.5 * lag
+                            log.info("segment %d speech started after %.1fs", draft.seq, lag)
+                        data = carry + chunk
+                        cut = len(data) - (len(data) % 2)  # keep 16-bit samples whole
+                        carry = data[cut:]
+                        if cut:
+                            self.room.push_audio(draft.seq, data[:cut])
+                            samples += cut // 2
+                return True
+            finally:
+                for t in tasks:
+                    t.cancel()
 
         try:
             for attempt in range(self.speech_retries + 1):
@@ -981,10 +1031,11 @@ class ShowRunner:
         if last is not None:
             length = last.samples if last.samples else max(1, at - last.start)
             if at < last.start + length:  # they were in the middle of it
-                heard = _lines_heard(last.lines, (at - last.start) / length)
+                heard = _lines_heard(last.lines, (at - last.start) / length, last.line_starts, at - last.start)
                 if heard < len(last.lines):
                     del self.transcript[last.transcript_len + heard:]
                     last.lines = last.lines[:heard]
+                    last.line_starts = last.line_starts[:heard]
                 spoken = " ".join(ln.text for ln in last.lines)
                 for c in self.comments.values():  # a call-in its unheard lines would have read out
                     if c.seq == last.seq and c.status in {"on_deck", "declined"} and c.name not in spoken:
@@ -993,7 +1044,8 @@ class ShowRunner:
                 self.beat, self.beat_lines = last.beat, last.prev_beat_lines + len(last.lines)
                 last.advanced = False
                 last.samples = at - last.start
-                cut = {"seq": last.seq, "lines": [ln.model_dump() for ln in last.lines], "samples": last.samples}
+                cut = {"seq": last.seq, "lines": [ln.model_dump() for ln in last.lines], "samples": last.samples,
+                       "line_starts": list(last.line_starts)}
             it.cut_line = last.lines[-1].text if last.lines else ""
         self._voiced = kept
         self._chapter = last.beat if last is not None else None
@@ -1019,6 +1071,8 @@ class ShowRunner:
         self.transcript.append(line)
         self._voiced = [*self._voiced, d][-VOICED_KEPT:]
         self._announce(d)
+        d.line_starts = [0]
+        self.room.publish({"type": "line", "seq": d.seq, "idx": 0, "at": 0})
         self.room.push_audio(d.seq, pcm)
         d.samples = len(pcm) // 2
         self.room.publish({"type": "segment_end", "seq": d.seq, "samples": d.samples})

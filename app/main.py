@@ -76,8 +76,10 @@ WebSocket protocol
                                                   kind ask | deeper | steer | move_on
     {"type": "remove_comment", "id"}              producer
   server -> browser
-    JSON: snapshot | status | plan | segment | segment_end | chapter | comment |
+    JSON: snapshot | status | plan | segment | line | segment_end | chapter | comment |
           context | restyle | react | tick | truncate | ended | saved | error
+          line {seq, idx, at}: line idx of segment seq starts `at` samples into it
+          (each line is voiced on its own, so captions follow the audio exactly)
           truncate {at, keep_seq, cut}: audio after `at` was never heard; drop it
           (segments after keep_seq go; `cut` is the segment the listener was in)
     binary: <seq:u32 LE><start_sample:u32 LE> + raw 24 kHz mono s16le PCM

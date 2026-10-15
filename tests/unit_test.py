@@ -717,8 +717,51 @@ async def _():
     assert await asyncio.wait_for(runner.run(), 10) == "signed_off"
     assert [e["title"] for e in room.events if e["type"] == "plan"] == ["T"]
     assert not any(e.get("state") == "planning" for e in room.events)
-    assert not any(e["type"] == "error" for e in room.events) and len(speech) == 3   # fail, retry, segment 2
-    assert [e["samples"] for e in room.events if e["type"] == "segment_end"] == [2400, 2400]
+    # Each line is voiced on its own: segment 1's first line fails, is tried again, then its
+    # other two lines; segment 2's three lines.
+    assert not any(e["type"] == "error" for e in room.events) and len(speech) == 7
+    gap = int(0.12 * 24_000)
+    assert [e["samples"] for e in room.events if e["type"] == "segment_end"] == [3 * 2400 + 2 * gap] * 2
+
+
+@check("each line is voiced in its own speaker's voice, and announced where it really starts")
+async def _():
+    calls = []
+
+    class Stub:
+        async def plan_show(self, *args):
+            raise AssertionError("planned again")
+
+        async def write_segment(self, *args, **kwargs):
+            return SegmentDraft(lines=[Line(speaker="Mia", text="Is that coffee mine?"),
+                                       Line(speaker="Jordan", text="Absolutely not, I named it."),
+                                       Line(speaker="Mia", text="You named your coffee?")], beat_complete=True)
+
+        async def stream_speech(self, lines, hosts):
+            assert len(lines) == 1 and len(hosts) == 1
+            calls.append((lines[0].speaker, hosts[0].voice))
+            n = {"Mia": 3000, "Jordan": 7000}[lines[0].speaker]   # the voices speak at their own pace
+            yield b"\x00\x00" * (n // 2)
+            await asyncio.sleep(0)
+            yield b"\x00\x00" * (n - n // 2)
+
+    req = ShowRequest(source="x", style="calm", hosts=[{"name": "Mia"}, {"name": "Jordan"}], minutes=2, mode="recorded")
+    plan = ShowPlan(title="T", tagline="t", hosts=[Host(name="Mia", persona="", voice="Aoede"),
+                                                   Host(name="Jordan", persona="", voice="Algieba")],
+                    beats=[Beat(title="b1", notes="", minutes=0.01)])
+    room = StubRoom()
+    runner = ShowRunner(req, "x", Stub(), Settings(), room, plan=plan)
+    assert await asyncio.wait_for(runner.run(), 10) == "signed_off"
+    seg = next(e["seq"] for e in room.events if e["type"] == "segment")
+    assert sorted(calls[:3]) == sorted([("Mia", "Aoede"), ("Jordan", "Algieba"), ("Mia", "Aoede")])
+    gap = int(0.12 * 24_000)
+    starts = [e["at"] for e in room.events if e["type"] == "line" and e["seq"] == seg]
+    assert starts == [0, 3000 + gap, 3000 + gap + 7000 + gap], starts   # not a share of the characters
+    # an interruption cuts at the line the listener was really in
+    from app.show import _lines_heard
+    lines = [Line(speaker="A", text="x" * 10), Line(speaker="B", text="y" * 90)]
+    assert _lines_heard(lines, 0.2, [0, 9000], 8000) == 1      # still in the short first line
+    assert _lines_heard(lines, 0.2) == 2                        # the character estimate would say the second
 
 
 @check("beats get their start and end from the chapters")

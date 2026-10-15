@@ -111,6 +111,14 @@ export class ShowStore {
         Object.assign(this.show, { title: e.title, tagline: e.tagline, about: e.about, hosts: e.hosts });
         break;
       case "segment": this._addSegment({ ...e, samples: null }); break;
+      case "line": {   // where a line starts in its segment's audio (each line is voiced on its own)
+        const seg = this.segBySeq.get(e.seq);
+        if (seg) {
+          seg.line_starts = (seg.line_starts || []).slice(0, e.idx);
+          seg.line_starts[e.idx] = e.at;
+        }
+        break;
+      }
       case "segment_end": {
         const seg = this.segBySeq.get(e.seq);
         if (seg) seg.samples = e.samples;
@@ -154,7 +162,7 @@ export class ShowStore {
     for (const seg of this.segments) if (seg.seq > e.keep_seq) this.segBySeq.delete(seg.seq);
     this.segments = this.segments.filter((seg) => seg.seq <= e.keep_seq);
     const cut = e.cut && this.segBySeq.get(e.cut.seq);
-    if (cut) this._addSegment({ ...cut, lines: e.cut.lines, samples: e.cut.samples });
+    if (cut) this._addSegment({ ...cut, lines: e.cut.lines, samples: e.cut.samples, line_starts: e.cut.line_starts ?? cut.line_starts });
     for (const [i, start] of this.chapterStarts) if (start >= e.at) this.chapterStarts.delete(i);
     this.clock = { ...this.clock, audio_end: e.at, live: Math.min(this.clock.live, e.at), at: performance.now() };
   }
@@ -210,6 +218,9 @@ export class ShowStore {
     const len = this.segLength(seg);
     const off = pos - seg.start;
     if (off >= len) return { seg, idx: seg.lines.length - 1, done: true, frac: 1 };
+    const starts = seg.line_starts;
+    if (starts?.length) return this._lineByStarts(seg, starts, off);
+    // Older pods saved no line starts: estimate from each line's share of the characters.
     const target = (off / len) * seg.total;
     let acc = 0;
     for (let i = 0; i < seg.weights.length; i++) {
@@ -217,6 +228,26 @@ export class ShowStore {
       acc += seg.weights[i];
     }
     return { seg, idx: seg.lines.length - 1, frac: 1 };
+  }
+
+  /** The line at `off` samples into seg, from where each line really starts in the audio.
+   *  A line's end is the next line's start; the one still being voiced is estimated from
+   *  how fast this segment's earlier lines went (characters per sample). */
+  _lineByStarts(seg, starts, off) {
+    let idx = 0;
+    for (let i = 0; i < starts.length && i < seg.lines.length; i++) if (starts[i] <= off) idx = i;
+    const begin = starts[idx];
+    let end = starts[idx + 1];
+    if (end === undefined) {
+      if (seg.samples !== null && seg.samples !== undefined && idx === seg.lines.length - 1) end = seg.samples;
+      else {
+        const before = seg.weights.slice(0, idx).reduce((a, b) => a + b, 0);
+        const perWeight = idx && begin ? begin / before : seg.estimate / seg.total;
+        end = begin + seg.weights[idx] * perWeight;
+      }
+    }
+    const frac = Math.max(0, Math.min(end > begin ? (off - begin) / (end - begin) : 1, starts[idx + 1] === undefined ? 0.98 : 1));
+    return { seg, idx, frac };
   }
 
   /** Lines heard up to pos, oldest first (unvoiced segments count as heard once passed). */
