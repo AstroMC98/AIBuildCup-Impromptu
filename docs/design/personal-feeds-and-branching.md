@@ -1,9 +1,9 @@
 # Design review: personal daily pods and interactive branching audio
 
-Status: Phases 1–2 (interactive branching) **built on this branch**; Phases 3–5 (personal
-daily feeds) are a proposal: news comes from the sites and links each listener watches (decided);
-the other decisions are listed at the end · October 2026 · based on
-`main` at `964b051`
+Status: Phases 1–2 (interactive branching) **built on this branch**. Personal briefings
+(Phase 3, with scheduling from Phase 4) **built as a prototype** after the decisions at the
+end; see Section 5 for how it differs from this plan · October 2026 · based on `main` at
+`964b051`
 
 What was built differs from the plan below in two small ways. Only the pod's **producer**
 can interrupt: they're the only listener of a private pod or a briefing, and in a shared
@@ -477,13 +477,59 @@ keep it bounded:
 | 11 | The watchlist used as a fetch proxy or to hammer a site | The existing SSRF guard; 20 watches per user; minimum 2-hour interval; per-host limit across all users |
 | 12 | Noisy diffs (timestamps, ads, counters) | Normalize before hashing; ignore changes under ~2%; feeds over pages wherever a feed exists |
 
-**Decisions needed from you:**
-1. Pre-render every morning (Phase 4) or on demand only (Phase 3) for the first release?
-2. Briefings longer than 15 minutes, and how they're paid for in credits?
-3. Demo calendar via iCal link, or start Google OAuth verification now?
-4. ~~News via Search grounding or RSS feeds the user picks?~~ **Decided:** users add
-   sites to monitor and links to watch (Section 3.3).
-5. Voice questions in Phase 2 (record and transcribe), or straight to the Live API?
+**Decisions (all made):**
+1. Pre-render or on demand? **On demand by default; the listener can set a time** to
+   have one made ahead and waiting.
+2. Length and credits? **5, 10 or 15 minutes at 1 credit per 5 minutes.**
+3. Calendar? **Not in this prototype.** Listeners reuse or create briefing templates instead.
+4. News? **Sites to monitor and links to watch** (Section 3.3), plus **search strings**
+   (Section 5).
+5. Voice questions? **Record and transcribe** (built in Phase 2).
+
+## 5. As built: personal briefings
+
+Built on this branch after the decisions above, as a prototype of Phases 3 and 4. It
+differs from the plan in these ways:
+
+| Plan | Built | Why |
+|---|---|---|
+| Calendar, commute, local news | **No calendar** in this prototype. Briefings come from the **watchlist** and the listener's topics, in a **briefing template** | Your call: templates instead of calendar for now |
+| A fixed run of show | **Templates**: four premade (Morning roundup, Five-minute focus, Weekend deep-dive, Industry watch) or your own: hosts, style, topics, and which sections (watchlist roundup, deep-dive, quick hits, try this today, your own segment) | Reuse and customization, like pod templates |
+| Sites and links only | Plus **search strings**: words to follow in the news, found with Gemini and Grounding with Google Search | Your request. Public news-search RSS isn't usable: Google News's robots.txt disallows `/rss/search`, Bing's `format=rss` now returns HTML |
+| Pre-render every morning | **On demand by default; set a time if you want one waiting.** A scheduled briefing is made headless before its time and waits, ready to play | Your call |
+| Commute-length episodes, 5–45 min | **5, 10 or 15 minutes; 1 credit per 5 minutes**, unused 5-minute blocks refunded | Your call; 15 minutes stays the app's maximum |
+| Cloud Scheduler + Cloud Tasks + a worker service | An **in-process loop** (every `BRIEFING_POLL_SECONDS`) finds due schedules with one single-field Firestore query and makes each briefing in a **headless ShowRoom** on the same instance. A **Cloud Task per start time** wakes Cloud Run for it | No second service; nothing kept warm (with always-on CPU an idle instance is billed) |
+| `watch_updates` collection with a TTL | Waiting updates live on the watch (`pending`, at most 8, 7 days); page text in `watch_pages/{id}` as `[{h, t}]` | Fewer collections. Firestore rejects arrays of arrays, which the emulator caught |
+| Background polling every 2–6 h | Watches are checked **when a briefing is made** (if not checked in the last 15 minutes) and on **Check now** | Enough for one briefing a day; polling can come later |
+
+**Headless rendering.** `ShowRoom(headless=True)` uses a `RenderClock` whose playhead is
+always at the end of the voiced audio, so every segment is voiced as soon as it's
+written, and the room never signs off for lack of listeners. Nothing in the show loop
+changed. Against the stub it renders far faster than real time; with real Gemini it's
+bounded by writing and speech time, which hasn't been measured for a headless render yet.
+
+**Search strings.** Each check is one grounded call (`llm.search_news`, about 13 s, a few
+Google queries) asking for up to 5 recent stories as JSON. A story whose headline (case
+and punctuation aside) hasn't been seen is new; the first check takes the newest 3.
+Links come back as Google's grounding redirect URLs, which is fine for briefings that
+live 48 hours. Google asks apps to show the Search Suggestions that come with grounded
+results: they're kept on the watch and on each briefing that used them, and shown
+on the Briefings page in a sandboxed iframe. At most 5 searches per listener.
+
+**What a briefing is.** A show document with `kind: "briefing"`, always private, never in
+any list, album, feed or creator page, not shareable, `expires_at` 48 hours on (deleted
+by the loop, never while on air). Its `briefing` field records the template, whether it
+was scheduled, the updates it covered and the search suggestions. An on-demand briefing
+goes live like any pod, so the producer can interrupt it (Section 2).
+
+**Tests.** `tests/briefing_test.py` (21 checks, including a fake web for feeds, page
+changes, robots.txt and headline links, and a fake searcher), `tests/briefing_smoke.py`
+(14 end-to-end checks, including a scheduled briefing made with nobody listening), and
+the store contract on LocalStore and the Firestore emulator.
+
+**Not built yet.** Calendar (iCal or OAuth), commute length, background watch polling,
+push notifications and offline caching, and resuming a pre-rendered briefing live for
+an interruption (Section 3.6): a scheduled briefing plays as a finished pod.
 
 ## References
 
@@ -492,6 +538,8 @@ keep it bounded:
 - Robots Exclusion Protocol (RFC 9309) — https://www.rfc-editor.org/rfc/rfc9309
 - HTTP conditional requests: ETag and If-Modified-Since (RFC 9110, section 13) — https://www.rfc-editor.org/rfc/rfc9110#section-13
 - RSS autodiscovery — https://www.rssboard.org/rss-autodiscovery
+- Grounding with Google Search: Search Suggestions — https://ai.google.dev/gemini-api/docs/grounding/search-suggestions
+- Cloud Tasks: scheduling a task — https://cloud.google.com/tasks/docs/creating-http-target-tasks
 - Gemini API Additional Terms (paid vs unpaid data use) — https://ai.google.dev/gemini-api/terms-archive/terms_12_18_25
 - Batch Mode in the Gemini API — https://developers.googleblog.com/en/scale-your-ai-workloads-batch-mode-gemini-api/
 - Sensitive scope verification — https://developers.google.com/identity/protocols/oauth2/production-readiness/sensitive-scope-verification
