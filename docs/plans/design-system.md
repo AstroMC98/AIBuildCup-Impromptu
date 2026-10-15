@@ -12,18 +12,18 @@ Direction **Live Wire** was chosen by the owner on 2026-10-15 over Recital and S
 
 **Round 3** adapted the prototypes to what merged after that (§5.3): the final voice-memo flow, intros for briefings and co-hosted calls, show notes, and memo pods in the library. The branch now sits on `main` at `07cf067`. Boards that changed are marked UPDATED.
 
-**Implementation (round 4, 2026-10-15).** The system is now in the app code on this branch, not just the prototypes. Every stylesheet was rewritten on the semantic tokens inside `@layer`. No alias layer was kept: nothing reads `--panel`, `--chip`, `--ink` and the rest any more. Smoke (132), unit (100) and briefing (21) tests pass.
+**Implementation (rounds 4 and 5, 2026-10-15/16).** The system is in the app code on this branch, not just the prototypes. Every stylesheet was rewritten on the semantic tokens inside `@layer`. No alias layer was kept: nothing reads `--panel`, `--chip`, `--ink` and the rest any more. The owner approved every §9 decision ("yes to all that needs me"), so the remaining phases were built as dedicated commits after `b69120c`.
 
-| Phase | Done | Not yet |
-|---|---|---|
-| 0 Foundations | Self-hosted Anybody + Atkinson Next, layers, tokens, gel map, rename, favicon, `.stage` collision fixed (studio is `.studio-stage`), `.bar` scoped to `.bars .bar` | |
-| 1 Motion core | `motion.js`, `ring.js`, typed view transitions with the 250 ms cap; sheet drag lives in `ui.js` | |
-| 2 Stage | Kinetic captions, analyser `level()` driving `--level`/`--lv`, tally, studio clock, chapter bar, tune-in target, Now playing, desktop studio on stage | Cover FLIP into Now playing |
-| 3 Waits | Boot ident, loaders as chase rings, green room, memo making (clock + lamp spine), co-host edit lamps, delayed skeletons | Go-live count-in |
-| 4 House | Home composer, Library and Discover grids, tab bar / rail, gel vibe tiles, clock length chips, co-host setup | Live sleeve preview on Create; Draft keeps its old layout on new tokens |
-| 5 Sheets | Spring sheets with recede and drag, stage-tinted sheets, cue-card toasts, hearts on arcs | Sliding segmented indicator, call-in lines (bubbles remain), odometer, restyle preview |
-| 5b Round 2 | Briefings (gel covers, watch lamps), memo record / making / review, intro, show notes | Interrupt detour visuals, research desk, promised-call-in states, per-watch progress |
-| 6 Account | You page, account pages, login on stage | `tests/visual.py`, gel contrast unit test |
+| Phase | Built |
+|---|---|
+| 0 Foundations | Self-hosted Anybody + Atkinson Next, layers, tokens, gel map, rename, favicon, `.stage` collision fixed (studio is `.studio-stage`), `.bar` scoped to `.bars .bar` |
+| 1 Motion core | `motion.js` (animate, stagger, flip, flipById, odometer, dragToDismiss, slideIndicator), `ring.js`, typed view transitions with the 250 ms cap; `navigate()` can force a kind |
+| 2 Stage | Kinetic captions; one screen-reader announcement per line; analyser `level()` driving `--level`/`--lv`; tally; studio clock; chapter bar with amber detour pieces; tune-in target; Now playing grows from the episode's sleeve and drags down to close; desktop studio |
+| 3 Waits | Boot ident; go-live count-in (`golive.js`, also from drafts; stops at once on a refusal); green room with the show's name; the show-intro title card; memo making (clock + lamp spine, failed step in red); co-host edit lamps; delayed skeletons; `waiting()` clock instead of every "Loading…"; no spinner left |
+| 4 House | Home composer; Library and Discover grids; tab bar / rail; Create's live sleeve preview; gel vibe tiles; clock length chips; drafts on the stage; co-host setup |
+| 5 Sheets | Spring sheets with recede and drag; stage-tinted sheets; cue-card toasts that queue; hearts on arcs with an odometer count; sliding segmented indicator; Restyle previews the gel behind the sheet |
+| 5b Round 2 | Call-in lines with lamp states (waiting, up next, looking it up, coming back, on air, not answered); research cards; one labelled frame for Google's Search Suggestions; interrupt (hold-to-talk inside the clock, words dissolve, amber gel flash on the stinger, "You asked" / "Answering you"); briefings with per-watch lamps while one is made (`check_all(on_checked=…)`) and "Only you" on the stage; memo recorder as a tungsten stage |
+| 6 Account | You page, account pages, login on stage (buttons chase while signing in) |
 
 Gotcha found while porting: `color-mix(in oklch, <near-grey>, transparent)` loses its hue in Chrome (powerless hue becomes `none`, rendered as 0°), which tints dark greys red. Neutral mixes use `in srgb`; gel mixes stay in `oklch`.
 
