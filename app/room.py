@@ -45,7 +45,7 @@ from .llm import Gemini
 from .models import INTERRUPT_KINDS, ContextItem, ShowRequest
 from .show import ShowRunner
 from .sources import SourceError
-from .stats import TIMELINE_STEP_SECONDS
+from .stats import TIMELINE_STEP_SECONDS, timeline_doc
 from .store import Persister, Store
 
 log = logging.getLogger("podcasts.room")
@@ -550,7 +550,7 @@ class ShowRoom:
                 "peak_listeners": self.peak_listeners,
             },
         }
-        fields["listener_timeline"] = self.listener_timeline
+        fields["listener_timeline"] = timeline_doc(self.listener_timeline)
         for conn in list(self.conns.values()):
             self._save_session(conn, to_end=True)
         self.doc.update(fields)
@@ -640,7 +640,7 @@ class ShowRoom:
         last = self.listener_timeline[-1] if self.listener_timeline else None
         if last is None or live_s - last[0] >= TIMELINE_STEP_SECONDS:
             self.listener_timeline.append([live_s, self.listening_now()])
-            self.persist.show(listener_timeline=self.listener_timeline)
+            self.persist.show(listener_timeline=timeline_doc(self.listener_timeline))
 
     def open_sessions(self) -> list[dict]:
         """Sessions of listeners still connected, as they'd be saved right now (for

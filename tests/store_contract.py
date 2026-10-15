@@ -150,6 +150,14 @@ async def contract(store, tag: str) -> list[str]:
         assert await store.count_subscribers(f"creator:nobody-{run}") == 0
     await check("subscriptions: idempotent, counted, removable", subscriptions)
 
+    # ---- the listener timeline a live show saves (Firestore takes no arrays of arrays) ----
+    async def timeline():
+        from app.stats import timeline_doc, timeline_pairs
+        await store.update_show(s3, {"listener_timeline": timeline_doc([[0, 1], [10, 2]])})
+        assert timeline_pairs((await store.get_show(s3))["listener_timeline"]) == [[0, 1], [10, 2]]
+        assert timeline_pairs([[0, 1]]) == [[0, 1]]          # older local saves still read
+    await check("a show's listener timeline saves and reads back", timeline)
+
     # ---- lifecycle ----
     async def lifecycle():
         assert await store.mark_interrupted({s1, s3}) >= 1

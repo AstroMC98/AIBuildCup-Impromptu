@@ -18,6 +18,17 @@ from __future__ import annotations
 TIMELINE_STEP_SECONDS = 10    # how often the room samples "listening now"
 
 
+def timeline_doc(timeline: list[list[int]]) -> list[dict]:
+    """The listener timeline as saved: Firestore rejects arrays of arrays, so each
+    [seconds, listening] sample is stored as {s, n}."""
+    return [{"s": s, "n": n} for s, n in timeline]
+
+
+def timeline_pairs(saved: list | None) -> list[list[int]]:
+    """A saved timeline back as [seconds, listening] pairs (older local saves are pairs)."""
+    return [[p["s"], p["n"]] if isinstance(p, dict) else [p[0], p[1]] for p in saved or []]
+
+
 def person(s: dict) -> str:
     return f"u:{s['uid']}" if s.get("uid") else f"a:{s.get('lid') or s.get('id')}"
 
@@ -49,7 +60,7 @@ def summarize(doc: dict, sessions: list[dict], *, comments: int = 0, live_now: i
     not_owner = [s for s in sessions if not (s.get("uid") and s.get("uid") == owner)]
     live = _merge([s for s in not_owner if s.get("kind") == "live"])
     replay = _merge([s for s in not_owner if s.get("kind") == "replay"])
-    timeline = timeline if timeline is not None else doc.get("listener_timeline") or []
+    timeline = timeline if timeline is not None else timeline_pairs(doc.get("listener_timeline"))
 
     # When people left: the last time each live listener dropped off, by minute of
     # the show. Anyone still there at the sign-off stayed to the end.
