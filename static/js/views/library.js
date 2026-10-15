@@ -106,8 +106,11 @@ export function sleeve(s, size = "md") {
   const call = s.kind === "cohost";
   const title = s.title || "Untitled pod";
   const short = size === "sm" ? (call ? "" : [...title.trim()][0]?.toUpperCase() || "") : title;   // a tile this small holds one letter
+  // A long word ("Architecture:") would break mid-word; the title shrinks to fit it instead.
+  const longest = Math.max(...short.split(/\s+/).map((w) => w.length), 1);
+  const fit = longest > 10 ? (10 / longest).toFixed(3) : "1";
   return html`
-    <span class="sleeve ${size}" style="--gel:${gel}" aria-hidden="true">
+    <span class="sleeve ${size}" style="--gel:${gel};--fit:${fit}" aria-hidden="true">
       ${size !== "sm" ? ring({ cls: "sleeve-ring", lit: (i) => i % 3 === 0, r: 44, dot: 2 }) : ""}
       ${live && size !== "sm" ? html`<span class="sleeve-live">${call ? "On a call" : "Live"}</span>` : ""}
       ${s.status === "review" ? html`<span class="sleeve-review">Review</span>` : ""}

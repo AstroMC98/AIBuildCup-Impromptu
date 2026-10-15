@@ -92,8 +92,8 @@
   .sleeve-ring circle.lit { fill: #fff; }
   .sleeve-t {
     position: absolute; left: 9%; right: 7%; bottom: 9%;
-    font: 860 21cqi/.86 var(--f-display); font-stretch: 58%; letter-spacing: -0.01em;
-    display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere;
+    font: 860 calc(21cqi * var(--fit, 1))/.86 var(--f-display); font-stretch: 58%; letter-spacing: -0.01em;
+    display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: break-word;
   }
   .sleeve.sm .sleeve-t { font-size: 30px; font-stretch: 70%; line-height: .8; left: 6px; right: auto; bottom: 3px; }
   .sleeve-ic { position: absolute; inset: 0; display: grid; place-items: center; color: #fff; }
