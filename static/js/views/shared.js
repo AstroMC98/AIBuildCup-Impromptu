@@ -6,6 +6,7 @@ import {
   downloadTranscript, openContextSheet, openHostsSheet, openInterruptSheet, openMoreSheet, openRestyleSheet,
   openShareSheet,
 } from "../sheets.js";
+import { ring } from "../ring.js";
 import { navigate } from "../router.js";
 import { loginPath } from "../session.js";
 import { reducedMotion, toast } from "../util.js";
@@ -132,28 +133,42 @@ export function focusCallin(root) {
   input?.scrollIntoView({ block: "center", behavior: reducedMotion() ? "auto" : "smooth" });
 }
 
+/** The tap that lets the browser play sound: one big target inside the studio clock. */
 export function tuneInOverlay(ctl) {
   const s = ctl.store;
+  const at = Math.max(0, (ctl.liveEdge?.() || 0) / s.rate);
+  const mins = Math.floor(at / 60);
   return html`
     <div class="tune-card">
-      <span class="badge live"><span class="dot"></span>Live now</span>
-      <p class="tune-title">${s.show.title || "A live show"}</p>
-      <p class="muted">${s.hostNames() ? `With ${s.hostNames()}. ` : ""}Listen in, call in, and the hosts will answer you on air.</p>
-      <button class="btn white big block" type="button" data-action="tune-in">${icon("play", 20, 2.4)}Tune in</button>
+      <button class="tune-target" type="button" data-action="tune-in" aria-label="Tune in">
+        ${ring({ lit: (i) => i <= Math.floor(at % 60), r: 46, dot: 2.2 })}<span class="tune-play">${icon("play", 34, 2.4)}</span></button>
+      <p class="tune-title">Tune in</p>
+      <p class="muted">${s.show.title ? html`<strong>${s.show.title}</strong>. ` : ""}${s.hostNames() || "The hosts"} ${at > 20 ? `are ${mins ? `${mins} min` : "a moment"} in` : "are just starting"}. You'll join live, and you can call in.</p>
     </div>`;
 }
 
+/** Hearts leave the button on arcs; under reduced motion, one rises and fades. */
 export function floatHearts(anchor, n) {
-  if (!anchor || reducedMotion()) return;
+  if (!anchor) return;
   const rect = anchor.getBoundingClientRect();
-  for (let i = 0; i < Math.min(n, 6); i++) {
+  const calm = reducedMotion();
+  anchor.animate?.([{ transform: "scale(1)" }, { transform: "scale(.86)" }, { transform: "scale(1)" }], { duration: calm ? 1 : 300 });
+  const count = calm ? 1 : Math.min(2 + n * 2, 8);
+  for (let i = 0; i < count; i++) {
     const h = document.createElement("span");
     h.className = "float-heart";
     h.innerHTML = String(icon("heart", 22));
-    h.style.left = `${rect.left + rect.width / 2 - 11 + (Math.random() * 24 - 12)}px`;
+    h.querySelector("svg")?.setAttribute("fill", "currentColor");
+    h.style.left = `${rect.left + rect.width / 2 - 11}px`;
     h.style.top = `${rect.top}px`;
-    h.style.animationDelay = `${i * 90}ms`;
     document.body.append(h);
-    setTimeout(() => h.remove(), 1800 + i * 90);
+    const dx = -70 + Math.random() * 70, dy = -170 - Math.random() * 120, rot = -30 + Math.random() * 60;
+    const frames = calm
+      ? [{ opacity: 1, transform: "none" }, { opacity: 0, transform: "translateY(-70px)" }]
+      : [{ opacity: 0, transform: "translate(0, 0) scale(.4)" },
+        { opacity: 1, transform: `translate(${dx * 0.3}px, ${dy * 0.25}px) scale(1.1) rotate(${rot * 0.3}deg)`, offset: 0.2 },
+        { opacity: 0, transform: `translate(${dx}px, ${dy}px) scale(.9) rotate(${rot}deg)` }];
+    h.animate(frames, { duration: calm ? 700 : 900 + Math.random() * 400, delay: i * 70, easing: "cubic-bezier(.2, .7, .3, 1)", fill: "both" })
+      .finished.then(() => h.remove(), () => h.remove());
   }
 }

@@ -1,16 +1,17 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-world="house">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#3E1A3E">
-  <meta name="color-scheme" content="dark">
-  <title>Gemini Podcasts</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&display=swap" rel="stylesheet">
+  <meta name="theme-color" content="#0B0C12">
+  <meta name="color-scheme" content="light dark">
+  <title>Impromptu</title>
+  <link rel="preload" href="/static/fonts/atkinson-next-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/static/fonts/anybody-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/static/fonts/anybody-wordmark.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/static/css/tokens.css">
   <link rel="stylesheet" href="/static/css/base.css">
+  <link rel="stylesheet" href="/static/css/motion.css">
   <link rel="stylesheet" href="/static/css/library.css">
   <link rel="stylesheet" href="/static/css/create.css">
   <link rel="stylesheet" href="/static/css/live.css">
@@ -21,9 +22,18 @@
   <link rel="stylesheet" href="/static/css/memo.css">
   <link rel="stylesheet" href="/static/css/briefings.css">
   <link rel="stylesheet" href="/static/css/cohost.css">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23B8336A'/><path d='M8 20v-8M13 24V8M18 20v-8M23 18v-4' stroke='white' stroke-width='3' stroke-linecap='round'/></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23141720'/><path d='M14.6 13.5h5.2l-2.3 12.5h-5.2z' fill='white'/><circle cx='18.4' cy='8.4' r='3.3' fill='%23FF3B30'/></svg>">
+  <style>
+    /* The boot ident: only shows if the app takes longer than 250 ms to know who you are. */
+    .boot { position: fixed; inset: 0; z-index: 400; display: grid; place-items: center; font-size: 46px;
+      background: #0B0C12; animation: boot-in .2s .25s both; transition: opacity .3s ease; }
+    .boot .wm { color: #fff; }
+    .boot.gone { opacity: 0; pointer-events: none; }
+    @keyframes boot-in { from { opacity: 0; } }
+  </style>
 </head>
 <body>
+  <div id="boot" class="boot" aria-hidden="true"><span class="wm ignite"><span class="iw"><span class="i">i</span><span class="tittle"></span></span>mpromptu</span></div>
   <div id="app"></div>
   <div id="toast" class="toast" role="status" hidden></div>
   <script type="module" src="/static/js/main.js"></script>

@@ -193,7 +193,7 @@ async def lifespan(_: FastAPI):
     await asyncio.gather(rooms.shutdown(timeout=6.0), cohosts.shutdown(timeout=6.0), renders.shutdown(timeout=6.0))
 
 
-app = FastAPI(title="Gemini Podcasts", lifespan=lifespan)
+app = FastAPI(title="Impromptu", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 
@@ -595,6 +595,8 @@ def _index() -> FileResponse:
 @app.get("/")
 @app.get("/discover")
 @app.get("/following")
+@app.get("/library")
+@app.get("/you")
 @app.get("/albums")
 @app.get("/stats")
 @app.get("/new")

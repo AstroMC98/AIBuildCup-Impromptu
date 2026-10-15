@@ -6,8 +6,17 @@
 import { api } from "./api.js";
 import { html, setHtml } from "./html.js";
 import { icon } from "./icons.js";
+import { ring } from "./ring.js";
 import { session } from "./session.js";
 import { openSheet } from "./ui.js";
+
+/** A length choice as minutes on the studio clock: one dot per minute, so 15 is a quarter. */
+export function lengthChip(m, pressed) {
+  const cost = session.cost ? session.cost(m) : m;
+  return html`
+    <button type="button" class="len-chip" data-min="${m}" aria-pressed="${pressed}">
+      ${ring({ lit: (i) => i < m, r: 42, dot: 3.4 })}<span class="len-m">${m} min</span><span class="len-c">${cost} credit${cost === 1 ? "" : "s"}</span></button>`;
+}
 
 export const VISIBILITY = [
   ["private", "Private", "lock", "Only you, plus connections you pick."],

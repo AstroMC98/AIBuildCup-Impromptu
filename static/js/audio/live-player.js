@@ -19,7 +19,13 @@ export class LivePlayer {
     this.rate = rate;
     this.onState = onState || (() => {});
     this.gain = ctx.createGain();
-    this.gain.connect(ctx.destination);
+    // gain -> analyser -> speakers: the analyser drives the stage's key light and the
+    // speaking host's ring (level()), without touching what you hear.
+    this.analyser = ctx.createAnalyser();
+    this.analyser.fftSize = 512;
+    this._levelBuf = new Float32Array(this.analyser.fftSize);
+    this.gain.connect(this.analyser);
+    this.analyser.connect(ctx.destination);
     this.anchor = { ctxT: 0, pos: 0 };
     this.scheduledTo = 0;
     this.started = false;
@@ -30,6 +36,15 @@ export class LivePlayer {
     this._timer = setInterval(() => this.pump(), 200);
     this._onVisible = () => this.pump();
     document.addEventListener("visibilitychange", this._onVisible);
+  }
+
+  /** How loud the hosts are right now: RMS of the output, about 0 to 0.3. */
+  level() {
+    if (!this.started || this.paused) return 0;
+    this.analyser.getFloatTimeDomainData(this._levelBuf);
+    let sum = 0;
+    for (const v of this._levelBuf) sum += v * v;
+    return Math.sqrt(sum / this._levelBuf.length);
   }
 
   /** Current playhead in samples. */
@@ -146,7 +161,7 @@ export class LivePlayer {
     clearInterval(this._timer);
     document.removeEventListener("visibilitychange", this._onVisible);
     this._stopSources();
-    try { this.gain.disconnect(); } catch { /* ignore */ }
+    try { this.gain.disconnect(); this.analyser.disconnect(); } catch { /* ignore */ }
     if (this.paused) this.ctx.resume().catch(() => {});
   }
 }

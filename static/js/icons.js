@@ -25,6 +25,11 @@ const P = {
   search: ["M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14z", "M20 20l-4-4"],
   chevronDown: ["M6 9l6 6 6-6"],
   chevronUp: ["M6 15l6-6 6 6"],
+  chevronRight: ["M9 6l6 6-6 6"],
+  home: ["M4 11l8-7 8 7v9h-5v-6h-6v6H4z"],
+  compass: ["M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z", "M15.5 8.5l-2 5-5 2 2-5z"],
+  grid: ["M4 4h7v7H4z", "M13 4h7v7h-7z", "M4 13h7v7H4z", "M13 13h7v7h-7z"],
+  ret: ["M9 14l-5-5 5-5", "M4 9h11a5 5 0 0 1 0 10h-3"],
   chevronLeft: ["M15 6l-6 6 6 6"],
   more: ["M5 12h.01", "M12 12h.01", "M19 12h.01"],
   check: ["M5 12l5 5 9-10"],
@@ -67,6 +72,12 @@ export function icon(name, size = 24, stroke = 2) {
       paths.map((d) => `<path d="${d}"></path>`).join("") +
       "</svg>",
   );
+}
+
+/** The Impromptu wordmark: the dot of the i is the tally lamp. markOnly: just the lit i. */
+export function wordmark({ markOnly = false } = {}) {
+  const i = '<span class="iw"><span class="i">i</span><span class="tittle"></span></span>';
+  return raw(`<span class="wm" aria-hidden="true">${i}${markOnly ? "" : "mpromptu"}</span>`);
 }
 
 export const KIND_ICON = { text: "note", file: "file", link: "link", photo: "photo", source: "file", research: "search" };

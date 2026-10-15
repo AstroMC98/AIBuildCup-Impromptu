@@ -8,7 +8,7 @@ import { navigate } from "../router.js";
 import { loginPath, session } from "../session.js";
 import { applyAccent, callerColor, initial } from "../theme.js";
 import { fmtAgo, fmtTime } from "../util.js";
-import { appHeader, bindHeader } from "./library.js";
+import { appHeader, bindHeader, sleeve } from "./library.js";
 
 const REFRESH_MS = 10000;
 
@@ -171,7 +171,7 @@ export async function statsView(root) {
         <div class="st-row st-head" role="row"><span role="columnheader">Pod</span><span role="columnheader">Listeners</span>
           <span role="columnheader">Peak</span><span role="columnheader">Avg listen</span><span role="columnheader">Replays</span></div>
         ${data.pods.map((p) => html`<a class="st-row" role="row" href="/show/${p.id}/stats" data-link>
-          <span role="cell" class="st-title"><span class="lib-cover" style="--tile:${p.accent || "#30284F"}" aria-hidden="true">${initial(p.title)}</span>
+          <span role="cell" class="st-title">${sleeve(p, "sm")}
             <span class="col"><strong class="ellipsis">${p.title || "Untitled pod"}</strong>
               <span class="faint small">${p.status === "live" ? "Live now" : fmtAgo(p.created_at)}</span></span></span>
           <span role="cell">${p.listeners}</span><span role="cell">${p.peak}</span>

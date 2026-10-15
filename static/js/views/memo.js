@@ -5,7 +5,7 @@ import { api } from "../api.js";
 import { MemoRecorder, extensionFor, recordingSupported } from "../audio/recorder.js";
 import { html, setHtml } from "../html.js";
 import { icon } from "../icons.js";
-import { albumChips, introRow, musicCards, newAlbumSheet, shareWith, visibilityCards } from "../pod-options.js";
+import { albumChips, introRow, lengthChip, musicCards, newAlbumSheet, shareWith, visibilityCards } from "../pod-options.js";
 import { navigate } from "../router.js";
 import { loginPath, session } from "../session.js";
 import { applyAccent } from "../theme.js";
@@ -43,7 +43,7 @@ export async function memoView(root) {
   const el = document.createElement("div");
   el.className = "create-page";
   setHtml(el, html`
-    ${appHeader({ search: false })}
+    ${appHeader({ search: false, nav: false })}
     <main class="create memo-page">
       <div class="create-title">
         <h1>Make a pod from a voice memo</h1>
@@ -215,7 +215,7 @@ export async function memoView(root) {
   };
   const renderLengths = () => {
     setHtml($("[data-lengths]"), html`${LENGTHS.map((m) => html`
-      <button type="button" class="len-chip" data-min="${m}" aria-pressed="${state.minutes === m}">${m} min</button>`)}`);
+      ${lengthChip(m, state.minutes === m)}`)}`);
     renderCost();
   };
   const renderMusic = () => {

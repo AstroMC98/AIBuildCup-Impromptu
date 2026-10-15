@@ -1,67 +1,85 @@
-/* /briefings: make one now, the schedule, your briefings, the watchlist, templates. */
+/* /briefings: make one now, the schedule, your briefings, the watchlist, templates.
+   A briefing is a short show: its cover is a gel, and the watchlist is a row of lamps. */
 
-.brief-grid { display: grid; grid-template-columns: 1fr; gap: 16px; align-items: start; }
-@media (min-width: 900px) { .brief-grid { grid-template-columns: 1.1fr .9fr; } }
-.brief-make, .brief-sched { gap: 10px; }
-.brief-make select, .brief-sched select { width: 100%; }
-.chip-sub { margin-left: 4px; font-size: 11px; opacity: .75; font-weight: 600; }
-.day-chips .chip { min-width: 46px; justify-content: center; }
-.brief-sched .switch-row { min-height: 44px; }
-.brief-sched .switch-row .col { gap: 2px; }
-.brief-lede { margin: -4px 0 12px; max-width: 70ch; }
-.warn { color: #FFB59F; }
+@layer screens {
+  .brief-grid { display: grid; grid-template-columns: 1fr; gap: 16px; align-items: start; }
+  @media (min-width: 900px) { .brief-grid { grid-template-columns: 1.1fr .9fr; } }
+  .brief-make, .brief-sched { gap: 10px; }
+  .brief-make select, .brief-sched select { width: 100%; }
+  .chip-sub { margin-left: 4px; font-size: 11px; opacity: .75; font-weight: 650; }
+  .day-chips .chip { min-width: 46px; justify-content: center; }
+  .brief-sched .switch-row { min-height: 44px; }
+  .brief-sched .switch-row .col { gap: 2px; }
+  .brief-lede { margin: -4px 0 12px; max-width: 70ch; }
 
-/* your briefings */
-.brief-list { display: flex; flex-direction: column; gap: 8px; }
-.brief-row { display: flex; align-items: center; gap: 4px; background: var(--panel); border-radius: var(--radius); padding: 6px 6px 6px 10px; }
-.brief-main {
-  flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; padding: 4px 4px 4px 0;
-  text-decoration: none; color: inherit; border-radius: var(--radius-s);
-}
-a.brief-main:hover { color: inherit; }
-.brief-main .col { gap: 2px; }
-.brief-cover {
-  width: 44px; height: 44px; flex: none; border-radius: 12px; display: grid; place-items: center;
-  background: var(--tile); color: var(--white);
-}
+  /* your briefings */
+  .brief-list { display: flex; flex-direction: column; gap: 8px; }
+  .brief-row {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 6px 6px 6px 10px;
+    background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); border-radius: var(--r-card);
+  }
+  .brief-main {
+    flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; padding: 4px 4px 4px 0;
+    text-decoration: none; color: inherit; border-radius: 12px;
+  }
+  a.brief-main:hover strong { text-decoration: underline; text-underline-offset: 3px; }
+  .brief-main .col { gap: 2px; }
+  .brief-cover {
+    --g: var(--tile);
+    width: 46px; height: 46px; flex: none; border-radius: 12px; display: grid; place-items: center; color: #fff;
+    background: radial-gradient(120% 120% at 15% 0%, color-mix(in oklch, var(--g) 88%, #fff), color-mix(in oklch, var(--g) 44%, #0A0B10) 78%);
+  }
+  @supports (color: oklch(from red l c h)) {
+    .brief-cover { --g: oklch(from var(--tile) max(l, 0.72) min(calc(c * 1.4), 0.19) h); }
+  }
 
-/* the watchlist */
-.watch-add { margin-bottom: 12px; gap: 10px; }
-.watch-add .row .field { flex: 1 1 240px; }
-.watch-list { display: flex; flex-direction: column; gap: 8px; }
-.watch-row {
-  display: flex; align-items: flex-start; gap: 12px; padding: 12px; background: var(--panel); border-radius: var(--radius);
-  flex-wrap: wrap;
-}
-.watch-row.paused { opacity: .7; }
-.watch-row .col { gap: 2px; flex: 1 1 220px; }
-.watch-ic { width: 40px; height: 40px; flex: none; border-radius: 10px; background: var(--chip); display: grid; place-items: center; }
-.watch-actions { gap: 6px; margin-left: auto; align-self: center; }
-.watch-pending { margin-top: 4px; display: flex; flex-direction: column; gap: 2px; color: var(--muted); }
-.watch-pending a { color: var(--soft); }
+  /* the watchlist: each watch is a lamp, lit while it's watching */
+  .watch-add { margin-bottom: 12px; gap: 10px; }
+  .watch-add .row .field { flex: 1 1 240px; }
+  .watch-list { display: flex; flex-direction: column; gap: 8px; }
+  .watch-row {
+    display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px; padding: 12px;
+    background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); border-radius: var(--r-card);
+  }
+  .watch-row .col { gap: 2px; flex: 1 1 220px; }
+  .watch-ic {
+    position: relative; width: 42px; height: 42px; flex: none; border-radius: 12px; display: grid; place-items: center;
+    background: var(--bg-2); color: var(--fg);
+  }
+  .watch-ic::after {
+    content: ""; position: absolute; top: -3px; right: -3px; width: 10px; height: 10px; border-radius: 50%;
+    background: var(--amber); box-shadow: 0 0 0 2px var(--surface), 0 0 8px var(--amber);
+  }
+  .watch-row.paused .watch-ic { color: var(--fg-3); }
+  .watch-row.paused .watch-ic::after { background: var(--fg-3); box-shadow: 0 0 0 2px var(--surface); }
+  .watch-row.paused strong { color: var(--fg-2); }
+  .watch-actions { gap: 6px; margin-left: auto; align-self: center; }
+  .watch-pending { margin-top: 4px; display: flex; flex-direction: column; gap: 2px; color: var(--fg-2); }
+  .watch-pending a { color: var(--fg); }
 
-/* Google's Search Suggestions, sandboxed (their markup sizes itself to about one row of chips) */
-.g-suggest { display: block; width: 100%; height: 64px; border: 0; margin-top: 6px; border-radius: 10px; background: transparent; }
-.brief-row { flex-wrap: wrap; }
-.brief-searches { flex-basis: 100%; padding: 0 4px 6px 56px; }
-@media (max-width: 520px) { .brief-searches { padding-left: 4px; } }
+  /* Google's Search Suggestions, sandboxed (their markup sizes itself to about one row of chips) */
+  .g-suggest { display: block; width: 100%; height: 64px; border: 0; margin-top: 6px; border-radius: 10px; background: transparent; }
+  .brief-searches { flex-basis: 100%; padding: 0 4px 6px 58px; }
+  @media (max-width: 520px) { .brief-searches { padding-left: 4px; } }
 
-/* templates */
-.section-h-row { margin: 28px 0 12px; gap: 12px; }
-.section-h-row .section-h { margin: 0; }
-.premade-h { margin: 16px 0 8px; }
-.brief-template .col { gap: 3px; }
-.section-picks { display: flex; flex-direction: column; gap: 6px; }
-.section-pick {
-  display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line);
-  border-radius: 12px; background: transparent; text-align: left; cursor: pointer;
-}
-.section-pick[aria-pressed="true"] { background: var(--chip); border-color: var(--line-2); }
-.section-pick[aria-pressed="true"] .pick-check { background: var(--white); color: var(--ink); }
-.section-pick .col { gap: 1px; }
-.template-form .field-pair { margin-top: 2px; }
+  /* templates */
+  .section-h-row { margin: 28px 0 12px; gap: 12px; }
+  .section-h-row .section-h { margin: 0; }
+  .premade-h { margin: 16px 0 8px; }
+  .brief-template .col { gap: 3px; }
+  .section-picks { display: flex; flex-direction: column; gap: 6px; }
+  .section-pick {
+    display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 0; border-radius: 12px;
+    background: transparent; box-shadow: inset 0 0 0 1px var(--line); color: var(--fg); text-align: left; cursor: pointer;
+    transition: box-shadow .2s, background .2s;
+  }
+  .section-pick[aria-pressed="true"] { background: var(--surface); box-shadow: inset 0 0 0 2px var(--fg); }
+  .section-pick[aria-pressed="true"] .pick-check { background: var(--pri); color: var(--on-pri); }
+  .section-pick .col { gap: 1px; }
+  .template-form .field-pair { margin-top: 2px; }
 
-@media (max-width: 520px) {
-  .watch-actions { margin-left: 52px; }
-  .brief-row .pill, .brief-row .badge { font-size: 11px; }
+  @media (max-width: 520px) {
+    .watch-actions { margin-left: 54px; }
+    .brief-row .pill, .brief-row .badge { font-size: 11px; }
+  }
 }

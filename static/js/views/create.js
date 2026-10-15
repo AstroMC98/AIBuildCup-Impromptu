@@ -5,7 +5,7 @@ import { unlockAudio } from "../audio/context.js";
 import { html, setHtml } from "../html.js";
 import { icon, KIND_ICON } from "../icons.js";
 import { bindPersonaForm, fillPersona, GENDER_LABEL, personaFields, readPersona } from "../personas.js";
-import { albumChips, introRow, newAlbumSheet, shareWith, visibilityCards } from "../pod-options.js";
+import { albumChips, introRow, lengthChip, newAlbumSheet, shareWith, visibilityCards } from "../pod-options.js";
 import { navigate } from "../router.js";
 import { loginPath, session } from "../session.js";
 import { vibeTile } from "../sheets.js";
@@ -46,7 +46,7 @@ export async function createView(root, { query }) {
   const el = document.createElement("div");
   el.className = "create-page";
   setHtml(el, html`
-    ${appHeader({ search: false })}
+    ${appHeader({ search: false, nav: false })}
     <main class="create">
       <div class="create-title">
         <h1>New pod</h1>
@@ -179,7 +179,7 @@ export async function createView(root, { query }) {
   };
   const renderLengths = () => {
     setHtml($("[data-lengths]"), html`${LENGTHS.map((m) => html`
-      <button type="button" class="len-chip" data-min="${m}" aria-pressed="${state.minutes === m}">${m} min</button>`)}`);
+      ${lengthChip(m, state.minutes === m)}`)}`);
     renderCost();
   };
   const renderVisibility = () => {
@@ -489,6 +489,12 @@ export async function createView(root, { query }) {
   if (fromQuery && session.template(fromQuery)) applyTemplate(fromQuery);
   renderVibes();
   renderVisibility();
+  // Text typed into Home's composer arrives as ?topic=.
+  const topic = query.get("topic");
+  if (topic && !textArea.value.trim()) {
+    textArea.value = topic;
+    textArea.dispatchEvent(new Event("input", { bubbles: true }));
+  }
   textArea.focus();
   return { unmount() { offHead(); } };
 }

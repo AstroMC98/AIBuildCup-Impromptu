@@ -2,7 +2,9 @@
 // with, or anyone if it's public. Loads over HTTP first, then picks the phone
 // or desktop layout.
 import { api } from "../api.js";
+import { loader } from "../components.js";
 import { html, setHtml } from "../html.js";
+import { ring } from "../ring.js";
 import { icon } from "../icons.js";
 import { ShowController } from "../live/controller.js";
 import { navigate } from "../router.js";
@@ -18,7 +20,7 @@ const FRAME_MS = 80;
 
 export async function showView(root, { params }) {
   const id = params[0];
-  setHtml(root, html`<div class="splash"><span class="spinner" aria-hidden="true"></span><p>Tuning in…</p></div>`);
+  setHtml(root, loader("Tuning in…"));
 
   let data;
   try {
@@ -52,7 +54,7 @@ export async function showView(root, { params }) {
   });
   root.classList.toggle("visitor", !ctl.canTalk);
   applyAccent(document.documentElement, data.show.accent);
-  document.title = `${data.show.title || "Live show"} – Gemini Podcasts`;
+  document.title = `${data.show.title || "Live show"} – Impromptu`;
 
   const mq = matchMedia("(min-width: 1024px)");
   let layout = null;
@@ -87,7 +89,7 @@ export async function showView(root, { params }) {
   const markEnded = () => root.classList.toggle("show-ended", Boolean(ctl.store.ended));
   markEnded();
   const offStore = ctl.store.on((e) => {
-    if (e.type === "plan") document.title = `${e.title} – Gemini Podcasts`;
+    if (e.type === "plan") document.title = `${e.title} – Impromptu`;
     if (e.type === "saved" && ctl.store.producer) session.refresh();  // unused minutes come back
     markEnded();
     layout.onEvent?.(e);
@@ -103,7 +105,7 @@ export async function showView(root, { params }) {
       layout?.destroy();
       ctl.destroy();
       root.classList.remove("show-ended", "visitor");
-      document.title = "Gemini Podcasts";
+      document.title = "Impromptu";
       applyAccent(document.documentElement, "#B8336A");
     },
   };
@@ -111,7 +113,8 @@ export async function showView(root, { params }) {
 
 function errorScreen(root, message) {
   setHtml(root, html`
-    <div class="splash">
+    <div class="splash stage">
+      ${ring({ lit: (i) => i % 15 === 0 })}
       <p class="splash-title">Off air</p>
       <p class="muted">${message}</p>
       <a class="btn white" href="${session.signedIn ? "/" : "/discover"}" data-link>${session.signedIn ? "Your pods" : "Discover pods"}</a>

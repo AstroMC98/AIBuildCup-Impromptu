@@ -41,7 +41,7 @@ export async function connectionsView(root) {
           <button class="btn white" type="submit">Send request</button>
         </form>
         <p class="error" role="alert" data-error></p>
-        <p class="muted small">Not on Gemini Podcasts yet? Send them your invite link:</p>
+        <p class="muted small">Not on Impromptu yet? Send them your invite link:</p>
         <div class="copy-row"><input class="field" readonly data-invite aria-label="Your invite link">
           <button class="btn quiet" type="button" data-copy>${icon("copy", 18)}Copy</button></div>
       </section>

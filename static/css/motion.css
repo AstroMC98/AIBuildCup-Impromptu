@@ -1,0 +1,41 @@
+/* Screen transitions (router.js sets data-vt on <html> for the duration of a view
+   transition). Into an on-air screen the stage floods out from where you tapped; back
+   out, it shrinks away to that point; other pages slide forward or back. */
+
+@layer components {
+  ::view-transition-old(root),
+  ::view-transition-new(root) { animation-duration: .3s; mix-blend-mode: normal; }
+
+  /* forward / back: the new page arrives on a spring; the old one steps aside */
+  html[data-vt="forward"]::view-transition-old(root) { animation: vt-leave-left .22s var(--ease-in) both; }
+  html[data-vt="forward"]::view-transition-new(root) { animation: vt-enter-right var(--dur-smooth) var(--spring-smooth) both; }
+  html[data-vt="back"]::view-transition-old(root) { animation: vt-leave-right .22s var(--ease-in) both; }
+  html[data-vt="back"]::view-transition-new(root) { animation: vt-enter-left var(--dur-smooth) var(--spring-smooth) both; }
+
+  /* house lights down: the stage floods out from the tap */
+  html[data-vt="to-stage"]::view-transition-old(root) { animation: vt-dim var(--dur-gentle) ease both; }
+  html[data-vt="to-stage"]::view-transition-new(root) { animation: vt-flood var(--dur-gentle) var(--spring-gentle) both; }
+
+  /* house lights up: the stage shrinks back into the tap point */
+  html[data-vt="to-house"]::view-transition-old(root) { z-index: 2; animation: vt-unflood .68s var(--ease-io) both; }
+  html[data-vt="to-house"]::view-transition-new(root) { animation: vt-undim .68s ease both; }
+
+  @keyframes vt-leave-left { to { opacity: 0; transform: translateX(-28px); } }
+  @keyframes vt-leave-right { to { opacity: 0; transform: translateX(28px); } }
+  @keyframes vt-enter-right { from { opacity: 0; transform: translateX(36px); } }
+  @keyframes vt-enter-left { from { opacity: 0; transform: translateX(-36px); } }
+  @keyframes vt-flood {
+    from { clip-path: circle(0 at var(--vt-x, 50%) var(--vt-y, 50%)); }
+    to { clip-path: circle(150vmax at var(--vt-x, 50%) var(--vt-y, 50%)); }
+  }
+  @keyframes vt-unflood {
+    from { clip-path: circle(150vmax at var(--vt-x, 50%) var(--vt-y, 50%)); }
+    to { clip-path: circle(0 at var(--vt-x, 50%) var(--vt-y, 50%)); }
+  }
+  @keyframes vt-dim { to { filter: brightness(.55); } }
+  @keyframes vt-undim { from { filter: brightness(.55); } }
+
+  @media (prefers-reduced-motion: reduce) {
+    ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
+  }
+}

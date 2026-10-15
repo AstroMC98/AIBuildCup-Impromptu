@@ -281,7 +281,7 @@ export async function openShareSheet(ctl) {
         div.querySelector(".copy-row input").select();
       }
     } else if (e.target.closest("[data-native]")) {
-      navigator.share({ title: s.show.title || "Gemini Podcasts", url: link }).catch(() => {});
+      navigator.share({ title: s.show.title || "Impromptu", url: link }).catch(() => {});
     } else if (e.target.closest("a[data-link]")) {
       sheet.close();
     }
@@ -318,6 +318,10 @@ export function openMoreSheet(ctl) {
   const live = ctl.live && !s.ended;
   const briefing = s.show.kind === "briefing";
   setHtml(div, html`
+    ${live && ctl.canTalk ? html`
+      <button type="button" class="menu-item" data-ctx>${icon("addFile", 20)}Add context <span class="faint">a note, file, link or photo</span></button>` : ""}
+    ${live && s.producer && !briefing ? html`
+      <button type="button" class="menu-item" data-restyle>${icon("restyle", 20)}Restyle the show</button>` : ""}
     <button type="button" class="menu-item" data-dl-audio>${icon("download", 20)}Download audio${live ? " so far" : ""}</button>
     ${s.producer && s.show.has_raw_audio ? html`
       <button type="button" class="menu-item" data-dl-raw>${icon("download", 20)}Download the unedited call <span class="faint">before the editor's cuts</span></button>` : ""}
@@ -345,6 +349,14 @@ export function openMoreSheet(ctl) {
     } else if (e.target.closest("[data-share]")) {
       sheet.close();
       openShareSheet(ctl);
+      return;
+    } else if (e.target.closest("[data-ctx]")) {
+      sheet.close();
+      openContextSheet(ctl);
+      return;
+    } else if (e.target.closest("[data-restyle]")) {
+      sheet.close();
+      openRestyleSheet(ctl);
       return;
     } else if (e.target.closest("[data-organize]")) {
       sheet.close();

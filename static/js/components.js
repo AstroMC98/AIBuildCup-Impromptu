@@ -3,6 +3,7 @@
 import { html, renderSpoken, spokenText } from "./html.js";
 import { icon, KIND_ICON } from "./icons.js";
 import { session } from "./session.js";
+import { ring } from "./ring.js";
 import { callerColor, initial } from "./theme.js";
 import { fmtTime } from "./util.js";
 
@@ -19,6 +20,7 @@ export function liveBadgeKey(store, ctl, pos) {
   return `${store.ended}|${ctl.connection}|${store.ended && ctl.live && !ctl.atAudioEdge(pos)}`;
 }
 
+/** The tally lamp. It flickers on (ignite) whenever it comes on. */
 export function liveBadge(store, ctl, pos) {
   if (!ctl.live) return html`<span class="badge replay">Replay</span>`;
   if (store.ended) {
@@ -26,7 +28,27 @@ export function liveBadge(store, ctl, pos) {
       : html`<span class="badge live"><span class="dot"></span>Signing off</span>`;
   }
   if (ctl.connection === "reconnecting") return html`<span class="badge ended">Reconnecting</span>`;
-  return html`<span class="badge live"><span class="dot"></span>Live</span>`;
+  return html`<span class="badge live ignite"><span class="dot"></span>On air</span>`;
+}
+
+/** The stage-world loader: the studio clock chasing, with what's happening. */
+export function loader(text, { title = "" } = {}) {
+  return html`<div class="splash stage">${ring({ chase: true })}${title ? html`<p class="splash-title">${title}</p>` : ""}<p>${text}</p></div>`;
+}
+
+/** The hosts as chips; the one talking is lit, and its ring follows their voice (--lv). */
+export function hostChips(store, pos) {
+  const hosts = store.plan?.hosts || store.show.hosts || [];
+  const at = store.lineAt(pos);
+  const speaking = at && !at.done ? at.seg.lines[at.idx]?.speaker : "";
+  return html`${hosts.map((h, i) => html`
+    <button type="button" class="host-chip ${h.name && h.name === speaking ? "talk" : ""}" data-action="hosts">
+      ${avatar(h.name || "?", session.hostColor(i).avatar, 28)}<span>${h.name || "Host"}</span></button>`)}`;
+}
+
+export function hostChipsKey(store, pos) {
+  const at = store.lineAt(pos);
+  return `${store.version}|${at && !at.done ? at.seg.lines[at.idx]?.speaker : ""}`;
 }
 
 /** The status line shown when there's no caption to show, or under the captions. */
@@ -84,6 +106,7 @@ export function captions(store, ctl, pos, { big = 30 } = {}) {
   const at = store.lineAt(pos);
   const status = statusText(store, ctl, pos);
   if (!at) {
+    if (!store.segments.length && ctl.live && !store.ended) return greenRoom(store, pos, status);
     return html`<p class="cap-status">${status || "Starting…"}</p>`;
   }
   const lines = store.heardLines(pos, 2);
@@ -110,6 +133,117 @@ export function captions(store, ctl, pos, { big = 30 } = {}) {
       <p>${renderSpoken(piece.text, curHost ? 0 : 1)}</p>
     </div>
     ${status ? html`<p class="cap-status small">${status}</p>` : ""}`;
+}
+
+// ---- the green room ---------------------------------------------------------------------
+// Before the first line is heard, the wait shows real work: the theme plays while the
+// hosts plan (the clock chases, bars move), then the plan's title and chapters arrive.
+// Chapter cards drop in once; later re-renders (the status line changing) don't replay them.
+const rundownShown = new WeakMap();
+
+function greenRoom(store, pos, status) {
+  const beats = store.beats();
+  const seen = rundownShown.get(store) || 0;
+  rundownShown.set(store, Math.max(seen, beats.length));
+  const theme = store.inIntro?.(pos);
+  return html`
+    <div class="green-room">
+      <span class="gr-clock">${ring({ chase: true, cls: "gr-ring" })}<span class="gr-step">${status || "Getting the studio ready"}</span></span>
+      ${theme ? html`<span class="gr-theme" aria-hidden="true">${Array.from({ length: 24 }, (_, i) => html`<i style="--i:${i}"></i>`)}</span>` : ""}
+      ${store.plan?.title ? html`<h2 class="gr-title ${seen ? "" : "arrive"}">${store.plan.title}</h2>` : ""}
+      ${beats.length ? html`<ol class="gr-rundown">${beats.map((b, i) => html`
+        <li class="${i >= seen ? "drop" : ""}" style="--i:${Math.max(0, i - seen)}"><span>${i + 1}</span>${b.title}</li>`)}</ol>` : ""}
+    </div>`;
+}
+
+// ---- kinetic captions ------------------------------------------------------------------
+// captions() renders a piece of a line once; captionTick() then lights its words as
+// they're said, every frame, without re-rendering: words are wrapped in spans the first
+// time, weighted by their spoken characters, and the current word's underline fills
+// (--wp). A new piece first narrows (the width axis) until it fits, then shrinks.
+
+/** How far through the piece on screen the hosts are, 0 to 1. */
+function pieceProgress(store, pos) {
+  const at = store.lineAt(pos);
+  const lines = store.heardLines(pos, 2);
+  const cur = lines[lines.length - 1];
+  if (!at || !cur || at.idx !== cur.idx || at.done) return 1;
+  const text = cur.line.text;
+  const frac = at.frac ?? 1;
+  if (spokenText(text).length <= CHUNK_CHARS * 1.3) return frac;
+  const parts = chunks(text);
+  const found = parts.findIndex((p) => frac < p.to);
+  const part = parts[found < 0 ? parts.length - 1 : found];
+  return Math.max(0, Math.min(1, (frac - part.from) / Math.max(1e-6, part.to - part.from)));
+}
+
+function wordify(p) {
+  const walker = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+  const texts = [];
+  while (walker.nextNode()) texts.push(walker.currentNode);
+  for (const t of texts) {
+    if (t.parentElement.closest(".cue")) continue;
+    const frag = document.createDocumentFragment();
+    for (const part of t.textContent.split(/(\s+)/)) {
+      if (!part) continue;
+      if (/^\s+$/.test(part)) frag.append(part);
+      else {
+        const s = document.createElement("span");
+        s.className = "w";
+        s.textContent = part;
+        frag.append(s);
+      }
+    }
+    t.replaceWith(frag);
+  }
+  p.querySelectorAll(".cue").forEach((c) => c.classList.add("w"));
+  return [...p.querySelectorAll(".w")];
+}
+
+/** Narrow the caption before shrinking it, until it fits its region (height and width). */
+export function fitCaption(region) {
+  const now = region.querySelector(".cap.now");
+  const p = now?.querySelector("p");
+  if (!p) return;
+  const fits = () => region.scrollHeight <= region.clientHeight + 1 && p.scrollWidth <= p.clientWidth + 1;
+  p.style.fontSize = "";
+  for (const s of [100, 90, 80, 70, 62]) {
+    now.style.fontStretch = `${s}%`;
+    if (fits()) return;
+  }
+  for (let z = 0.92; z >= 0.6; z -= 0.08) {
+    p.style.fontSize = `calc(var(--cap, 30px) * ${z.toFixed(2)})`;
+    if (fits()) return;
+  }
+}
+
+/** Light the words of the caption on screen; call every frame. calm: show it all at once. */
+export function captionTick(region, store, pos, { calm = false } = {}) {
+  const p = region?.querySelector(".cap.now p");
+  if (!p) return;
+  if (!p._words) {
+    p._words = wordify(p);
+    let acc = 0;
+    p._ends = p._words.map((w) => (acc += w.classList.contains("cue") ? 2
+      : Math.max(1, w.textContent.replace(/[^\p{L}\p{N}']/gu, "").length) + 1));
+    p._total = acc || 1;
+    p.classList.add("kinetic");
+    fitCaption(region);
+  }
+  const spoken = (calm ? 1 : pieceProgress(store, pos)) * p._total;
+  let now = p._ends.findIndex((e) => spoken < e);
+  if (now < 0) now = p._words.length;
+  if (p._now !== now) {
+    p._words.forEach((w, i) => {
+      w.classList.toggle("said", i < now);
+      w.classList.toggle("now", i === now);
+    });
+    p._now = now;
+  }
+  if (now < p._words.length) {
+    const start = now ? p._ends[now - 1] : 0;
+    p._words[now].style.setProperty("--wp", ((spoken - start) / (p._ends[now] - start)).toFixed(3));
+  }
 }
 
 export function captionsKey(store, ctl, pos) {

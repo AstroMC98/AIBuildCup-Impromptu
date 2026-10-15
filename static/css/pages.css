@@ -1,43 +1,52 @@
-/* Account pages: personas, styles, connections, invite, admin. */
+/* Account pages (the house): personas, styles, connections, invite, admin. */
 
-.page-wrap { min-height: 100dvh; }
-.page.wide { max-width: 1000px; }
-.page-title { margin: 8px 0 20px; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
-.page-title h1 { font-size: 30px; font-weight: 800; letter-spacing: -0.02em; }
-.page-title p { margin-top: 6px; max-width: 60ch; }
-.page .card { margin-bottom: 16px; }
+@layer screens {
+  .page .card { margin-bottom: 16px; }
 
-.saved-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
-.saved-card {
-  position: relative; display: flex; gap: 12px; align-items: flex-start; padding: 14px; padding-right: 76px;
-  background: var(--panel); border-radius: 14px; min-height: 84px;
+  .saved-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+  .saved-card {
+    position: relative; display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; padding: 14px; padding-right: 76px;
+    background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); border-radius: var(--r-card); min-height: 84px;
+    transition: box-shadow .2s, transform var(--dur-snappy) var(--spring-snappy);
+  }
+  .saved-card:hover { box-shadow: inset 0 0 0 1px var(--line-2), var(--shadow); }
+  .saved-card .col { gap: 3px; }
+  .saved-card strong { font: 760 16px/1.15 var(--f-display); font-stretch: 94%; }
+  .saved-card .muted.small { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .saved-actions { position: absolute; top: 8px; right: 8px; gap: 2px; }
+  .saved-card .from { flex-basis: 100%; margin: -4px 0 0 56px; }
+  .saved-card.preset { padding-right: 14px; }
+  .saved-card.preset .saved-actions { position: static; flex-basis: 100%; justify-content: flex-end; margin-top: -2px; }
+
+  .style-swatch {
+    width: 46px; height: 46px; flex: none; border-radius: 12px; --g: var(--tile);
+    background: radial-gradient(120% 120% at 15% 0%, color-mix(in oklch, var(--g) 88%, #fff), color-mix(in oklch, var(--g) 44%, #0A0B10) 78%);
+  }
+  @supports (color: oklch(from red l c h)) {
+    .style-swatch, .swatch { --g: oklch(from var(--tile) max(l, 0.72) min(calc(c * 1.4), 0.19) h); }
+  }
+  .swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+  .swatch { --g: var(--tile); width: 38px; height: 38px; border-radius: 50%; border: 0; background: var(--g); cursor: pointer; transition: transform var(--dur-snappy) var(--spring-snappy); }
+  .swatch:hover { transform: scale(1.08); }
+  .swatch[aria-checked="true"] { box-shadow: 0 0 0 3px var(--surface), 0 0 0 5px var(--fg); }
+
+  .people { display: flex; flex-direction: column; gap: 2px; }
+  .person { display: flex; align-items: center; gap: 12px; min-height: 58px; box-shadow: 0 1px 0 var(--line); }
+  .person:last-child { box-shadow: none; }
+  .person .col { min-width: 0; }
+  .person .muted.small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card-h .faint { font: 600 14px/1 var(--f-ui); margin-left: 4px; }
+  .card form.row .field { flex: 1; }
+
+  .splash-card {
+    margin-top: 40px; padding: 30px 22px; border-radius: 22px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line);
+    display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center;
+  }
+  .splash-card h1 { font: 800 28px/1.02 var(--f-display); font-stretch: 86%; letter-spacing: -0.015em; }
+
+  .credit-pill {
+    min-width: 46px; height: 30px; padding: 0 10px; border-radius: var(--pill); box-shadow: inset 0 0 0 1px var(--line);
+    display: grid; place-items: center; font-weight: 800; font-variant-numeric: tabular-nums;
+  }
+  .page #a-q { margin-bottom: 14px; }
 }
-.saved-card .col { gap: 3px; }
-.saved-card .muted.small { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-.saved-actions { position: absolute; top: 8px; right: 8px; gap: 2px; }
-.saved-card { flex-wrap: wrap; }
-.saved-card .from { flex-basis: 100%; margin: -4px 0 0 56px; }
-.small-btn { height: 32px; padding: 0 12px; font-size: 13px; }
-.style-swatch { width: 44px; height: 44px; flex: none; border-radius: 10px; background: var(--tile); }
-.swatches { display: flex; flex-wrap: wrap; gap: 8px; }
-.swatch { width: 36px; height: 36px; border-radius: 50%; border: 0; background: var(--tile); cursor: pointer; }
-.swatch[aria-checked="true"] { box-shadow: 0 0 0 3px var(--panel), 0 0 0 5px var(--white); }
-
-.people { display: flex; flex-direction: column; gap: 4px; }
-.person { display: flex; align-items: center; gap: 12px; min-height: 56px; }
-.person .col { min-width: 0; }
-.person .muted.small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.card-h .faint { font-weight: 600; font-size: 14px; margin-left: 4px; }
-.card form.row .field { flex: 1; }
-
-.splash-card {
-  margin-top: 40px; background: var(--panel); border-radius: 22px; padding: 28px 22px;
-  display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center;
-}
-.splash-card h1 { font-size: 24px; font-weight: 800; letter-spacing: -0.015em; }
-
-.credit-pill {
-  min-width: 44px; height: 30px; padding: 0 10px; border-radius: var(--pill); background: var(--panel-2);
-  display: grid; place-items: center; font-weight: 800; color: #F2C14E;
-}
-.page #a-q { margin-bottom: 14px; }

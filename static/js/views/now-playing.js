@@ -8,6 +8,7 @@ import {
 import { html, renderSpoken, setHtml } from "../html.js";
 import { icon } from "../icons.js";
 import { detourLabel } from "../live/store.js";
+import { ring } from "../ring.js";
 import { navigate } from "../router.js";
 import { loginPath } from "../session.js";
 import { bindSubscribe, creatorBar, creatorBarKey } from "../social.js";
@@ -100,8 +101,8 @@ export function mountNowPlaying(host, ctl, { page = false, onClose } = {}) {
     r.set("title", s.show.title, () => s.show.title || "Getting the studio ready");
     r.set("hosts", s.hostNames(), () => s.hostNames());
     r.set("cover", s.show.title, () => html`
-      <span class="cover-brand">Gemini Podcasts</span>
-      <span class="cover-glyph" aria-hidden="true">${icon("mic", 190, 0.9)}</span>
+      <span class="cover-brand">impromptu</span>
+      ${ring({ cls: "cover-ring", lit: (i) => i % 3 === 0, r: 44, dot: 2 })}
       <span class="cover-title">${s.show.title || "…"}</span>`);
     r.el("cover").setAttribute("aria-label", `Episode cover: ${s.show.title || ""}`);
     const notes = showNotes(s);

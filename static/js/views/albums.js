@@ -10,7 +10,7 @@ import { albumCard, bindSubscribe, personAvatar, subscribeButton } from "../soci
 import { applyAccent } from "../theme.js";
 import { confirmSheet, openSheet } from "../ui.js";
 import { toast } from "../util.js";
-import { appHeader, bindHeader, row } from "./library.js";
+import { appHeader, bindHeader, row, sleeve } from "./library.js";
 
 const ACCENTS = ["#6A4FB0", "#B8336A", "#3B3F9E", "#B5521C", "#1F7F6A", "#80620F", "#2E6F9E", "#3A4250"];
 const VIS = [
@@ -193,7 +193,7 @@ export async function albumView(root, { params: [albumId] }) {
       <ul class="pick-list">${shows.map((s) => {
         const inside = (s.album_ids || []).includes(albumId);
         return html`<li><button type="button" class="pick-row" data-pick="${s.id}" aria-pressed="${inside}">
-          <span class="lib-cover" style="--tile:${s.accent || "#30284F"}" aria-hidden="true">${(s.title || "?")[0]}</span>
+          ${sleeve(s, "sm")}
           <span class="ellipsis grow">${s.title || "Untitled pod"}</span>
           <span class="pick-check" aria-hidden="true">${inside ? icon("check", 16, 3) : icon("plus", 16, 2.6)}</span></button></li>`;
       })}</ul>`);

@@ -12,6 +12,21 @@ Direction **Live Wire** was chosen by the owner on 2026-10-15 over Recital and S
 
 **Round 3** adapted the prototypes to what merged after that (§5.3): the final voice-memo flow, intros for briefings and co-hosted calls, show notes, and memo pods in the library. The branch now sits on `main` at `07cf067`. Boards that changed are marked UPDATED.
 
+**Implementation (round 4, 2026-10-15).** The system is now in the app code on this branch, not just the prototypes. Every stylesheet was rewritten on the semantic tokens inside `@layer`. No alias layer was kept: nothing reads `--panel`, `--chip`, `--ink` and the rest any more. Smoke (132), unit (100) and briefing (21) tests pass.
+
+| Phase | Done | Not yet |
+|---|---|---|
+| 0 Foundations | Self-hosted Anybody + Atkinson Next, layers, tokens, gel map, rename, favicon, `.stage` collision fixed (studio is `.studio-stage`), `.bar` scoped to `.bars .bar` | |
+| 1 Motion core | `motion.js`, `ring.js`, typed view transitions with the 250 ms cap; sheet drag lives in `ui.js` | |
+| 2 Stage | Kinetic captions, analyser `level()` driving `--level`/`--lv`, tally, studio clock, chapter bar, tune-in target, Now playing, desktop studio on stage | Cover FLIP into Now playing |
+| 3 Waits | Boot ident, loaders as chase rings, green room, memo making (clock + lamp spine), co-host edit lamps, delayed skeletons | Go-live count-in |
+| 4 House | Home composer, Library and Discover grids, tab bar / rail, gel vibe tiles, clock length chips, co-host setup | Live sleeve preview on Create; Draft keeps its old layout on new tokens |
+| 5 Sheets | Spring sheets with recede and drag, stage-tinted sheets, cue-card toasts, hearts on arcs | Sliding segmented indicator, call-in lines (bubbles remain), odometer, restyle preview |
+| 5b Round 2 | Briefings (gel covers, watch lamps), memo record / making / review, intro, show notes | Interrupt detour visuals, research desk, promised-call-in states, per-watch progress |
+| 6 Account | You page, account pages, login on stage | `tests/visual.py`, gel contrast unit test |
+
+Gotcha found while porting: `color-mix(in oklch, <near-grey>, transparent)` loses its hue in Chrome (powerless hue becomes `none`, rendered as 0°), which tints dark greys red. Neutral mixes use `in srgb`; gel mixes stay in `oklch`.
+
 Prototypes (source in `docs/design/impromptu/`, published as private artifacts):
 
 | Prototype | What it settles | File |

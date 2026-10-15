@@ -5,7 +5,8 @@ import { api } from "../api.js";
 import { webSources } from "../components.js";
 import { html, setHtml } from "../html.js";
 import { icon } from "../icons.js";
-import { musicCards } from "../pod-options.js";
+import { lengthChip, musicCards } from "../pod-options.js";
+import { fillRing, ring } from "../ring.js";
 import { navigate } from "../router.js";
 import { session } from "../session.js";
 import { applyAccent } from "../theme.js";
@@ -29,7 +30,7 @@ const CONFIDENCE = { mixed: "Sources disagree", thin: "Thin evidence" };
 
 export function memoScreen(root, data) {
   applyAccent(document.documentElement, data.show.accent);
-  document.title = `${data.show.title || "Voice memo"} – Gemini Podcasts`;
+  document.title = `${data.show.title || "Voice memo"} – Impromptu`;
   const el = document.createElement("div");   // listeners go here, not on the router's root
   root.replaceChildren(el);
   const status = data.show.status;
@@ -72,8 +73,9 @@ function makingScreen(root, data) {
       <a class="back-link" href="/" data-link>${icon("chevronLeft", 20)}Your pods</a>
       <div class="draft-card making">
         <span class="badge live small"><span class="dot"></span>Making your pod</span>
+        <div class="make-clock" role="progressbar" aria-label="Progress" aria-valuemin="0" aria-valuemax="100">
+          ${ring({ r: 46, dot: 2.1 })}<span class="make-pct" data-pct></span></div>
         <h1 data-title></h1>
-        <div class="progress" role="progressbar" aria-label="Progress" aria-valuemin="0" aria-valuemax="100"><span data-bar></span></div>
         <ol class="make-stages" data-stages></ol>
         <p class="muted small" data-detail aria-live="polite"></p>
         <p class="faint small">You can leave this page. Your pod keeps going, and it's in Your pods when it's ready.</p>
@@ -85,8 +87,9 @@ function makingScreen(root, data) {
     const r = show.render || {};
     $("[data-title]").textContent = show.title || "Voice memo";
     const pct = Math.round((r.progress || 0) * 100);
-    $("[data-bar]").style.width = `${Math.max(3, pct)}%`;
-    $(".progress").setAttribute("aria-valuenow", String(pct));
+    fillRing($(".make-clock .ring"), Math.max(1, Math.round(pct * 0.6)));   // the hour fills as it's made
+    setHtml($("[data-pct]"), html`${pct}<small>%</small>`);
+    $(".make-clock").setAttribute("aria-valuenow", String(pct));
     setHtml($("[data-stages]"), stageList(show));
     $("[data-detail]").textContent = r.detail || "";
   };
@@ -265,7 +268,7 @@ function reviewScreen(root, data) {
   };
   const renderLengths = () => {
     setHtml($("[data-lengths]"), html`${LENGTHS.map((m) => html`
-      <button type="button" class="len-chip" data-min="${m}" aria-pressed="${state.minutes === m}">${m} min</button>`)}`);
+      ${lengthChip(m, state.minutes === m)}`)}`);
     renderCost();
   };
   const renderMusic = () => {

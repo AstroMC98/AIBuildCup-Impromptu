@@ -1,91 +1,97 @@
-/* Voice memos (record, follow along, review), the show intro page, and show notes. */
+/* Voice memos (record, follow along, review), the show intro page, and show notes. A memo
+   is a rough take: the record button is the tally light, and while the pod is made the
+   studio clock fills up and a lamp follows each step. */
 
-.memo-link {
-  display: inline-flex; align-items: center; gap: 6px; margin-top: 10px;
-  color: var(--soft); font-weight: 650; font-size: 14px; text-underline-offset: 3px;
+@layer screens {
+  /* ---- recording ------------------------------------------------------------------- */
+  .recorder { margin-top: 20px; }
+  .rec-start { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 10px 0 4px; }
+  .rec-btn {
+    width: 104px; height: 104px; border-radius: 50%; border: 0; cursor: pointer;
+    display: grid; place-items: center; background: var(--tally); color: #fff;
+    box-shadow: 0 0 0 8px color-mix(in oklch, var(--tally) 16%, transparent), 0 14px 34px -10px color-mix(in oklch, var(--tally) 70%, transparent);
+    transition: transform var(--dur-snappy) var(--spring-snappy), box-shadow .25s;
+  }
+  .rec-btn:hover { box-shadow: 0 0 0 13px color-mix(in oklch, var(--tally) 20%, transparent), 0 14px 34px -10px color-mix(in oklch, var(--tally) 70%, transparent); }
+  .rec-btn:active { transform: scale(.94); }
+
+  .rec-live { display: flex; align-items: center; gap: 12px; min-height: 60px; }
+  .rec-live .rec-dot { width: 14px; height: 14px; box-shadow: 0 0 12px var(--tally); animation: lamp-breathe 1.2s ease-in-out infinite; }
+  .rec-live.paused .rec-dot { animation: none; background: var(--amber); box-shadow: 0 0 10px var(--amber); }
+  .rec-time { font: 800 34px/1 var(--f-display); font-stretch: 78%; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+  .rec-level { flex: 1; height: 10px; border-radius: var(--pill); background: var(--bg-2); overflow: hidden; }
+  .rec-level span {
+    display: block; height: 100%; border-radius: inherit; transform: scaleX(0); transform-origin: left; transition: transform 80ms linear;
+    background: linear-gradient(90deg, var(--fg) 0 70%, var(--amber) 85%, var(--tally));
+    background-size: 100vw 100%;
+  }
+  .memo-audio { width: 100%; height: 44px; }
+  .recorder .row .btn { padding: 0 12px; font-size: 14px; white-space: nowrap; }
+
+  .review-row { margin-top: 24px; }
+  .switch-row .col { gap: 2px; }
+  .switch-row .muted.small { font-weight: 400; }
+  .tpl.auto { box-shadow: inset 0 0 0 1.5px var(--line-2); background: var(--surface); color: var(--fg); }
+
+  /* ---- being made: the clock fills, a lamp walks the steps ---------------------------- */
+  .making { align-items: center; text-align: center; }
+  .make-clock { position: relative; width: 196px; height: 196px; margin: 8px auto 2px; display: grid; place-items: center; }
+  .make-clock .ring { position: absolute; inset: 0; --ring: 100%; width: 100%; height: 100%; }
+  .make-clock .ring circle.lit { fill: var(--fg); }
+  .make-pct { font: 800 46px/1 var(--f-display); font-stretch: 72%; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+  .make-pct small { font-size: .5em; font-stretch: 100%; color: var(--fg-3); margin-left: 1px; }
+  .making h1 { text-wrap: balance; }
+
+  .make-stages { display: flex; flex-direction: column; gap: 14px; width: min(100%, 300px); margin: 8px auto 4px; text-align: left; }
+  .make-stage { position: relative; display: flex; align-items: center; gap: 12px; color: var(--fg-3); font-weight: 650; }
+  .make-stage:not(:last-child)::before { content: ""; position: absolute; left: 11px; top: 26px; height: 16px; width: 2px; background: var(--line); }
+  .make-mark {
+    width: 24px; height: 24px; flex: none; border-radius: 50%; background: var(--surface-2); box-shadow: inset 0 0 0 1.5px var(--line-2);
+    display: grid; place-items: center; color: #0B0C12; transition: background .3s, box-shadow .3s;
+  }
+  .make-stage.done { color: var(--fg-2); }
+  .make-stage.done::before { background: #6FA0FF; }
+  .make-stage.done .make-mark { background: #6FA0FF; box-shadow: none; }
+  .make-stage.now { color: var(--fg); font-weight: 800; }
+  .make-stage.now .make-mark { background: var(--amber); box-shadow: 0 0 12px var(--amber); animation: lamp-blink .8s steps(1) infinite; }
+
+  /* ---- review ------------------------------------------------------------------------- */
+  .memo-review { padding-bottom: 170px; }
+  .memo-review .page-title { gap: 6px; align-items: flex-start; flex-direction: column; }
+  .heard summary { cursor: pointer; color: var(--fg-2); font-weight: 700; min-height: 36px; display: flex; align-items: center; }
+  .heard p { white-space: pre-wrap; line-height: 1.55; }
+  .findings { display: flex; flex-direction: column; gap: 12px; }
+  .finding { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; line-height: 1.45; }
+  .finding input { width: 20px; height: 20px; margin: 2px 0 0; flex: none; accent-color: var(--fg); }
+  .finding .col { gap: 3px; }
+  .finding .pill { vertical-align: 1px; }
+  .plain { display: flex; flex-direction: column; gap: 6px; padding-left: 18px; list-style: disc; color: var(--fg-2); }
+  .sources, .sn-sources { display: flex; flex-direction: column; gap: 6px; }
+  .sources a, .sn-sources a { font-weight: 700; color: var(--fg); text-underline-offset: 3px; overflow-wrap: anywhere; }
+  .memo-review .search-suggestions { height: 64px; margin-top: 0; border-radius: 10px; }
+
+  .beat-edit { display: flex; flex-direction: column; gap: 14px; }
+  .beat { display: flex; gap: 10px; align-items: flex-start; }
+  .beat .col { gap: 6px; }
+  .beat-n {
+    width: 30px; height: 30px; flex: none; margin-top: 9px; border-radius: 50%;
+    display: grid; place-items: center; background: var(--fg); color: var(--bg);
+    font: 800 14px/1 var(--f-display); font-stretch: 80%; font-variant-numeric: tabular-nums;
+  }
+  .beat-tools { gap: 2px; }
+  .beat-tools .icon-btn:disabled { opacity: .3; cursor: default; }
+
+  /* ---- your show intro ------------------------------------------------------------------- */
+  .intro-form .radio-cards { max-height: 420px; overflow-y: auto; }
+  .intro-preview { font-size: 15px; color: var(--fg-2); font-style: italic; }
+  .intro-preview:empty { display: none; }
+
+  /* ---- show notes ---------------------------------------------------------------------- */
+  .sn-credit { display: flex; align-items: center; gap: 8px; font-weight: 700; }
+  .sn-credit svg { flex: none; color: var(--fg-2); }
+  .sn-h { font-size: 13px; font-weight: 750; color: var(--fg-2); margin-top: 4px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .rec-live .rec-dot, .make-stage.now .make-mark { animation: none; }
+  }
 }
-.intro-hint a { color: var(--soft); }
-
-/* ---- recording ------------------------------------------------------------------- */
-
-.recorder { margin-top: 20px; }
-.rec-start { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 8px 0 4px; }
-.rec-btn {
-  width: 96px; height: 96px; border-radius: 50%; border: 0; cursor: pointer;
-  display: grid; place-items: center; background: var(--live); color: var(--white);
-  box-shadow: 0 0 0 8px rgba(201, 56, 31, .18);
-  transition: transform .12s var(--ease), box-shadow .2s;
-}
-.rec-btn:hover { box-shadow: 0 0 0 12px rgba(201, 56, 31, .22); }
-.rec-btn:active { transform: scale(.96); }
-
-.rec-live { display: flex; align-items: center; gap: 12px; min-height: 56px; }
-.rec-live .rec-dot { width: 14px; height: 14px; animation: pulse 1.2s ease-in-out infinite; }
-.rec-live.paused .rec-dot { animation: none; background: var(--faint); }
-.rec-time { font-size: 30px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
-.rec-level { flex: 1; height: 8px; border-radius: var(--pill); background: var(--panel-2); overflow: hidden; }
-.rec-level span {
-  display: block; height: 100%; background: var(--text); border-radius: inherit;
-  transform: scaleX(0); transform-origin: left; transition: transform 80ms linear;
-}
-.memo-audio { width: 100%; height: 44px; }
-.recorder .row .btn { padding: 0 12px; font-size: 14px; white-space: nowrap; }
-
-.review-row { margin-top: 24px; }
-.switch-row .col { gap: 2px; }
-.switch-row .muted.small { font-weight: 400; }
-.tpl.auto { border: 1px dashed var(--line-2); }
-.memo-page .go .spinner.small { width: 18px; height: 18px; border-width: 2px; border-color: rgba(23, 18, 42, .2); border-top-color: var(--ink); }
-
-/* ---- being made ------------------------------------------------------------------- */
-
-.making .progress { width: 100%; height: 8px; border-radius: var(--pill); background: var(--panel-2); overflow: hidden; }
-.making .progress span { display: block; height: 100%; background: var(--accent); border-radius: inherit; transition: width .6s var(--ease); }
-.make-stages { display: flex; flex-direction: column; gap: 10px; width: 100%; margin: 6px 0; }
-.make-stage { display: flex; align-items: center; gap: 10px; color: var(--faint); font-weight: 600; }
-.make-mark {
-  width: 22px; height: 22px; flex: none; border-radius: 50%; border: 2px solid var(--line-2);
-  display: grid; place-items: center;
-}
-.make-stage.done { color: var(--muted); }
-.make-stage.done .make-mark { background: var(--text); border-color: var(--text); color: var(--ink); }
-.make-stage.now { color: var(--text); font-weight: 750; }
-.make-stage.now .make-mark { border-color: var(--text); border-top-color: transparent; animation: spin 1s linear infinite; }
-
-/* ---- review ------------------------------------------------------------------------- */
-
-.memo-review { padding-bottom: 170px; }
-.memo-review .page-title { gap: 6px; align-items: flex-start; }
-.heard summary { cursor: pointer; color: var(--muted); font-weight: 650; min-height: 36px; display: flex; align-items: center; }
-.heard p { white-space: pre-wrap; line-height: 1.5; }
-.findings { display: flex; flex-direction: column; gap: 10px; }
-.finding { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; line-height: 1.4; }
-.finding input { width: 20px; height: 20px; margin: 2px 0 0; flex: none; accent-color: var(--white); }
-.finding .col { gap: 3px; }
-.finding .pill { vertical-align: 1px; }
-.plain { display: flex; flex-direction: column; gap: 6px; padding-left: 18px; list-style: disc; color: var(--muted); }
-.sources, .sn-sources { display: flex; flex-direction: column; gap: 6px; }
-.sources a, .sn-sources a { font-weight: 650; text-underline-offset: 3px; overflow-wrap: anywhere; }
-.memo-review .search-suggestions { height: 64px; margin-top: 0; border-radius: 10px; }
-
-.beat-edit { display: flex; flex-direction: column; gap: 12px; }
-.beat { display: flex; gap: 10px; align-items: flex-start; }
-.beat .col { gap: 6px; }
-.beat-n {
-  width: 28px; height: 28px; flex: none; margin-top: 10px; border-radius: 50%;
-  display: grid; place-items: center; background: var(--chip); font-weight: 750; font-size: 13px;
-}
-.beat-tools { gap: 2px; }
-.beat-tools .icon-btn:disabled { opacity: .3; cursor: default; }
-
-/* ---- your show intro ------------------------------------------------------------------- */
-
-.intro-form .radio-cards { max-height: 420px; overflow-y: auto; }
-.intro-preview { font-size: 15px; color: var(--soft); font-style: italic; }
-.intro-preview:empty { display: none; }
-
-/* ---- show notes ---------------------------------------------------------------------- */
-
-.sn-credit { display: flex; align-items: center; gap: 8px; font-weight: 650; }
-.sn-credit svg { flex: none; color: var(--muted); }
-.sn-h { font-size: 13px; font-weight: 700; color: var(--muted); margin-top: 4px; }

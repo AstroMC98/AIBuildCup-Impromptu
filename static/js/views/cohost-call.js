@@ -2,11 +2,12 @@
 // avatar pulsing as they talk, big captions of what you both just said, the mode,
 // mute and Hang up. After hanging up it shows the episode being edited, then opens it.
 import { api } from "../api.js";
-import { avatar } from "../components.js";
+import { avatar, loader } from "../components.js";
 import { startCallAudio, takeHandoff } from "../cohost/audio.js";
 import { CallController } from "../cohost/controller.js";
 import { html, setHtml } from "../html.js";
 import { icon } from "../icons.js";
+import { fillRing, ring, secondsLit } from "../ring.js";
 import { navigate } from "../router.js";
 import { loginPath, session } from "../session.js";
 import { applyAccent } from "../theme.js";
@@ -32,7 +33,7 @@ export async function cohostCallView(root, { params }) {
     navigate(loginPath(), { replace: true });
     return null;
   }
-  setHtml(root, html`<div class="splash"><span class="spinner" aria-hidden="true"></span><p>Dialing in…</p></div>`);
+  setHtml(root, loader("Dialing in…"));
   let data;
   try {
     data = await api.getShow(id);
@@ -49,7 +50,7 @@ export async function cohostCallView(root, { params }) {
   }
   root.replaceChildren();
   applyAccent(document.documentElement, data.show.accent);
-  document.title = "On a call – Gemini Podcasts";
+  document.title = "On a call – Impromptu";
 
   let terminal = "";
   const handoff = takeHandoff();
@@ -69,15 +70,14 @@ export async function cohostCallView(root, { params }) {
   const you = session.hostColor(0);
   const them = session.hostColor(1);
   const el = document.createElement("div");
-  el.className = "call";
+  el.className = "call stage";
   setHtml(el, html`
-    <svg class="rings" aria-hidden="true" viewBox="0 0 620 620"><circle cx="310" cy="310" r="130"/><circle cx="310" cy="310" r="205"/><circle cx="310" cy="310" r="285"/></svg>
     <header class="lm-top call-top">
       <div class="lm-onair"><span data-r="badge"></span><span class="clock" data-r="clock">0:00</span></div>
       <span class="call-left" data-r="left"></span>
     </header>
     <div class="call-head">
-      <span class="call-host" aria-hidden="true"><span class="call-pulse"></span><span data-r="host-avatar"></span></span>
+      <span class="call-host" aria-hidden="true">${ring({ cls: "call-ring", r: 46, dot: 2.2 })}<span class="call-pulse"></span><span data-r="host-avatar"></span></span>
       <span class="col call-names">
         <span class="call-host-name" data-r="host-name"></span>
         <span class="muted small ellipsis" data-r="title"></span>
@@ -158,7 +158,7 @@ export async function cohostCallView(root, { params }) {
         <p class="tune-title">Making your episode</p>
         <ol class="edit-steps">${STEPS.map(([, label], i) => html`
           <li class="${i < at ? "done" : i === at ? "now" : ""}">
-            <span class="step-ic" aria-hidden="true">${i < at ? icon("check", 14, 3) : i === at ? html`<span class="spinner small"></span>` : ""}</span>${label}</li>`)}</ol>
+            <span class="step-ic" aria-hidden="true">${i < at ? icon("check", 14, 3) : ""}</span>${label}</li>`)}</ol>
       </div>`;
     }
     if (ctl.state === "saved" && ctl.saved) {
@@ -247,12 +247,14 @@ export async function cohostCallView(root, { params }) {
   let last = 0;
   const pulse = el.querySelector(".call-pulse");
   const meter = el.querySelector(".me-meter");
+  const callRing = el.querySelector(".call-ring");
   const frame = (t) => {
     raf = requestAnimationFrame(frame);
     if (t - last < FRAME_MS) return;
     last = t;
     const elapsed = ctl.elapsed();
     r.set("clock", Math.floor(elapsed), () => fmtTime(elapsed));
+    fillRing(callRing, secondsLit(elapsed));   // the studio clock around your co-host
     const left = Math.ceil(ctl.left());
     r.set("left", `${left}|${ctl.wrapping}|${ctl.onAir}`, () => (!ctl.onAir || !ctl.limitS ? ""
       : ctl.wrapping ? html`<span class="pill pink">Wrapping up · ${fmtTime(left)}</span>` : `${fmtTime(left)} left`));
@@ -277,7 +279,7 @@ export async function cohostCallView(root, { params }) {
       off();
       offActions();
       ctl.destroy();
-      document.title = "Gemini Podcasts";
+      document.title = "Impromptu";
       applyAccent(document.documentElement, "#B8336A");
     },
   };
@@ -285,7 +287,8 @@ export async function cohostCallView(root, { params }) {
 
 function message(root, text) {
   setHtml(root, html`
-    <div class="splash">
+    <div class="splash stage">
+      ${ring({ lit: (i) => i % 15 === 0 })}
       <p class="splash-title">Off the line</p>
       <p class="muted">${text}</p>
       <a class="btn white" href="/" data-link>Your pods</a>

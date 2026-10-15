@@ -72,10 +72,14 @@ export function reducedMotion() {
 }
 
 let toastTimer = 0;
+/** A cue card drops in from the top; the bar along its foot runs down for as long as it stays. */
 export function toast(msg, ms = 4500) {
   const t = document.getElementById("toast");
   if (!t) return;
+  t.hidden = true;            // restart the drop-in and the timer bar for every new message
   t.textContent = msg;
+  t.style.setProperty("--toast-ms", `${ms}ms`);
+  void t.offsetWidth;
   t.hidden = false;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => (t.hidden = true), ms);

@@ -1,9 +1,10 @@
 // The desktop layout of a show (the board's "Desktop studio"): library on the
 // left, the 16:9 live player in the middle, call-ins / context / rundown on the right.
 import {
-  callins, callinsKey, captions, captionsKey, chapterBar, chapterBarKey, chapterLabel, chapters, chaptersKey,
+  callins, callinsKey, captions, captionsKey, captionTick, chapterBar, chapterBarKey, chapterLabel, chapters, chaptersKey,
   contextKey, contextList, hostAvatars, liveBadge, liveBadgeKey, showNotes,
 } from "../components.js";
+import { reduced } from "../motion.js";
 import { html, renderSpoken, setHtml } from "../html.js";
 import { icon, VISIBILITY_LABEL } from "../icons.js";
 import { navigate } from "../router.js";
@@ -11,7 +12,7 @@ import { loginPath, session } from "../session.js";
 import { bindSubscribe, creatorBar, creatorBarKey } from "../social.js";
 import { Regions, bindActions } from "../ui.js";
 import { fmtTime, store as local } from "../util.js";
-import { appHeader, bindHeader, mountLibraryList } from "./library.js";
+import { appHeader, bindHeader } from "./library.js";
 import {
   bindCallin, bindSeekBar, callinForm, floatHearts, focusCallin, showActions, tuneInOverlay,
 } from "./shared.js";
@@ -27,14 +28,12 @@ export function mountStudio(root, ctl) {
   let muted = false;
 
   const el = document.createElement("div");
-  el.className = "studio";
+  el.className = "studio stage";
   setHtml(el, html`
-    ${appHeader()}
-    <div class="studio-body ${session.signedIn ? "" : "no-lib"}">
-      ${session.signedIn ? html`<aside class="lib-pane" data-lib></aside>` : ""}
-      <main class="stage">
+    ${appHeader({ search: false })}
+    <div class="studio-body">
+      <main class="studio-stage">
         <section class="player" aria-label="${ctl.live ? "Live player" : "Player"}" data-player>
-          <svg class="rings" aria-hidden="true" viewBox="0 0 700 700"><circle cx="350" cy="350" r="150"/><circle cx="350" cy="350" r="240"/><circle cx="350" cy="350" r="330"/></svg>
           <div class="pl-top">
             <span class="row gap-s"><span data-r="badge"></span><span class="clock" data-r="clock">0:00</span></span>
             <span class="pl-chapter" data-r="chapterlabel"></span>
@@ -109,8 +108,8 @@ export function mountStudio(root, ctl) {
   root.append(el);
 
   const r = new Regions(el);
-  const lib = session.signedIn ? mountLibraryList(el.querySelector("[data-lib]"), { activeId: ctl.id, compact: true }) : null;
-  const offHead = bindHeader(el, { onSearch: (q) => lib?.search(q) });
+  const lib = null;   // the rail and the Library tab replace the old library pane
+  const offHead = bindHeader(el);
   const offSub = bindSubscribe(el, { onChange: (st) => Object.assign(s.creator, st) });
   const player = el.querySelector("[data-player]");
   const offActions = bindActions(el, showActions(ctl, {
@@ -172,7 +171,9 @@ export function mountStudio(root, ctl) {
       const label = chapterLabel(s, pos);
       r.set("chapterlabel", label, () => label);
       r.set("captions", `${captionsOn}|${captionsKey(s, ctl, pos)}`,
-        () => (captionsOn ? captions(s, ctl, pos, { big: 31 }) : html`<p class="cap-status">Captions are off.</p>`));
+        () => (captionsOn ? captions(s, ctl, pos, { big: 40 }) : html`<p class="cap-status">Captions are off.</p>`));
+      if (captionsOn) captionTick(r.el("captions"), s, pos, { calm: reduced() });
+      el.style.setProperty("--level", reduced() ? "0" : Math.min(1, (ctl.player.level?.() || 0) * 6).toFixed(3));
       r.set("chapters", chapterBarKey(s, pos), () => chapterBar(s, pos));
       const paused = !ctl.play.started || ctl.play.paused;
       r.set("play", paused, () => (paused ? icon("play", 22, 2.6) : icon("pause", 22, 3)));

@@ -7,7 +7,7 @@ import { micSupported, startCallAudio, takeHandoff } from "../cohost/audio.js";
 import { html, setHtml } from "../html.js";
 import { icon, KIND_ICON } from "../icons.js";
 import { bindPersonaForm, fillPersona, personaCard, personaFields, readPersona } from "../personas.js";
-import { introRow } from "../pod-options.js";
+import { introRow, lengthChip } from "../pod-options.js";
 import { navigate } from "../router.js";
 import { loginPath, session } from "../session.js";
 import { applyAccent } from "../theme.js";
@@ -48,7 +48,7 @@ export async function cohostSetupView(root) {
   const el = document.createElement("div");
   el.className = "create-page cohost-setup";
   setHtml(el, html`
-    ${appHeader({ search: false })}
+    ${appHeader({ search: false, nav: false })}
     <main class="create">
       <div class="create-title">
         <h1>Co-host live</h1>
@@ -140,7 +140,7 @@ export async function cohostSetupView(root) {
     </button>`)}`);
   const renderLengths = () => {
     setHtml($("[data-lengths]"), html`${LENGTHS.map((m) => html`
-      <button type="button" class="len-chip" data-min="${m}" aria-pressed="${state.minutes === m}">${m} min</button>`)}`);
+      ${lengthChip(m, state.minutes === m)}`)}`);
     renderCost();
   };
   const renderVisibility = () => {
