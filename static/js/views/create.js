@@ -13,7 +13,7 @@ import { vibeTile } from "../sheets.js";
 import { applyAccent, gelFor, initial } from "../theme.js";
 import { openSheet } from "../ui.js";
 import { store as local, toast } from "../util.js";
-import { appHeader, bindHeader, templateCard } from "./library.js";
+import { appHeader, bindHeader, sleeve, templateCard } from "./library.js";
 
 const LENGTHS = [5, 10, 15];
 const BLANK_HOST = { name: "", voice: "auto", persona: "", gender: "", likes: "", specialties: "", skills: "", context: "" };
@@ -54,6 +54,7 @@ export async function createView(root, { query }) {
         <p class="muted">Start with anything. Add more while it's live.</p>
         <a class="memo-link" href="/memo" data-link>${icon("mic", 16)}Got a rough voice memo? Turn it into a finished episode</a>
       </div>
+      <div class="preview-sleeve" data-preview aria-live="polite" aria-label="Your pod so far"></div>
       <div data-free></div>
 
       <section class="tpl-section" aria-labelledby="tpl-h">
@@ -142,7 +143,36 @@ export async function createView(root, { query }) {
     const preset = session.preset(p.id);
     return preset ? { style: preset.prompt, label: null, accent: preset.accent, vibe: preset.id } : null;
   };
-  const tint = () => applyAccent(document.documentElement, picked()?.accent || "#2F6BD0");
+  const tint = () => {
+    applyAccent(document.documentElement, picked()?.accent || "#2F6BD0");
+    renderPreview();
+  };
+
+  // The pod before it exists: its sleeve, lit by the vibe, titled by what you've typed.
+  let previewKey = "";
+  const renderPreview = () => {
+    const p = picked();
+    const first = textArea.value.trim().split("\n")[0] || state.attachments[0]?.name || "";
+    const title = first.length > 64 ? `${first.slice(0, 62).trimEnd()}…` : first;
+    const label = p?.label || (state.pick.kind === "preset" ? session.preset(state.pick.id)?.label : "")
+      || (state.pick.kind === "own" ? "Your own style" : "");
+    const names = state.hosts.map((h) => h.name).filter(Boolean);
+    const who = names.length === state.hosts.length && names.length ? names.join(" and ") : state.hosts.length === 1 ? "one host" : "two hosts";
+    const line = [label, who, `${state.minutes} min`].filter(Boolean).join(", ");
+    const key = `${title}|${p?.accent}|${line}`;
+    if (key === previewKey) return;
+    previewKey = key;
+    const box = $("[data-preview]");
+    if (!box.firstElementChild) {
+      setHtml(box, html`${sleeve({ title: "Your pod" }, "md")}<span class="pv-text"><strong></strong><span class="muted small"></span></span>`);
+    }
+    // Updated in place, so a new vibe's gel glides in (--gel is a registered color).
+    box.querySelector(".sleeve").style.setProperty("--gel", gelFor(p?.accent || "#2F6BD0"));
+    // A sleeve holds a few words, like a record's spine; the full title sits beside it.
+    box.querySelector(".sleeve-t").textContent = (title.split(/\s+/).slice(0, 3).join(" ").replace(/[,:;.!?…-]+$/, "")) || "Your pod";
+    box.querySelector("strong").textContent = title || "Your pod";
+    box.querySelector(".pv-text .muted").textContent = line[0] ? line[0].toUpperCase() + line.slice(1) : "";
+  };
 
   // ---- rendering ----------------------------------------------------------------------
 
@@ -177,11 +207,13 @@ export async function createView(root, { query }) {
             ${h.context ? html` · ${icon("lock", 11)} notes` : ""}</span></span>
       </button>`)}`);
     $("[data-host-count]").textContent = state.hosts.length === 2 ? "Switch to one host" : "Switch to two hosts";
+    renderPreview();
   };
   const renderLengths = () => {
     setHtml($("[data-lengths]"), html`${LENGTHS.map((m) => html`
       ${lengthChip(m, state.minutes === m)}`)}`);
     renderCost();
+    renderPreview();
   };
   const renderVisibility = () => {
     setHtml($("[data-visibility]"), visibilityCards(state.visibility));
@@ -228,6 +260,7 @@ export async function createView(root, { query }) {
     $("[data-meta]").textContent = state.busy || (!n ? ""
       : n > max ? `${n.toLocaleString()} characters. Only the first ${max.toLocaleString()} will be used.`
         : `${n.toLocaleString()} characters of source material`);
+    renderPreview();
   };
   const setError = (msg) => { $("[data-error]").textContent = msg || ""; };
 

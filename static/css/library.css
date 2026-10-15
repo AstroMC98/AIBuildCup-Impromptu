@@ -170,7 +170,10 @@
     .tpl-grid { display: flex; overflow-x: auto; padding: 2px 2px 10px; scroll-snap-type: x proximity; scrollbar-width: none; }
     .tpl-grid .tpl { flex: none; width: 236px; scroll-snap-align: start; }
   }
-  .tpl-row { display: flex; gap: 10px; overflow-x: auto; padding: 2px 2px 10px; scrollbar-width: thin; }
+  .tpl-row { display: flex; gap: 10px; overflow-x: auto; padding: 2px 2px 10px; scroll-snap-type: x proximity; scrollbar-width: none; }
+  .tpl-row .tpl { scroll-snap-align: start; }
+  /* with a mouse there's no swipe, so the shelves keep a thin, quiet scrollbar */
+  @media (pointer: fine) { .tpl-row, .shelf-row { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; } }
   .tpl-row .tpl { flex: none; width: 230px; }
   .tpl {
     position: relative; display: flex; flex-direction: column; gap: 8px; min-height: 140px; padding: 14px; border: 0; border-radius: var(--r-card);
