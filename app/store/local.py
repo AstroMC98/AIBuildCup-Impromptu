@@ -131,6 +131,10 @@ class LocalStore:
         path = self._dir(show_id) / "segments" / f"{seg['seq']:05d}.json"
         await asyncio.to_thread(_atomic_write, path, _dump(seg))
 
+    async def delete_segment(self, show_id: str, seq: int) -> None:
+        path = self._dir(show_id) / "segments" / f"{int(seq):05d}.json"
+        await asyncio.to_thread(lambda: path.unlink(missing_ok=True))
+
     async def put_comment(self, show_id: str, comment: dict) -> None:
         path = self._dir(show_id) / "comments" / f"{comment['id']}.json"
         await asyncio.to_thread(_atomic_write, path, _dump(comment))

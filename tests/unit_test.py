@@ -307,6 +307,17 @@ def _():
     assert len(final) >= len(mid) > 0 and w.finish() is final
 
 
+@check("pcm window drops what comes after an interruption")
+def _():
+    p = PcmWindow()
+    p.add(0, 1, b"\x01\x00" * 100)
+    p.add(100, 2, b"\x02\x00" * 100)
+    p.truncate(150)
+    assert [(c[0], len(c[2]) // 2) for c in p.since(0)] == [(0, 100), (100, 50)]
+    p.truncate(100)
+    assert [(c[0], len(c[2]) // 2) for c in p.since(0)] == [(0, 100)]
+
+
 @check("pcm window serves from any sample and trims behind")
 def _():
     p = PcmWindow()
@@ -355,7 +366,12 @@ class StubRoom:
         self.events.append(event)
 
     def push_audio(self, seq, pcm):
-        pass
+        self.clock.add_audio(len(pcm) // 2)
+
+    def truncate(self, at, keep_seq, cut):
+        self.events.append({"type": "truncate", "at": at, "keep_seq": keep_seq, "cut": cut})
+        self.clock.audio_end = at
+        self.clock.live = min(self.clock.live, float(at))
 
 
 def _runner() -> ShowRunner:
@@ -449,6 +465,75 @@ async def _():
     finally:
         show_mod.SPEECH_STALL_SECONDS = old
     assert any(e["type"] == "error" and "no audio" in e["message"] for e in r.room.events)
+
+
+def _voiced(r: ShowRunner, texts: list[str], seconds: float, **segment) -> Draft:
+    """Commit a segment and pretend it was voiced: `seconds` of audio, evenly spread."""
+    d = _draft(r, segment=SegmentDraft(lines=[Line(speaker="A", text=t) for t in texts], **segment))
+    r._commit(d)
+    n = int(seconds * 24_000)
+    r.room.clock.add_audio(n)
+    d.samples = n
+    return d
+
+
+@check("interrupting mid-segment keeps only what was heard")
+async def _():
+    from app.show import Interrupt
+    r = _runner()
+    _voiced(r, ["one", "two", "three", "four"], 4)
+    c, _ = r.add_comment("Jo", "hi", "guest")
+    d2 = _draft(r, segment=SegmentDraft(lines=[Line(speaker="A", text=t) for t in ("five", "six", "seven", "eight")],
+                                        addressed_comment_ids=[c.id]))
+    r._commit(d2)
+    r.room.clock.add_audio(4 * 24_000)
+    d2.samples = 4 * 24_000
+    assert c.status == "on_deck"
+    it = Interrupt(kind="ask", text="why?", at=6 * 24_000)       # halfway through segment 2
+    r._truncate(it)
+    assert [ln.text for ln in r.transcript] == ["one", "two", "three", "four", "five", "six"]
+    assert it.cut_line == "six" and r.room.clock.audio_end == 6 * 24_000
+    ev = r.room.events[-1]
+    assert ev["type"] == "truncate" and ev["keep_seq"] == 2 and [ln["text"] for ln in ev["cut"]["lines"]] == ["five", "six"]
+    assert c.status == "queued"                                   # "Jo" was in the part they never heard
+    # cutting into segment 1 drops segment 2 altogether
+    r._truncate(Interrupt(kind="move_on", at=1 * 24_000))
+    assert [ln.text for ln in r.transcript] == ["one"] and r.seq == 1 and r.room.events[-1]["keep_seq"] == 1
+
+
+@check("the cut follows the captions' line weighting")
+def _():
+    from app.show import _lines_heard
+    lines = [Line(speaker="A", text=t) for t in ("short", "x" * 100, "<laugh> |no way| also short")]
+    assert _lines_heard(lines, 0.01) == 1
+    assert _lines_heard(lines, 0.2) == 2       # the long line starts early and runs most of the way
+    assert _lines_heard(lines, 0.99) == 3
+
+
+@check("go deeper, move on and steer keep the episode's length")
+def _():
+    r = _runner()                               # 4 one-minute beats, 4 minutes
+    r.room.clock.add_audio(int(0.5 * 60 * 24_000))
+    total = lambda: round(sum(b.minutes for b in r.plan.beats), 6)  # noqa: E731
+    r._extend_current_beat(1.5)
+    assert r.plan.beats[0].minutes == 2.5 and total() == 4.0
+    assert r._end_current_beat() and r.beat == 1 and total() == 4.0
+    r._steer_to([Beat(title="new", notes="", minutes=5), Beat(title="wrap", notes="", minutes=5)])
+    assert [b.title for b in r.plan.beats[2:]] == ["new", "wrap"] and r.beat == 2
+    elapsed = r._elapsed_minutes()
+    assert abs(sum(b.minutes for b in r.plan.beats[2:]) - (4 - elapsed)) < 0.05
+
+
+@check("the writer answers an interruption, then picks the thread back up")
+def _():
+    from app.models import InterruptNote
+    r = _runner()
+    ctx = r._context()[0].model_copy(update={"interjection": InterruptNote(kind="ask", text="why?", cut_line="six")})
+    text = prompts.writer_input(ctx, r.plan)
+    assert "THE PRODUCER JUST INTERRUPTED" in text and 'They asked: "why?"' in text and '"six"' in text
+    assert "Write at most" in text and "LISTENER COMMENTS" not in text
+    r._bridge = InterruptNote(kind="ask", text="why?")
+    assert "pick the show back up" in prompts.writer_input(r._context()[0], r.plan)
 
 
 @check("call-ins get an ETA on the show timeline")

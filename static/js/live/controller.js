@@ -15,6 +15,10 @@ import { ShowStore } from "./store.js";
 const KEEP_BEHIND_SECONDS = 300;
 const BEHIND_LIVE_SECONDS = 3;
 
+// Errors that mean an interruption didn't happen, so playback picks up again.
+const INTERRUPT_REFUSALS = new Set(["forbidden", "ended", "bad_request", "empty", "rate_limited",
+  "starting", "ending", "busy", "limit"]);
+
 export class ShowController {
   constructor({ id, data, onTerminal }) {
     this.id = id;
@@ -89,9 +93,25 @@ export class ShowController {
       }
       return;
     }
+    if (e.type === "truncate") {
+      // Audio after e.at was voiced but never heard: drop it and play on from there.
+      this.timeline.truncate(e.at);
+      this.store.apply(e);
+      if (this.player.started && this.player.scheduledTo > e.at) this.player.seek(Math.min(this.player.position(), e.at));
+      if (this._resumeAfterInterrupt) {
+        this._resumeAfterInterrupt = false;
+        if (this.player.started) this.player.resume();
+        else this.tuneIn();
+      }
+      return;
+    }
     if (e.type === "error") {
       if (e.fatal) toast(e.message, 8000);
       else if (e.message) toast(e.message);
+      if (this._resumeAfterInterrupt && INTERRUPT_REFUSALS.has(e.code)) {
+        this._resumeAfterInterrupt = false;
+        if (this.player.started) this.player.resume();
+      }
     }
     this.store.apply(e);
   }
@@ -206,6 +226,36 @@ export class ShowController {
         this._heartTimer = 0;
       }, 500);
     }
+  }
+
+  // ---- interrupting (the producer) -----------------------------------------------
+
+  get canInterrupt() {
+    return this.live && !this.store.ended && Boolean(this.store.canInterrupt);
+  }
+
+  /** Pause the moment the producer starts interrupting. Returns whether it was playing. */
+  holdForInterrupt() {
+    const playing = this.player.started && !this.player.paused;
+    if (playing) this.player.pause();
+    return playing;
+  }
+
+  resumeAfterHold(wasPlaying) {
+    if (wasPlaying && this.player.started && this.player.paused) this.player.resume();
+  }
+
+  /** Cut in where we are: the server rewinds to here, reacts, and answers. */
+  interrupt(kind, text, wasPlaying) {
+    if (!this.canInterrupt) return false;
+    const at = Math.floor(this.player.started ? this.player.position() : this.liveEdge());
+    this._resumeAfterInterrupt = wasPlaying || !this.player.started;
+    this.socket.send({ type: "interrupt", kind, text, at });
+    return true;
+  }
+
+  transcribe(blob) {
+    return api.transcribe(this.id, blob);
   }
 
   restyle(choice) {

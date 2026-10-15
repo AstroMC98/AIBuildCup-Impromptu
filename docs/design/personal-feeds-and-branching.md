@@ -1,6 +1,13 @@
 # Design review: personal daily pods and interactive branching audio
 
-Status: proposal for review · October 2026 · based on `main` at `964b051`
+Status: Phases 1–2 (interactive branching) **built on this branch**; Phases 3–5 (personal
+daily feeds) are a proposal waiting on the decisions at the end · October 2026 · based on
+`main` at `964b051`
+
+What was built differs from the plan below in two small ways. Only the pod's **producer**
+can interrupt: they're the only listener of a private pod or a briefing, and in a shared
+room everyone hears the branch. Voice questions use the browser's own recorder, because
+Gemini accepts its formats directly.
 
 Two features are proposed:
 
@@ -28,8 +35,11 @@ Four ideas carry the design:
    the producer can interrupt, and everyone hears the branch.
 2. **Pre-voiced "stingers" hide the wait.** Each host gets short, pre-voiced reactions
    ("Ooh, good question.", "Hold that thought—"). One plays the moment the listener
-   interrupts, while the real answer is written. That should get the first reaction
-   under 0.5 s and the first word of the answer to about 5 to 8 s.
+   interrupts, while the real answer is written. *Measured with real Gemini on this
+   branch:* the reaction plays 0.02 s after the tap, and the answer's audio starts about
+   10 s after it (writing the answer takes 6–8 s, starting speech about 3 s). The next
+   lever is to stream the answer into speech line by line, so the first line is voiced
+   while the rest is still being written.
 3. **A pre-rendered spine with live detours.** The morning episode is rendered
    overnight in batch, with bigger segments, so it costs less, starts instantly and
    works offline. Live generation starts only when the listener interrupts. After
@@ -141,13 +151,13 @@ generated (`room.push_audio`). It should instead encode from behind the playhead
 the 0.5 s tick, everything below `clock.live` gets encoded. A truncation then never
 has to un-encode anything, and the saved episode is exactly what the listener heard.
 
-**c) A fast answer path.** This is a new `Gemini.write_interjection()`: a short prompt
-with the transcript tail, the question and the hosts. It asks for 2 to 4 lines (about
-60 to 90 words) and `return_to_plan: bool`, using thinking level `minimal` and a small
-output cap. Measured today: writer calls take 4.5–7.5 s at `low` thinking, and speech
-starts about 3.5 s after a TTS request. The target is answer audio about 5–8 s after
-the tap, with a stinger covering the first second. The answer reuses
-`WRITE_TIMEOUT_SECONDS` and its retry.
+**c) A fast answer path** (built). The regular writer call, with an interruption brief
+in place of the usual instructions: the transcript up to the cut, the question and the
+hosts, asking for 2 to 4 lines (about 8 to 30 s of speech, depending on the kind). It
+uses its own thinking level, `INTERJECTION_THINKING_LEVEL`. `minimal` would be faster,
+but `gemini-3.8-flash` rejects it, so it's `low`. Measured with real Gemini: about 6 s
+to write and 3 s for speech to start, so answer audio begins about 10 s after the tap.
+The stinger plays in the meantime. It reuses `WRITE_TIMEOUT_SECONDS` and its retry.
 
 **d) Stingers.** After the cold open is voiced, the server voices 4–6 short reactions
 per host in the background, matched to the style. These are single-speaker TTS calls of
@@ -180,13 +190,13 @@ Data model: segments get a `branch` (`main` or a detour id), and chapters get
 
 **f) Voice questions.**
 
-- **Recommended first: record, then transcribe.** The browser captures 16 kHz PCM
-  with an AudioWorklet while the button is held, and uploads it as WAV to
-  `POST /api/shows/{id}/ask`. WAV is one of the formats Gemini's audio input accepts;
-  `MediaRecorder` output varies by browser, sometimes WebM/Opus, so we avoid it.
-  Gemini transcribes it in one call of about 1–2 s, and the text takes the path in
-  (c). The browser's Web Speech API can show live partial text where it's available
-  (Chrome), but it isn't relied on.
+- **Recommended first: record, then transcribe** (built). The browser's own
+  `MediaRecorder` records while the button is held, and the clip is uploaded as is to
+  `POST /api/shows/{id}/transcribe`. Gemini's audio input accepts what browsers produce
+  (`audio/webm`, `audio/ogg`, `audio/m4a`, `audio/wav`, per the SDK's audio content
+  type), so nothing is re-encoded. Gemini transcribes it in one call, and the text
+  takes the path in (c). The browser's Web Speech API could show live partial text
+  where it's available (Chrome), but it isn't relied on.
 - **Later, maybe: a "hot mic" on the Gemini Live API**, for real back-and-forth with
   one host. Live gives voice activity detection and barge-in for free, with
   sub-second turns. But it's **one voice per session**, audio sessions are limited

@@ -80,6 +80,13 @@ export class PcmTimeline {
     }
   }
 
+  /** Forget audio from pos on: the producer interrupted there, and it was never heard. */
+  truncate(pos) {
+    while (this.chunks.length && this.chunks[this.chunks.length - 1].start >= pos) this.chunks.pop();
+    const last = this.chunks[this.chunks.length - 1];
+    if (last && last.start + last.data.length > pos) last.data = last.data.subarray(0, pos - last.start);
+  }
+
   clear() {
     this.chunks = [];
   }

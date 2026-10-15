@@ -62,7 +62,8 @@ export function mountStudio(root, ctl) {
             <span class="col"><strong data-r="hostnames"></strong><span class="muted small" data-r="stylemeta"></span></span>
           </div>
           <div class="row gap wrap">
-            ${ctl.live ? html`<button class="btn white" type="button" data-action="add-context">${icon("addFile", 18)}Add context</button>` : ""}
+            ${s.producer && ctl.live ? html`<button class="btn white" type="button" data-action="interrupt">${icon("mic", 18)}Interrupt</button>` : ""}
+            ${ctl.live ? html`<button class="btn ${s.producer ? "chip-btn" : "white"}" type="button" data-action="add-context">${icon("addFile", 18)}Add context</button>` : ""}
             ${s.producer && ctl.live ? html`<button class="btn chip-btn" type="button" data-action="restyle">Restyle</button>` : ""}
             ${ctl.live ? html`<button class="btn chip-btn" type="button" data-action="react" data-heart>${icon("heart", 18)}<span data-r="hearts">React</span></button>` : ""}
             <button class="btn chip-btn" type="button" data-action="share">Share</button>

@@ -230,3 +230,19 @@
 .np-chapters { margin: 16px 0 0; padding: 16px 0 0 16px; display: flex; flex-direction: column; gap: 12px; }
 .np-chapters .chapter-cards { padding-right: 16px; }
 .btn.outline.block { height: 48px; margin-top: 4px; }
+
+/* interrupting the show (the producer) */
+.interrupt { display: flex; flex-direction: column; gap: 14px; align-items: stretch; }
+.talk-btn {
+  align-self: center; width: 132px; height: 132px; border-radius: 50%; border: 0; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  background: var(--white); color: var(--ink); font: inherit; font-weight: 750; font-size: 13px;
+  touch-action: none; user-select: none; -webkit-user-select: none;
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 35%, transparent);
+  transition: transform .12s var(--ease), box-shadow .2s;
+}
+.talk-btn:active, .talk-btn.on { transform: scale(.96); }
+.talk-btn.on { background: var(--live); color: var(--white); box-shadow: 0 0 0 10px rgba(201, 56, 31, .35); animation: pulse 1.4s ease-in-out infinite; }
+.talk-btn:disabled { opacity: .7; cursor: progress; }
+.int-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.int-actions .btn { flex: 1 1 auto; }

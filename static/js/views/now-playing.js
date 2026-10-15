@@ -6,6 +6,7 @@ import {
 } from "../components.js";
 import { html, renderSpoken, setHtml } from "../html.js";
 import { icon } from "../icons.js";
+import { detourLabel } from "../live/store.js";
 import { navigate } from "../router.js";
 import { loginPath } from "../session.js";
 import { bindSubscribe, creatorBar, creatorBarKey } from "../social.js";
@@ -42,8 +43,9 @@ export function mountNowPlaying(host, ctl, { page = false, onClose } = {}) {
       <button class="play-btn" type="button" data-action="toggle-play" data-r="play" aria-label="Play"></button>
       ${ctl.live ? html`<button class="icon-btn big" type="button" data-action="jump-live" aria-label="Jump to live">${icon("jumpLive", 26)}</button>`
         : html`<span class="icon-btn big" aria-hidden="true"></span>`}
-      ${ctl.live ? html`<button class="icon-btn big" type="button" data-action="callin" aria-label="Call in">${icon("chat")}</button>`
-        : html`<span class="icon-btn big" aria-hidden="true"></span>`}
+      ${ctl.live && s.producer ? html`<button class="icon-btn big" type="button" data-action="interrupt" aria-label="Interrupt the show">${icon("mic")}</button>`
+        : ctl.live ? html`<button class="icon-btn big" type="button" data-action="callin" aria-label="Call in">${icon("chat")}</button>`
+          : html`<span class="icon-btn big" aria-hidden="true"></span>`}
     </div>
     <div class="np-sub">
       <span class="talking" data-r="talking"></span>
@@ -146,7 +148,8 @@ function transcript(s, pos, status) {
       const cur = l === last;
       return html`
         <div class="np-line ${cur ? "cur" : ""}">
-          <span class="np-who">${l.line.speaker}${caller ? html`<span class="pill ink">Call-in</span>` : ""}</span>
+          <span class="np-who">${l.line.speaker}${caller ? html`<span class="pill ink">Call-in</span>` : ""}${
+            l.seg.interrupt ? html`<span class="pill next" title="${detourLabel(l.seg.interrupt)}">Your detour</span>` : ""}</span>
           <p>${renderSpoken(l.line.text, s.hostIndex(l.line.speaker) ? 0 : 1)}</p>
         </div>`;
     })}

@@ -71,6 +71,11 @@ def restyle_bucket() -> TokenBucket:
     return TokenBucket(1 / 20, 1)
 
 
+def interrupt_bucket() -> TokenBucket:
+    """The producer interrupting the show: one every ten seconds, a couple in a row."""
+    return TokenBucket(1 / 10, 2)
+
+
 # Per show and client IP, for Add context over HTTP.
 GUEST_CONTEXT = Limiter(rate=1 / 60, burst=2)
 PRODUCER_CONTEXT = Limiter(rate=1 / 5, burst=3)

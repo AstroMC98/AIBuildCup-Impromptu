@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 from .catalog import VOCAL_TAGS, VOICE_GENDER, VOICES
-from .models import ContextBrief, ContextItem, Host, HostRequest, SegmentContext, ShowPlan, ShowRequest
+from .models import (
+    ContextBrief, ContextItem, Host, HostRequest, InterruptNote, SegmentContext, ShowPlan, ShowRequest,
+)
 
 # Long transcripts are trimmed to the most recent lines; the plan carries the rest.
 TRANSCRIPT_WINDOW = 80
@@ -36,6 +38,11 @@ first 2 to 4 lines, about 70 words in all, spoken by the hosts by name in the ST
 Open on the hook, not a long welcome; the writers carry on straight after it. Write \
 for the ear: natural speech with contractions, no stage directions, markdown or \
 emojis, each line under about 40 words. A vocal sound or two is fine: {tags}
+- `reactions` are what the hosts blurt out the instant the producer interrupts the show,
+said before the real reply: 2 to 6 words each, in the STYLE and in character, never
+a full answer. Give one or two per kind: `ask` (a question came in, e.g. "Ooh, good
+question."), `deeper` (they want more on this), `steer` (they want a change of
+direction) and `move_on` (they want to skip ahead). Spread them across the hosts.
 - Write everything in {language}.
 
 STYLE:
@@ -313,11 +320,125 @@ def writer_input(ctx: SegmentContext, plan: ShowPlan) -> str:
             "A quick in-character nod is welcome but optional."
         )
 
+    if ctx.bridge:
+        parts.append(bridge_text(ctx.bridge))
+    if ctx.interjection:
+        parts.append(interjection_text(ctx.interjection))
+        parts.append(f"Write at most {ctx.lines_wanted} lines, about {ctx.words_wanted} words in all, then stop: "
+                     "the show carries on after this. Leave beat_complete false.")
+        return "\n\n".join(parts)
+
     if ctx.words_wanted:
         parts.append(f"Write the next {ctx.lines_wanted} lines, about {ctx.words_wanted} words in all.")
     else:
         parts.append(f"Write the next {ctx.lines_wanted} lines.")
     return "\n\n".join(parts)
+
+
+# ---- interruptions -------------------------------------------------------------
+
+def interjection_text(n: InterruptNote) -> str:
+    """The writer's brief for answering an interruption right now. The producer is the
+    pod's creator: their direction is followed, but the style, language and format stay."""
+    cut = f' You were cut off; the last thing said was: "{n.cut_line}".' if n.cut_line else ""
+    head = "THE PRODUCER JUST INTERRUPTED THE SHOW." + cut + " "
+    if n.kind == "ask":
+        body = (f'They asked: "{n.text}". Answer it now, in character and in the STYLE, accurate to '
+                "the SOURCE; if the SOURCE doesn't cover it, say so honestly. A quick reaction from "
+                "the other host is fine. Don't return to the plan yet.")
+    elif n.kind == "deeper":
+        body = ("They want more depth on what you were just discussing. Dig in right away: a "
+                "concrete example, the mechanism behind it, or a story.")
+    elif n.kind == "steer":
+        body = (f'They want the show to go a different way: "{n.text}". Acknowledge it in character '
+                "and start heading that way.")
+    else:
+        body = "They want to move on. Land the current point in one line and turn toward what's next."
+    return (head + body + " Call them \"our producer\", never he or she: you don't know who they are. "
+            "Never drop the style, the language or the format, and skip anything hateful.")
+
+
+def bridge_text(n: InterruptNote) -> str:
+    """For the segment after an interruption: how to pick the thread back up."""
+    if n.kind == "ask":
+        return (f'YOU JUST ANSWERED THE PRODUCER\'S QUESTION ("{n.text}"). In your first line, pick '
+                "the show back up where it left off, naturally.")
+    if n.kind == "deeper":
+        return ("THE PRODUCER ASKED TO GO DEEPER on this beat. Keep digging (examples, mechanisms, a "
+                "story) before you move on.")
+    if n.kind == "steer":
+        return f'THE SHOW JUST CHANGED DIRECTION at the producer\'s request: "{n.text}". Carry on that way.'
+    return "THE PRODUCER SKIPPED AHEAD. Start the current beat cleanly."
+
+
+REPLANNER_SYSTEM = """\
+You are the showrunner of a live audio show that is on air right now. The producer
+just asked to change direction: "{steer}". Re-plan the REST of the episode.
+
+Rules:
+- Plan {beat_range} beats for the remaining {minutes:.1f} minutes, going the way the
+producer asked. Build on what has been said (TRANSCRIPT) and don't repeat it.
+- Keep facts accurate to the SOURCE. Keep the hosts and the STYLE. The last beat is the
+wrap-up. Give every beat an estimated length in minutes.
+- Write in {language}.
+
+SHOW: {title}. {tagline}
+HOSTS:
+{hosts}
+ALREADY COVERED: {done}
+
+STYLE:
+{style}
+
+SOURCE:
+<<<
+{source}
+>>>"""
+
+
+def replan_system(req: ShowRequest, plan: ShowPlan, source: str, style: str, steer: str,
+                  minutes_left: float, beat_index: int) -> str:
+    done = "; ".join(b.title for b in plan.beats[: beat_index + 1]) or "the cold open"
+    beats = "1 to 2" if minutes_left < 3 else "2 to 3" if minutes_left < 7 else "3 to 5"
+    return REPLANNER_SYSTEM.format(
+        steer=steer, beat_range=beats, minutes=minutes_left, language=req.language,
+        title=plan.title, tagline=plan.tagline, hosts="\n".join(f"- {h.name}: {h.persona}" for h in plan.hosts),
+        done=done, style=style, source=source,
+    )
+
+
+def replan_input(transcript: list) -> str:
+    lines = "\n".join(f"{ln.speaker}: {ln.text}" for ln in transcript[-30:])
+    return f"TRANSCRIPT (latest lines):\n{lines or '(nothing yet)'}\n\nRe-plan the rest of the episode."
+
+
+def replan_schema() -> dict:
+    return {
+        "type": "object",
+        "properties": {
+            "beats": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 6,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string"},
+                        "notes": {"type": "string"},
+                        "minutes": {"type": "number"},
+                    },
+                    "required": ["title", "notes", "minutes"],
+                },
+            },
+        },
+        "required": ["beats"],
+    }
+
+
+TRANSCRIBE_SYSTEM = """\
+Transcribe the producer's spoken question or instruction to a live podcast's hosts.
+Return only the words they said, cleaned of filler (um, uh) and false starts, in the
+language they spoke. If nothing intelligible was said, return an empty string."""
 
 
 # ---- JSON schemas (inline, no $refs, so structured output stays predictable) --
@@ -358,6 +479,20 @@ def plan_schema(host_count: int) -> dict:
                     "required": ["title", "notes", "minutes"],
                 },
             },
+            "reactions": {
+                "type": "array",
+                "minItems": 4,
+                "maxItems": 8,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "speaker": {"type": "string", "description": "The host's name."},
+                        "kind": {"type": "string", "enum": ["ask", "deeper", "steer", "move_on"]},
+                        "text": {"type": "string", "description": "2 to 6 words."},
+                    },
+                    "required": ["speaker", "kind", "text"],
+                },
+            },
             # Last, so it's written knowing the whole plan.
             "cold_open": {
                 "type": "array",
@@ -373,7 +508,7 @@ def plan_schema(host_count: int) -> dict:
                 },
             },
         },
-        "required": ["title", "tagline", "about", "hosts", "beats", "cold_open"],
+        "required": ["title", "tagline", "about", "hosts", "beats", "reactions", "cold_open"],
     }
 
 

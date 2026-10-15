@@ -3,7 +3,8 @@
 import { html } from "../html.js";
 import { icon } from "../icons.js";
 import {
-  downloadTranscript, openContextSheet, openHostsSheet, openMoreSheet, openRestyleSheet, openShareSheet,
+  downloadTranscript, openContextSheet, openHostsSheet, openInterruptSheet, openMoreSheet, openRestyleSheet,
+  openShareSheet,
 } from "../sheets.js";
 import { navigate } from "../router.js";
 import { loginPath } from "../session.js";
@@ -21,6 +22,7 @@ export function showActions(ctl, extra = {}) {
     },
     "add-context": () => (ctl.canTalk ? openContextSheet(ctl) : navigate(loginPath())),
     restyle: () => openRestyleSheet(ctl),
+    interrupt: () => openInterruptSheet(ctl),
     share: () => openShareSheet(ctl),
     hosts: () => openHostsSheet(ctl),
     more: () => openMoreSheet(ctl),

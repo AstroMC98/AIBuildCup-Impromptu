@@ -10,6 +10,11 @@ The start sample places each chunk on the show timeline, so a client that
 reconnects or joins late knows exactly where every chunk belongs, and a chunk it
 already has is simply ignored.
 
+The producer can interrupt: audio voiced after the moment they cut in, but never
+heard, is dropped from the timeline (a `truncate` event tells every client) and
+the show answers from there. The MP3 is encoded from behind the live playhead, so
+it only ever holds audio somebody could have heard.
+
 Every connection gets its own bounded outbound queue and writer task, so one
 slow phone never holds up the show or anyone else. A connection that falls more
 than OUTBOUND_QUEUE_BYTES behind is closed with 1013 and its client reconnects.
@@ -33,11 +38,11 @@ from .catalog import PRESETS_BY_ID, accent_for, style_label
 from .clock import LiveClock
 from .config import Settings
 from .limits import (
-    CONTEXT_CHARS_PER_SHOW, CONTEXT_ITEMS_PER_SHOW, OUTBOUND_QUEUE_BYTES,
-    comment_bucket, message_bucket, react_bucket, restyle_bucket,
+    COMMENT_CHARS, CONTEXT_CHARS_PER_SHOW, CONTEXT_ITEMS_PER_SHOW, OUTBOUND_QUEUE_BYTES,
+    comment_bucket, interrupt_bucket, message_bucket, react_bucket, restyle_bucket,
 )
 from .llm import Gemini
-from .models import ContextItem, ShowRequest
+from .models import INTERRUPT_KINDS, ContextItem, ShowRequest
 from .show import ShowRunner
 from .sources import SourceError
 from .stats import TIMELINE_STEP_SECONDS
@@ -47,6 +52,13 @@ log = logging.getLogger("podcasts.room")
 
 TICK_SECONDS = 0.5
 CLOCK_BROADCAST_SECONDS = 2.0
+MP3_LAG_SECONDS = 3.0   # the recording trails the live playhead, so an interruption can still cut
+INTERRUPT_ERRORS = {
+    "starting": "The hosts are still getting ready.",
+    "ending": "The show is wrapping up.",
+    "busy": "The hosts are still on your last one.",
+    "limit": "That's all the interruptions this show can take.",
+}
 _conn_ids = itertools.count(1)
 _background: set[asyncio.Task] = set()  # fire-and-forget tasks, kept alive until done
 
@@ -92,6 +104,7 @@ class Conn:
         self.reacts = react_bucket()
         self.messages = message_bucket()
         self.restyles = restyle_bucket()
+        self.interrupts = interrupt_bucket()
         self._queue: asyncio.Queue[tuple[str | bytes | None, int]] = asyncio.Queue()
         self._pending = 0
         self._writer = asyncio.create_task(self._write_loop())
@@ -191,6 +204,7 @@ class ShowRoom:
         }
         self.peak_listeners = 0
         self.listener_timeline: list[list[int]] = []   # [seconds into the show, listening]
+        self._mp3_upto = 0          # samples encoded into the recording so far
 
         self.ended_reason: str | None = None
         self.ended_at: float | None = None
@@ -250,7 +264,6 @@ class ShowRoom:
         start = self.clock.audio_end
         self.clock.add_audio(len(pcm) // 2)
         self.pcm.add(start, seq, pcm)
-        self.mp3.feed(pcm)
         frame = struct.pack("<II", seq, start) + pcm
         for conn in list(self.conns.values()):
             conn.send(frame)
@@ -333,6 +346,8 @@ class ShowRoom:
             self._react(conn, msg)
         elif kind == "restyle":
             self._restyle(conn, msg)
+        elif kind == "interrupt":
+            self._interrupt(conn, msg)
         elif kind == "end":
             if not conn.producer:
                 return conn.error("forbidden", "Only the producer can end the show.")
@@ -400,6 +415,62 @@ class ShowRoom:
         self.persist.show(style=style, vibe=vibe, style_label=label, accent=self.style["accent"], style_history=history)
         self.publish({"type": "restyle", **self.style})
 
+    def _interrupt(self, conn: Conn, msg: dict) -> None:
+        if not conn.producer:
+            return conn.error("forbidden", "Only the pod's creator can interrupt the show. Call in instead.")
+        if self.ended_reason:
+            return conn.error("ended", "The show has ended.")
+        kind = msg.get("kind")
+        if kind not in INTERRUPT_KINDS:
+            return conn.error("bad_request", "Unknown kind of interruption.")
+        text = str(msg.get("text", "")).strip()[:COMMENT_CHARS]
+        if kind in {"ask", "steer"} and not text:
+            return conn.error("empty", "Say or type what you want first.")
+        if not conn.interrupts.take():
+            return conn.error("rate_limited", "One at a time: give the hosts a few seconds.")
+        self.clock.tick()
+        try:
+            at = int(msg.get("at"))
+        except (TypeError, ValueError):
+            at = int(self.clock.live)
+        if any(c.playing for c in self.conns.values() if c is not conn):
+            at = int(self.clock.live)  # others share this timeline: cut at the live edge, not behind it
+        at = min(max(at, self._mp3_upto), self.clock.audio_end)  # what's recorded was heard
+        err = self.runner.interrupt(kind, text, at)
+        if err:
+            conn.error(err, INTERRUPT_ERRORS[err])
+
+    def truncate(self, at: int, keep_seq: int, cut: dict | None) -> None:
+        """RoomPort: the producer interrupted at `at`. Audio voiced after it was never
+        heard: drop it from the timeline, the segments and every client."""
+        self.clock.tick()
+        self.clock.audio_end = at
+        self.clock.live = min(self.clock.live, float(at))
+        self.pcm.truncate(at)
+        for seq in [s for s in self.segments if s > keep_seq]:
+            del self.segments[seq]
+            self.persist.delete_segment(seq)
+        if cut and cut["seq"] in self.segments:
+            seg = self.segments[cut["seq"]]
+            seg.update(lines=cut["lines"], samples=cut["samples"])
+            self.persist.segment(seg)
+        self.chapters = {i: s for i, s in self.chapters.items() if s < at}
+        self.doc["beats"] = self._beats_with_times()
+        self.doc["samples"] = at
+        self.persist.show(beats=self.doc["beats"], samples=at, duration_s=round(at / self.rate, 2))
+        self._broadcast(json.dumps({"type": "truncate", "at": at, "keep_seq": keep_seq, "cut": cut}))
+        self.wake.set()
+
+    def _encode_heard(self, upto: int) -> None:
+        """Feed the recording up to `upto`: audio that has been (or, at the end, will be) heard."""
+        if upto <= self._mp3_upto:
+            return
+        for start, _, pcm in self.pcm.since(self._mp3_upto):
+            if start >= upto:
+                break
+            self.mp3.feed(pcm[: (min(start + len(pcm) // 2, upto) - start) * 2])
+        self._mp3_upto = upto
+
     def add_context(
         self, item: ContextItem, role: str, comment: str = "", caller: str = "", client_id: str = ""
     ) -> tuple[ContextItem, dict | None]:
@@ -453,6 +524,7 @@ class ShowRoom:
 
         status = {"error": "failed", "shutdown": "interrupted"}.get(reason, "finished")
         audio = None
+        self._encode_heard(self.clock.audio_end)
         data = self.mp3.finish()
         if data:
             try:
@@ -513,7 +585,9 @@ class ShowRoom:
             while True:
                 await asyncio.sleep(TICK_SECONDS)
                 live = self.clock.tick()
-                self.pcm.trim(int(live - self.settings.retain_behind_seconds * self.rate))
+                if self.ended_reason is None:
+                    self._encode_heard(int(live - MP3_LAG_SECONDS * self.rate))
+                self.pcm.trim(min(int(live - self.settings.retain_behind_seconds * self.rate), self._mp3_upto))
                 if self._burst:
                     self._broadcast(json.dumps({"type": "react", "total": self.hearts, "burst": self._burst}))
                     self._burst = 0
@@ -650,6 +724,7 @@ class ShowRoom:
             "type": "snapshot",
             "show": self.public_show(),
             "role": conn.role,
+            "can_interrupt": conn.producer,
             "share_url": f"/show/{self.id}",
             "plan": self.plan,
             "chapters": [{"i": i, "start": s} for i, s in sorted(self.chapters.items())],

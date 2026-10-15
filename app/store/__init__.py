@@ -58,6 +58,7 @@ class Store(Protocol):
                          album_id: str | None = None, limit: int = 200) -> list[dict]: ...
     async def delete_show(self, show_id: str) -> None: ...
     async def put_segment(self, show_id: str, seg: dict) -> None: ...
+    async def delete_segment(self, show_id: str, seq: int) -> None: ...   # cut by an interruption
     async def put_comment(self, show_id: str, comment: dict) -> None: ...
     async def put_context(self, show_id: str, item: dict) -> None: ...
     async def load_children(self, show_id: str) -> dict: ...
@@ -142,6 +143,9 @@ class Persister:
     def session(self, session: dict) -> None:
         self._queue.put_nowait(("session", session))
 
+    def delete_segment(self, seq: int) -> None:
+        self._queue.put_nowait(("delete_segment", {"seq": seq}))
+
     async def _write_loop(self) -> None:
         while True:
             kind, doc = await self._queue.get()
@@ -152,6 +156,8 @@ class Persister:
                     await self.store.put_comment(self.show_id, doc)
                 elif kind == "session":
                     await self.store.put_session(self.show_id, doc)
+                elif kind == "delete_segment":
+                    await self.store.delete_segment(self.show_id, doc["seq"])
                 else:
                     await self.store.put_context(self.show_id, doc)
             except Exception:

@@ -26,6 +26,7 @@ PATCH  /api/shows/{id} {visibility, shared_with}   owner
 PATCH  /api/shows/{id}/organize {album_ids?, tags?}  owner
 GET    /api/shows/{id}/stats             owner: listeners, drop-off, replays, who listened
 POST   /api/shows/{id}/listen {sid, pos, played, ended?, lid?}   replay progress (sendBeacon-safe)
+POST   /api/shows/{id}/transcribe        producer, live: a spoken question (audio clip) -> text
 GET|POST /api/albums   GET|PUT|DELETE /api/albums/{id}   albums (playlists of your pods)
 GET    /api/creators/{uid}               a creator's pods and albums you can see, subscriber count
 GET|POST /api/subscriptions  DELETE /api/subscriptions/{kind}/{id}   creators and albums you follow
@@ -53,10 +54,14 @@ WebSocket protocol
     {"type": "react", "n": 1-10}
     {"type": "restyle", "vibe"? | "style"?}       producer
     {"type": "end", "mode": "wrap" | "now"}       producer
+    {"type": "interrupt", "at", "kind", "text"?}  producer: cut in at sample `at`;
+                                                  kind ask | deeper | steer | move_on
     {"type": "remove_comment", "id"}              producer
   server -> browser
     JSON: snapshot | status | plan | segment | segment_end | chapter | comment |
-          context | restyle | react | tick | ended | saved | error
+          context | restyle | react | tick | truncate | ended | saved | error
+          truncate {at, keep_seq, cut}: audio after `at` was never heard; drop it
+          (segments after keep_seq go; `cut` is the segment the listener was in)
     binary: <seq:u32 LE><start_sample:u32 LE> + raw 24 kHz mono s16le PCM
 """
 from __future__ import annotations
@@ -105,6 +110,13 @@ MAX_ALBUMS = 50               # per user
 MAX_TAGS, TAG_CHARS = 12, 30
 SIGN_IN_LIMIT = Limiter(rate=10 / 60, burst=10)
 LISTEN_LIMIT = Limiter(rate=1 / 4, burst=4)   # replay progress reports, per playback
+TRANSCRIBE_LIMIT = Limiter(rate=1 / 3, burst=3)
+MAX_QUESTION_BYTES = 2 * 1024 * 1024           # about a minute of compressed speech
+# Browser recordings, as Gemini's audio input names them.
+AUDIO_TYPES = {"audio/webm": "audio/webm", "audio/ogg": "audio/ogg", "audio/mp4": "audio/m4a",
+               "audio/m4a": "audio/m4a", "audio/x-m4a": "audio/m4a", "audio/aac": "audio/aac",
+               "audio/wav": "audio/wav", "audio/x-wav": "audio/wav", "audio/wave": "audio/wav",
+               "audio/mpeg": "audio/mp3"}
 _TOKEN = re.compile(r"^[A-Za-z0-9]{6,40}$")
 
 store = make_store(settings)
@@ -1243,6 +1255,33 @@ async def add_context(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     await store.put_text(show_id, f"context/{item.id}.txt", item.text)
     return {"context": item.public(), "comment": posted}
+
+
+@app.post("/api/shows/{show_id}/transcribe")
+async def transcribe_question(show_id: str, request: Request, audio: UploadFile = File(...)) -> dict:
+    """The producer held the talk button: their question as text, ready to interrupt with."""
+    _require_origin(request)
+    user = await require_user(request)
+    doc, room = await _show_doc(show_id)
+    _owner(doc, user)
+    if not room or room.ended_reason:
+        raise HTTPException(status_code=409, detail="This pod isn't live any more.")
+    if not TRANSCRIBE_LIMIT.take(f"{show_id}:{user.uid}"):
+        raise HTTPException(status_code=429, detail="One at a time.")
+    mime = AUDIO_TYPES.get((audio.content_type or "").split(";")[0].strip().lower())
+    if mime is None:
+        raise HTTPException(status_code=422, detail="That recording format isn't supported.")
+    data = await audio.read(MAX_QUESTION_BYTES + 1)
+    if not data or len(data) > MAX_QUESTION_BYTES:
+        raise HTTPException(status_code=422, detail="Keep it under a minute.")
+    try:
+        text = await gemini().transcribe(data, mime)
+    except Exception as exc:
+        log.warning("couldn't transcribe a question: %s", exc)
+        raise HTTPException(status_code=502, detail="Couldn't make that out. Try again, or type it.") from exc
+    if not text:
+        raise HTTPException(status_code=422, detail="Couldn't make that out. Try again, or type it.")
+    return {"text": text}
 
 
 @app.get("/api/shows/{show_id}/audio")

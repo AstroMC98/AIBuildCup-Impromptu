@@ -73,6 +73,11 @@ accounts at once in different browsers. Grant yourself credits on the **Admin** 
   chapter**, or as **background only**, credited on air or not.
 - **Restyle** (creator): switch the vibe mid-show; the hosts switch within a couple of
   lines and the whole screen re-tints.
+- **Interrupt** (creator): hold to talk or type, and the show stops where you are. A
+  host reacts at once (pre-voiced), answers your question, then picks the thread back
+  up. **Go deeper** gives the current chapter more time, **Move on** skips ahead, and
+  **Steer** ("argue the other side") re-plans the rest of the episode. Audio that was
+  voiced but never heard is dropped, so the recording is exactly what was heard.
 - **Your pods / Shared / Discover**: every pod is saved (audio, transcript, call-ins,
   context) to replay or download.
 
@@ -243,6 +248,9 @@ own access control.
 | `LINES_PER_SEGMENT` | `5` | the most lines in one segment |
 | `LOW_WATER_SECONDS` | `8` | lower = faster replies, more risk of silent gaps |
 | `MAX_REWRITES` | `2` | caps redo loops when input pours in |
+| `INTERJECTION_THINKING_LEVEL` | `low` | answers to an interruption (`gemini-3.8-flash` rejects `minimal`) |
+| `MAX_INTERRUPTS` | `30` | interruptions per show (also one per 10 s) |
+| `STINGER_DELAY_SECONDS` | `6` | when the hosts' interruption reactions are voiced, after the cold open starts |
 | `MAX_LIVE_SHOWS` | `3` | live pods at once |
 | `MAX_LISTENERS` | `50` | listeners per pod |
 | `IDLE_END_SECONDS` | `300` | nobody connected this long: the hosts sign off and it's saved |

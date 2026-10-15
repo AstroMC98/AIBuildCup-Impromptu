@@ -113,6 +113,9 @@ class GcpStore:
     async def put_segment(self, show_id: str, seg: dict) -> None:
         await self._show(show_id).collection("segments").document(f"{seg['seq']:05d}").set(seg)
 
+    async def delete_segment(self, show_id: str, seq: int) -> None:
+        await self._show(show_id).collection("segments").document(f"{int(seq):05d}").delete()
+
     async def put_comment(self, show_id: str, comment: dict) -> None:
         await self._show(show_id).collection("comments").document(str(comment["id"])).set(comment)
 

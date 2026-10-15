@@ -87,8 +87,16 @@ async def interactions(req: Request):
     # The SDK wraps content lists in a user_input turn, so look anywhere in the input.
     if '"type": "image"' in json.dumps(body.get("input")):
         return _reply("A hand-drawn family tree: Adam and Eve at the top, Cain and Abel below them.")
+    if '"type": "audio"' in json.dumps(body.get("input")):
+        return _reply("FAKE TRANSCRIPT: why did the serpent talk?")
 
     props = body.get("response_format", {}).get("schema", {}).get("properties", {})
+
+    if "beats" in props and "hosts" not in props:  # a re-plan after the producer steered
+        return _reply(json.dumps({"beats": [
+            {"title": "STEERED: the other side", "notes": "...", "minutes": 0.5},
+            {"title": "STEERED: sign-off", "notes": "...", "minutes": 0.3},
+        ]}))
 
     if "beats" in props:
         n = props["hosts"]["minItems"]
@@ -102,6 +110,8 @@ async def interactions(req: Request):
             "beats": [{"title": t, "notes": "...", "minutes": m}
                       for t, m in (("Cold open", 0.3), ("The garden", 0.6), ("The fallout", 0.6), ("Sign-off", 0.5))],
             "cold_open": [{"speaker": h["name"], "text": f"COLD OPEN from {h['name']}."} for h in hosts * 2][:3],
+            "reactions": [{"speaker": hosts[i % n]["name"], "kind": k, "text": f"REACTION {k}!"}
+                          for i, k in enumerate(("ask", "deeper", "steer", "move_on"))],
         }))
 
     writer_systems.append(body.get("system_instruction", ""))
@@ -113,6 +123,17 @@ async def interactions(req: Request):
     attached = [int(x) for x in re.findall(r"attached \[C(\d+)\]", prompt)]
     final = "FINAL SEGMENT" in prompt
     n = next(_writer_calls)
+
+    if "THE PRODUCER JUST INTERRUPTED THE SHOW" in prompt:
+        kind = next(k for k, marker in (("ask", "They asked:"), ("deeper", "more depth"),
+                                         ("steer", "a different way"), ("move_on", "move on")) if marker in prompt)
+        asked = re.search(r'They asked: "([^"]*)"', prompt)
+        cut = re.search(r'the last thing said was: "([^"]*)"', prompt)
+        return _reply(json.dumps({
+            "lines": [{"speaker": names[0], "text": f"INTERJECTION {kind}: {asked.group(1) if asked else ''}", "style": ""},
+                      {"speaker": names[-1], "text": f"CUT AFTER: {cut.group(1) if cut else ''}", "style": ""}],
+            "addressed_comment_ids": [], "declined_comment_ids": [], "used_context_ids": [], "beat_complete": False,
+        }))
 
     lines, addressed, declined = [], [], []
     if "STYLE CHANGED" in prompt:

@@ -122,6 +122,26 @@ class ShowPlan(BaseModel):
     # The show's first lines, written with the plan so audio can start without
     # waiting on a writer call. Empty means the writers open the show.
     cold_open: list["Line"] = []
+    # Short reactions the hosts say the instant they're interrupted, voiced ahead of
+    # time so one plays while the real answer is being written.
+    reactions: list["Reaction"] = []
+
+
+InterruptKind = Literal["ask", "deeper", "steer", "move_on"]
+INTERRUPT_KINDS = ("ask", "deeper", "steer", "move_on")
+
+
+class Reaction(BaseModel):
+    speaker: str
+    kind: str          # an InterruptKind
+    text: str
+
+
+class InterruptNote(BaseModel):
+    """What the writer is told about an interruption (or, afterwards, how to bridge back)."""
+    kind: str
+    text: str = ""
+    cut_line: str = ""   # the line the listener was hearing when they cut in
 
 
 # ---- What the writer returns for each chunk of dialogue ---------------------
@@ -205,3 +225,5 @@ class SegmentContext(BaseModel):
     hearts: int = 0
     beats_left: int = 0                 # beats after the current one
     planned_minutes_left: float = 0.0   # what the plan gives those beats
+    interjection: InterruptNote | None = None   # answer this interruption now
+    bridge: InterruptNote | None = None         # an interruption was just answered: pick the thread back up

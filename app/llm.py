@@ -17,7 +17,9 @@ from pydantic import ValidationError
 from . import prompts
 from .catalog import GENDERS, VOICE_GENDER, VOICES, pick_voice
 from .config import Settings
-from .models import ContextItem, Host, Line, SegmentContext, SegmentDraft, ShowPlan, ShowRequest
+from .models import (
+    INTERRUPT_KINDS, Beat, ContextItem, Host, Line, Reaction, SegmentContext, SegmentDraft, ShowPlan, ShowRequest,
+)
 
 log = logging.getLogger("podcasts.llm")
 
@@ -47,13 +49,13 @@ class Gemini:
 
     # ---- text ---------------------------------------------------------------
 
-    async def _json_call(self, *, system: str, user: str, schema: dict) -> dict:
+    async def _json_call(self, *, system: str, user: str, schema: dict, thinking: str | None = None) -> dict:
         interaction = await self.client.aio.interactions.create(
             model=self.settings.script_model,
             system_instruction=system,
             input=user,
             response_format={"type": "text", "mime_type": "application/json", "schema": schema},
-            generation_config={"thinking_level": self.settings.script_thinking_level},
+            generation_config={"thinking_level": thinking or self.settings.script_thinking_level},
         )
         return _parse_json(interaction.output_text)
 
@@ -70,6 +72,7 @@ class Gemini:
         planned_names = [h.name for h in plan.hosts]
         plan.hosts = _reconcile_hosts(req, plan.hosts)
         plan.cold_open = _cast_cold_open(plan.cold_open, planned_names, plan.hosts)
+        plan.reactions = _cast_reactions(plan.reactions, planned_names, plan.hosts)
         _normalize_minutes(plan, req.minutes)
         return plan
 
@@ -81,6 +84,7 @@ class Gemini:
         source: str,
         style: str,
         context: list[ContextItem],
+        thinking: str | None = None,
     ) -> SegmentDraft:
         names = [h.name for h in plan.hosts]
         system = prompts.writer_system(req, plan, source, style, context)
@@ -91,7 +95,7 @@ class Gemini:
         for attempt in range(2):
             try:
                 draft = SegmentDraft.model_validate(
-                    await self._json_call(system=system, user=user, schema=schema)
+                    await self._json_call(system=system, user=user, schema=schema, thinking=thinking)
                 )
             except (ModelOutputError, ValidationError) as exc:
                 last_error = exc
@@ -106,6 +110,38 @@ class Gemini:
                 return draft
             last_error = ModelOutputError("segment had no usable lines")
         raise ModelOutputError(f"could not write a segment: {last_error}")
+
+    # ---- interruptions -------------------------------------------------------
+
+    async def replan(self, req: ShowRequest, plan: ShowPlan, source: str, style: str, transcript: list[Line],
+                     minutes_left: float, steer: str, beat_index: int) -> list[Beat]:
+        """New beats for the rest of the episode, going where the producer steered it."""
+        data = await self._json_call(
+            system=prompts.replan_system(req, plan, source, style, steer, minutes_left, beat_index),
+            user=prompts.replan_input(transcript),
+            schema=prompts.replan_schema(),
+        )
+        try:
+            beats = [Beat.model_validate(b) for b in data.get("beats", [])]
+        except ValidationError as exc:
+            raise ModelOutputError(f"re-plan did not match the schema: {exc}") from exc
+        beats = [b for b in beats if b.title.strip()]
+        if not beats:
+            raise ModelOutputError("the re-plan had no beats")
+        return beats
+
+    async def transcribe(self, data: bytes, mime: str) -> str:
+        """The producer's spoken question as text."""
+        interaction = await self.client.aio.interactions.create(
+            model=self.settings.script_model,
+            system_instruction=prompts.TRANSCRIBE_SYSTEM,
+            input=[
+                {"type": "text", "text": "Transcribe this."},
+                {"type": "audio", "data": base64.b64encode(data).decode("ascii"), "mime_type": mime},
+            ],
+            generation_config={"thinking_level": "low"},
+        )
+        return (interaction.output_text or "").strip()[:1000]
 
     # ---- images -------------------------------------------------------------
 
@@ -219,6 +255,19 @@ def _cast_cold_open(lines: list[Line], planned: list[str], hosts: list[Host]) ->
             return []
         cast.append(Line(speaker=speaker, text=ln.text.strip(), style=ln.style))
     return cast
+
+
+def _cast_reactions(reactions: list[Reaction], planned: list[str], hosts: list[Host]) -> list[Reaction]:
+    """Like the cold open, but a reaction with an unknown speaker is just dropped."""
+    names = {n.strip().casefold(): h.name for n, h in zip(planned, hosts)}
+    names.update({h.name.casefold(): h.name for h in hosts})
+    cast = []
+    for r in reactions:
+        speaker = names.get(r.speaker.strip().casefold())
+        text = r.text.strip()
+        if speaker and text and r.kind in INTERRUPT_KINDS and len(text) <= 80:
+            cast.append(Reaction(speaker=speaker, kind=r.kind, text=text))
+    return cast[:8]
 
 
 def _normalize_minutes(plan: ShowPlan, target: int) -> None:

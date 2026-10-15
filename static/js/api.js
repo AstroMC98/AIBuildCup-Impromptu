@@ -64,6 +64,12 @@ export const api = {
   startDraft: (showId) => call("POST", `/api/shows/${id(showId)}/start`),
   deleteShow: (showId) => call("DELETE", `/api/shows/${id(showId)}`),
   addContext: (showId, form) => call("POST", `/api/shows/${id(showId)}/context`, { form }),
+  transcribe: (showId, blob) => {
+    const form = new FormData();
+    const ext = { "audio/ogg": "ogg", "audio/mp4": "m4a" }[blob.type] || "webm";
+    form.append("audio", blob, `question.${ext}`);
+    return call("POST", `/api/shows/${id(showId)}/transcribe`, { form });
+  },
   audioUrl: (showId, download = false) => `/api/shows/${id(showId)}/audio${download ? "?download=1" : ""}`,
   organize: (showId, body) => call("PATCH", `/api/shows/${id(showId)}/organize`, { json: body }),
   showStats: (showId) => call("GET", `/api/shows/${id(showId)}/stats`),

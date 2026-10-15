@@ -43,6 +43,7 @@ export function mountMobile(root, ctl) {
       <button class="rail-btn" type="button" data-action="react" data-heart><span class="rail-ic">${icon("heart")}</span><span data-r="hearts">React</span></button>
       <button class="rail-btn" type="button" data-action="callin"><span class="rail-ic">${icon("chat")}</span><span>Call in</span></button>
       <button class="rail-btn" type="button" data-action="add-context"><span class="rail-ic white">${icon("addFile")}</span><span>Add context</span></button>
+      ${s.producer ? html`<button class="rail-btn" type="button" data-action="interrupt"><span class="rail-ic white">${icon("mic")}</span><span>Interrupt</span></button>` : ""}
       ${s.producer ? html`<button class="rail-btn" type="button" data-action="restyle"><span class="rail-ic">${icon("restyle")}</span><span>Restyle</span></button>` : ""}
       <button class="rail-btn" type="button" data-action="share"><span class="rail-ic">${icon("share")}</span><span>Share</span></button>
     </div>

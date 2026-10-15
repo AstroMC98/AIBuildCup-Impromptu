@@ -6,6 +6,7 @@ import { icon, VISIBILITY_ICON } from "./icons.js";
 import { session } from "./session.js";
 import { confirmSheet, openSheet } from "./ui.js";
 import { saveBlob, slug, toast } from "./util.js";
+import { Recorder } from "./audio/recorder.js";
 
 // ---- Add context ----------------------------------------------------------------
 
@@ -400,6 +401,107 @@ export async function openOrganizeSheet(ctl) {
       }
     }
   });
+}
+
+// ---- Interrupt (the producer) ---------------------------------------------------------
+
+export function openInterruptSheet(ctl) {
+  if (!ctl.canInterrupt) return;
+  const wasPlaying = ctl.holdForInterrupt();
+  let sent = false;
+  const div = document.createElement("div");
+  div.className = "interrupt";
+  setHtml(div, html`
+    <p class="muted small">The show's paused. Ask the hosts anything, or tell them where to take it: they answer right away, then carry on.</p>
+    ${Recorder.supported ? html`
+      <button type="button" class="talk-btn" data-talk aria-label="Hold to ask by voice">
+        ${icon("mic", 34, 2)}<span data-talk-label>Hold to talk</span></button>` : ""}
+    <form class="row gap" data-ask>
+      <label class="sr-only" for="int-text">Your question or direction</label>
+      <input id="int-text" class="field grow" maxlength="500" placeholder="Why did the serpent talk?" autocomplete="off">
+      <button class="btn white" type="submit">Ask</button>
+    </form>
+    <div class="int-actions">
+      <button type="button" class="btn chip-btn" data-kind="deeper">${icon("plus", 16, 2.4)}Go deeper</button>
+      <button type="button" class="btn chip-btn" data-kind="move_on">${icon("jumpLive", 16)}Move on</button>
+      <button type="button" class="btn chip-btn" data-kind="steer">${icon("restyle", 16)}Steer: take it where I typed</button>
+    </div>
+    <p class="error" role="alert" data-error></p>`);
+  const sheet = openSheet({
+    title: "Interrupt the show", body: div,
+    onClose: () => { if (!sent) ctl.resumeAfterHold(wasPlaying); },
+  });
+  const input = div.querySelector("#int-text");
+  const error = (msg) => { div.querySelector("[data-error]").textContent = msg || ""; };
+  const send = (kind, text = "") => {
+    if (ctl.interrupt(kind, text, wasPlaying)) {
+      sent = true;
+      sheet.close();
+    } else {
+      error("The show can't be interrupted right now.");
+    }
+  };
+  div.querySelector("[data-ask]").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const text = input.value.trim();
+    if (!text) return input.focus();
+    send("ask", text);
+  });
+  div.querySelector(".int-actions").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-kind]");
+    if (!b) return;
+    const text = input.value.trim();
+    if (b.dataset.kind === "steer" && !text) {
+      error("Type where you want the show to go first, e.g. \"Argue the other side\".");
+      return input.focus();
+    }
+    send(b.dataset.kind, text);
+  });
+
+  const talk = div.querySelector("[data-talk]");
+  if (!talk) return;
+  const label = div.querySelector("[data-talk-label]");
+  let rec = null;
+  const begin = async (e) => {
+    e?.preventDefault?.();
+    if (rec) return;
+    error("");
+    rec = new Recorder();
+    try {
+      await rec.start();
+    } catch {
+      rec = null;
+      return error("No microphone access. Allow it in the browser, or type instead.");
+    }
+    talk.classList.add("on");
+    label.textContent = "Listening… let go to send";
+  };
+  const finish = async () => {
+    if (!rec) return;
+    const r = rec;
+    rec = null;
+    talk.classList.remove("on");
+    const blob = await r.stop();
+    if (blob.size < 1200) {
+      label.textContent = "Hold to talk";
+      return error("Hold the button while you speak.");
+    }
+    label.textContent = "Got it…";
+    talk.disabled = true;
+    try {
+      const { text } = await ctl.transcribe(blob);
+      input.value = text;
+      send("ask", text);
+    } catch (err) {
+      error(err.message);
+      label.textContent = "Hold to talk";
+      talk.disabled = false;
+    }
+  };
+  talk.addEventListener("pointerdown", begin);
+  for (const ev of ["pointerup", "pointerleave", "pointercancel"]) talk.addEventListener(ev, finish);
+  talk.addEventListener("keydown", (e) => { if ((e.key === " " || e.key === "Enter") && !e.repeat) begin(e); });
+  talk.addEventListener("keyup", (e) => { if (e.key === " " || e.key === "Enter") finish(); });
 }
 
 export function downloadTranscript(ctl) {

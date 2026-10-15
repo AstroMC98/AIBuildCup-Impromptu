@@ -13,6 +13,8 @@ It checks:
   - albums (playlists) respect who can see them and each pod in them; tags are cleaned up
   - subscriptions to creators and albums feed a Subscriptions list with "new" badges
   - stats: who listened live and on replay, for the owner only
+  - the producer interrupts: unheard audio is dropped, a reaction plays, the hosts
+    answer in a detour, a steer re-plans the rest; listeners can't interrupt
   - connection requests are accepted; a "connections" pod is visible to bob, not carol or anon
   - bob calls in (under his account name) and the hosts answer; rude call-ins are declined;
     bursts are rate limited; bob can't restyle; alice and bob add context the hosts use
@@ -37,7 +39,9 @@ import httpx
 import websockets
 from websockets.exceptions import ConnectionClosed
 
-FAKE_PORT, APP_PORT = 8765, 8766
+# Overridable so two checkouts (or worktrees) can run their smoke tests at once.
+FAKE_PORT = int(os.environ.get("SMOKE_FAKE_PORT", 8765))
+APP_PORT = int(os.environ.get("SMOKE_APP_PORT", 8766))
 BASE = f"http://127.0.0.1:{APP_PORT}"
 WS = f"ws://127.0.0.1:{APP_PORT}"
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 200
@@ -421,6 +425,51 @@ async def scenario(checks: dict) -> None:
             await asyncio.sleep(1)
         checks["idle pod signs off by itself"] = idle_doc.get("show", {}).get("ended_reason") == "idle"
         checks["idle pod refunds unused minutes"] = await credits_for(idle["id"], "refund") >= 1
+
+        # interrupting: the producer cuts in, asks, then steers
+        pod = (await alice_c.post("/api/shows", json={"request": request(minutes=5), "live": True,
+                                                      "visibility": "connections"})).json()
+        purl = f"{WS}/ws/show/{pod['id']}"
+        host = await Listener("alice-int", purl, alice_cookie).connect()
+        fan = await Listener("bob-int", purl, bob_cookie).connect()
+        await host.until(lambda: len(host.of("segment")) >= 2, what="two segments before interrupting")
+        await fan.send({"type": "player", "playing": False})       # only the producer is listening now
+        await fan.send({"type": "interrupt", "kind": "ask", "text": "me too?", "at": 0})
+        await fan.until(lambda: any(e.get("code") == "forbidden" for e in fan.of("error")), what="listener refused")
+        checks["only the producer can interrupt"] = True
+        await host.send({"type": "player", "playing": False})      # holding the talk button
+        # Nobody's playing now, so the live clock is frozen: the next tick says exactly where.
+        ticks = len(host.of("tick"))
+        await host.until(lambda: len(host.of("tick")) > ticks, timeout=10, what="a tick after pausing")
+        at = host.of("tick")[-1]["live"]
+        await host.send({"type": "interrupt", "kind": "ask", "text": "why did the serpent talk?", "at": at})
+        await host.until(lambda: any((e.get("interrupt") or {}).get("kind") == "ask" and "INTERJECTION" in e["lines"][0]["text"]
+                                     for e in host.of("segment")), what="the hosts answer the question")
+        truncs = host.of("truncate")
+        detours = [e for e in host.of("segment") if e.get("branch") == "detour"]
+        frames_after = [f for f in host.frames if f[1] >= truncs[0]["at"]] if truncs else []
+        checks["interrupt: rewind, a reaction, then the answer"] = (
+            bool(truncs) and truncs[0]["at"] <= at + 1
+            and detours[0]["lines"][0]["text"] == "REACTION ask!"
+            and detours[0]["start"] == truncs[0]["at"] and "serpent" in detours[1]["lines"][0]["text"]
+            and bool(frames_after) and frames_after[0][1] == truncs[0]["at"]
+            and fan.of("truncate") and fan.of("truncate")[0]["at"] == truncs[0]["at"])
+        await host.until(lambda: any(e["seq"] == detours[-1]["seq"] for e in host.of("segment_end")), what="answer voiced")
+        await host.send({"type": "interrupt", "kind": "steer", "text": "argue the other side",
+                         "at": (host.of("tick") or [{"live": 0}])[-1]["live"]})
+        await host.until(lambda: any(any("STEERED" in b["title"] for b in e["beats"]) for e in host.of("plan")),
+                         what="a steer re-plans the rest")
+        checks["steer: the rest of the episode is re-planned"] = True
+        r_talk = await alice_c.post(f"/api/shows/{pod['id']}/transcribe",
+                                    files={"audio": ("q.webm", b"\x1aE\xdf\xa3fake", "audio/webm")})
+        r_bob = await bob_c.post(f"/api/shows/{pod['id']}/transcribe",
+                                 files={"audio": ("q.webm", b"\x1aE\xdf\xa3fake", "audio/webm")})
+        checks["voice question transcribed, for the producer only"] = (
+            r_talk.status_code == 200 and "serpent" in r_talk.json()["text"] and r_bob.status_code == 403)
+        await host.send({"type": "end", "mode": "now"})
+        await host.until(lambda: host.of("saved") or host.of("ended"), what="interrupted pod ends")
+        for lst in (host, fan):
+            await lst.close()
     finally:
         for c in clients:
             await c.aclose()
@@ -433,6 +482,7 @@ def main() -> int:
         "STORAGE_BACKEND": "local", "DATA_DIR": data_dir, "AUTH_MODE": "dev", "SESSION_SECRET": "smoke",
         "ADMIN_EMAILS": "alice@example.com", "SIGNUP_CREDITS": "0",
         "CLOCK_SPEED": "20", "LOW_WATER_SECONDS": "3", "LINES_PER_SEGMENT": "4", "IDLE_END_SECONDS": "5",
+        "STINGER_DELAY_SECONDS": "0",
     }
     py = sys.executable
     app_log = Path(data_dir, "app.log")

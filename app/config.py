@@ -15,6 +15,11 @@ class Settings(BaseSettings):
     # Writes the episode plan and every dialogue segment, and describes photos.
     script_model: str = "gemini-3.8-flash"
     script_thinking_level: str = "low"  # low keeps segment latency down
+    # Answers to an interruption. gemini-3.8-flash rejects "minimal" (HTTP 400), so "low"
+    # is the fastest it allows; a model that accepts "minimal" could answer sooner.
+    interjection_thinking_level: str = "low"
+    max_interrupts: int = 30            # per show
+    stinger_delay_seconds: float = 6.0  # voice the interruption reactions once the cold open is going
     # Voices the dialogue. gemini-3.8-flash-lite-tts is faster and cheaper.
     tts_model: str = "gemini-3.8-flash-tts"
 
