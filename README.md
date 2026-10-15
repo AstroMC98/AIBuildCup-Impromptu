@@ -75,6 +75,11 @@ accounts at once in different browsers. Grant yourself credits on the **Admin** 
   lines and the whole screen re-tints.
 - **Your pods / Shared / Discover**: every pod is saved (audio, transcript, call-ins,
   context) to replay or download.
+- **Co-host live**: talk into your phone and an AI co-host (one of your personas, or a
+  premade one) banters with you, interviews you or debates you in real time. Switch
+  modes mid-call. Hang up and it's edited into an episode in seconds: dead air
+  tightened, flubs and crosstalk cut, levelled, titled, with show notes and chapters.
+  See [Co-host live](#co-host-live).
 
 ## How a live pod runs
 
@@ -125,6 +130,65 @@ written ahead are never shown early; call-in statuses ("On air in about 15 s",
 playhead. The server places each waiting call-in on the show timeline (the next segment
 if a rewrite still fits, else the one after) and moves it when the timeline shifts.
 
+## Co-host live
+
+A call is you and one AI co-host, solo (no live audience); the finished episode gets
+the usual visibility. It costs like a pod: the length you pick (5, 10 or 15 minutes)
+is reserved when the call starts and unused minutes come back when it's saved.
+
+```
+phone                                  server: one CohostSession per call             Gemini Live
+─────                                  ──────────────────────────────────             ───────────
+mic → AudioWorklet → 16 kHz, 40 ms ─WS─▶ forwarded at once ───────────────────────────▶ gemini-3.1-flash-live
+  frames, sent the whole call            + recorded: the call's clock                    (server VAD, barge-in,
+speaker ◀── played on arrival ◀─────── <turn><24 kHz PCM> ◀── its voice ◀───────────────  transcripts both ways)
+  (flushed when you cut in)              + recorded where it started playing
+captions ◀─────────────────────────── both sides' words, live
+hang up ─────────────────────────────▶ editor's notes (gemini-3.8-flash: title, show notes, chapters, cuts)
+                                       + numpy edit → MP3 → saved as a normal pod (kind "cohost")
+```
+
+What keeps it quick:
+
+- **Nothing waits on the way through.** Mic frames go straight to the Live session and
+  its voice straight to the phone; recording is in memory. The phone plays the
+  co-host as each chunk lands (a ~60 ms cushion), on an `interactive` AudioContext.
+- **The co-host opens the show** the moment you join, so there's no dead air at the start.
+- **Cutting in.** Gemini stops an answer when it hears you over it. Its audio arrives
+  faster than it plays, though, so the phone listens too: talk over the co-host and it
+  ducks at once; keep talking (0.4 s) and the phone stops it and tells the server.
+- **Turn-taking** is Gemini's voice activity detection; `COHOST_SILENCE_MS` is how long
+  you pause before it answers.
+- **Connections are recycled** by Gemini every few minutes (GoAway); the server
+  reconnects with a resumption handle, so the co-host keeps the whole conversation.
+  If the phone drops off, the call waits `COHOST_RECONNECT_SECONDS`, then saves.
+
+What hanging up does (`app/editing.py`, then `app/cohost.py`):
+
+1. Your mic is one continuous track (the phone sends silence too, so it's the call's
+   clock); each co-host turn sits where it started playing.
+2. **Crosstalk**: your mic is muted while the co-host talks unless you cut in (that's
+   speaker echo or an "mm-hm"); an answer you cut into ends where you did, and one cut
+   off in its first 1.5 s goes.
+3. **Dead air**: silence before and after every turn is trimmed; pauses over 1.2 s
+   become 0.6 s.
+4. **Flubs**: your talking is split into phrases at the pauses and matched to the live
+   transcript; the editor (a Gemini call) marks false starts, mic checks and hang-up
+   chatter, plus answers to them, and those are cut at the pauses around them.
+5. **Polish**: every turn is levelled to the same loudness, peaks are softly limited,
+   every cut gets a short fade, and a chime opens and closes the episode.
+6. Saved as an ordinary pod: one segment per turn (so replay captions are exact), the
+   editor's title, show notes and chapters, `episode.mp3`, and `raw.mp3`, the call
+   before editing, which its owner can download from the More menu.
+
+If the editor's call fails or takes longer than `COHOST_EDIT_TIMEOUT_SECONDS`, the
+episode is saved with the mechanical edits only. A call where nothing was said leaves
+no pod and refunds everything.
+
+The mic needs a secure page: `localhost` works, a phone on your LAN over plain `http://`
+doesn't (use the Cloud Run URL or a tunnel). Headphones keep the co-host from hearing
+itself; echo cancellation is on, but phone speakers vary.
+
 ## Deploy to Google Cloud
 
 You need a Google Cloud project with billing, plus `gcloud` (logged in) and Docker.
@@ -164,7 +228,7 @@ What the script sets up:
 | Cloud Run `podcasts` | the app, 1 instance, 2 vCPU, 2 GiB, 60-min request timeout | WebSockets + the live pod loop |
 | Firestore (native) | `shows/{id}` (+ segments, comments, context, sessions), `users/{uid}` (+ ledger, personas, styles, connections), `albums/{id}`, `subscriptions/{id}` | accounts, credits, library, transcripts, albums, following, listening stats |
 | Firestore security rules | deny all browser access (`deploy/firestore.rules`, released on every run) | the app only uses Firestore from the server; the Firebase web key is public |
-| Cloud Storage `gs://PROJECT-podcasts` | source text, context text, `episode.mp3` | replays and downloads (served by signed URL) |
+| Cloud Storage `gs://PROJECT-podcasts` | source text, context text, `episode.mp3`, `raw.mp3` (co-hosted calls) | replays and downloads (served by signed URL) |
 | Secret Manager | `gemini-api-key`, `session-secret` | injected as env vars |
 | Firebase Authentication | Google + email sign-in | accounts; the server verifies ID tokens itself |
 | Service account `podcasts-run` | Firestore user, bucket object admin, secret accessor, token creator on itself | least privilege; the last one signs replay URLs |
@@ -186,7 +250,7 @@ own access control.
 
 - **One instance, on purpose.** Live rooms (listeners, the clock, audio being voiced)
   live in that instance's memory, so every listener of a pod must reach the same
-  process. `MAX_LIVE_SHOWS` (default 3) caps concurrent pods. To go beyond one
+  process. `MAX_LIVE_SHOWS` (default 3) caps concurrent pods and co-host calls together. To go beyond one
   instance, keep a Firestore lease saying which instance owns each live pod and fan
   events out through Memorystore (Redis) pub/sub; nothing else needs to change.
 - **Deploy between pods.** A new revision ends pods that are live at that moment;
@@ -243,9 +307,14 @@ own access control.
 | `LINES_PER_SEGMENT` | `5` | the most lines in one segment |
 | `LOW_WATER_SECONDS` | `8` | lower = faster replies, more risk of silent gaps |
 | `MAX_REWRITES` | `2` | caps redo loops when input pours in |
-| `MAX_LIVE_SHOWS` | `3` | live pods at once |
+| `MAX_LIVE_SHOWS` | `3` | live pods and co-host calls at once |
 | `MAX_LISTENERS` | `50` | listeners per pod |
 | `IDLE_END_SECONDS` | `300` | nobody connected this long: the hosts sign off and it's saved |
+| `COHOST_MODEL` | `gemini-3.1-flash-live-preview` | the Live (native audio) model your co-host talks with |
+| `COHOST_SILENCE_MS` | `500` | how long you pause before the co-host answers; lower is snappier but cuts slow talkers off |
+| `COHOST_RECONNECT_SECONDS` | `30` | a call whose phone drops off is saved after this long |
+| `COHOST_SOURCE_CHARS` | `20000` | notes for the co-host are trimmed to this |
+| `COHOST_EDIT_TIMEOUT_SECONDS` | `40` | past this, the episode is saved without the editor's notes |
 
 If you hit 429s from the TTS model, raise `SEGMENT_SECONDS` (fewer, longer calls) or
 switch to the lite TTS model.
@@ -278,7 +347,20 @@ signed-out visitor) and runs pods at 20x speed: credits (none, granted, charged,
 refunded), personas and styles, connection requests, every visibility rule, call-ins
 (answered under the account name, declined, rate limited), context and photos, a
 restyle, reactions, a late joiner, a reconnect, saving and replay with Range requests,
-publishing, a public live pod with a visitor, drafts, and a pod that ends itself.
+publishing, a public live pod with a visitor, drafts, and a pod that ends itself. Then
+it co-hosts a call against the stub's Live API, streaming mic audio in real time: the
+co-host opening the show, transcripts, cutting in (by Gemini and by the phone), a mode
+switch, a recycled Live connection, hanging up, the edit (cuts, dropped answers,
+chapters), downloads, refunds, and a call nobody joined. `SMOKE_PORT=18765` moves it
+off the default ports.
+
+With a real API key (spends credits):
+
+```bash
+python -m tests.live_test --cohost   # a ~2-minute call: your lines voiced by TTS and streamed in
+                                     # real time; reports answer latency, cut-in, mode switch,
+                                     # hang-up to saved; keeps the episode and the unedited call
+```
 
 To click around the UI offline:
 
@@ -299,6 +381,8 @@ app/
   auth.py      Firebase token checks, session cookies, dev sign-in, origin checks
   room.py      ShowRoom: one live pod, its listeners, audio, snapshots, refunds; Rooms registry
   show.py      ShowRunner: the writing loop (drafts, staleness, commits, voicing)
+  cohost.py    CohostSession: a live call with an AI co-host (the /ws/cohost/{id} protocol); Cohosts
+  editing.py   a recorded call -> an edited episode (crosstalk, dead air, flubs, levels, chapters)
   clock.py     LiveClock: the server-side live playhead
   audio.py     incremental MP3 encoder and the rolling PCM window
   llm.py       the only module that talks to Gemini
@@ -314,13 +398,15 @@ static/        no build step: index.html, css/, js/ (ES modules)
   js/firebase.js   Firebase sign-in (loaded only in firebase mode)
   js/live/         socket, store (selectors by playhead), controller
   js/audio/        timeline, live player (WebAudio pull scheduler), replay player, listen tracker
+  js/cohost/       mic worklet (16 kHz frames), call audio + player, socket, controller (cut-in)
   js/personas.js   persona fields (gender-matched voices, traits, private notes)
   js/social.js     subscribe button, creator chip, album cards
   js/views/        login, library (home, Following, header, account menu), create, show (phone:
                    live-mobile + now-playing; desktop: studio), saved (personas, styles), albums,
-                   creator, stats, connections, admin
+                   creator, stats, connections, admin, cohost-setup, cohost-call (co-host live)
 deploy/deploy.sh   one-command Cloud Run setup
 deploy/firestore.rules  deny-all browser access, released by deploy.sh
-tests/           fake_gemini.py (Interactions API stub), smoke_test.py, unit_test.py,
-                 store_contract.py (LocalStore vs Firestore emulator), live_test.py (real Gemini)
+tests/           fake_gemini.py (Interactions + Live API stub), smoke_test.py, unit_test.py,
+                 store_contract.py (LocalStore vs Firestore emulator), live_test.py (real Gemini;
+                 --cohost for a co-host call)
 ```

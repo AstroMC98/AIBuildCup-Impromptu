@@ -20,6 +20,15 @@ It checks:
   - the pod signs off, is saved, replays with Range requests, unused credits are refunded
   - publishing makes it public for anon; visitors on a public live pod can't call in
   - drafts, deleting, and a pod with nobody listening ending by itself
+Then alice co-hosts a call live with an AI co-host (the stub's Live API), streaming
+mic audio in real time:
+  - starting needs credits, one call at a time; others can't see or join it while it's on
+  - a newer connection takes the call over; the co-host opens the show itself
+  - your words are transcribed; cutting in stops it; mode switches reach it; a recycled
+    Live connection resumes the session
+  - hanging up edits it (flubs cut, the answer to them dropped, cut-off answers handled)
+    and saves a finished pod with both voices, chapters, an MP3 and the unedited call
+  - unused minutes come back; a call nobody joined leaves no pod and refunds everything
 """
 import asyncio
 import json
@@ -37,7 +46,10 @@ import httpx
 import websockets
 from websockets.exceptions import ConnectionClosed
 
-FAKE_PORT, APP_PORT = 8765, 8766
+# SMOKE_PORT moves both servers (the stub on it, the app on the next port), so two
+# checkouts can run the smoke test at the same time.
+FAKE_PORT = int(os.environ.get("SMOKE_PORT", "8765"))
+APP_PORT = FAKE_PORT + 1
 BASE = f"http://127.0.0.1:{APP_PORT}"
 WS = f"ws://127.0.0.1:{APP_PORT}"
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 200
@@ -139,6 +151,69 @@ async def closed_with(url: str, cookie: str | None = None) -> int | None:
 
 def contiguous(frames: list[tuple[int, int, int]]) -> bool:
     return all(b[1] == a[1] + a[2] for a, b in zip(frames, frames[1:]))
+
+
+MIC_FRAME = 640   # 40 ms at 16 kHz
+TALK = b"".join(struct.pack("<h", int(8000 * math.sin(2 * math.pi * 220 * i / 16_000))) for i in range(MIC_FRAME))
+HUSH = b"\x00\x00" * MIC_FRAME
+
+
+class Phone(Listener):
+    """A phone on a co-host call: streams its mic in real time (talking or quiet),
+    and counts the co-host's audio per turn (frames are <turn:u32> + PCM)."""
+
+    def __init__(self, label: str, url: str, cookie: str | None = None):
+        super().__init__(label, url, cookie)
+        self.talking = False
+        self.turn_samples: dict[int, int] = {}
+        self._mic: asyncio.Task | None = None
+
+    async def connect(self, join: bool = True, have=None) -> "Phone":
+        self.ws = await websockets.connect(self.url, additional_headers=self.headers, max_size=None)
+        if join:
+            await self.send({"type": "join"})
+        self._task = asyncio.create_task(self._recv())
+        return self
+
+    def start_mic(self) -> None:
+        self._mic = asyncio.create_task(self._mic_loop())
+
+    async def _mic_loop(self) -> None:
+        start, n = time.monotonic(), 0
+        try:
+            while True:
+                await self.ws.send(TALK if self.talking else HUSH)
+                n += 1
+                await asyncio.sleep(max(0.0, start + n * 0.04 - time.monotonic()))
+        except (ConnectionClosed, asyncio.CancelledError):
+            pass
+
+    async def say(self, seconds: float) -> None:
+        self.talking = True
+        await asyncio.sleep(seconds)
+        self.talking = False
+
+    def done(self, turn: int) -> bool:
+        return any(e["turn"] == turn for e in self.of("turn_done"))
+
+    async def _recv(self) -> None:
+        try:
+            async for msg in self.ws:
+                if isinstance(msg, bytes):
+                    assert (len(msg) - 4) % 2 == 0, "PCM frame split a sample"
+                    turn = struct.unpack("<I", msg[:4])[0]
+                    self.turn_samples[turn] = self.turn_samples.get(turn, 0) + (len(msg) - 4) // 2
+                else:
+                    self.events.append(json.loads(msg))
+        except ConnectionClosed as exc:
+            self.close_code = exc.rcvd.code if exc.rcvd else None
+        if self.close_code is None and self.ws.close_code is not None:
+            self.close_code = self.ws.close_code
+
+    async def close(self) -> None:
+        if self._mic:
+            self._mic.cancel()
+        await super().close()
 
 
 async def sign_in(client: httpx.AsyncClient, email: str, name: str) -> dict:
@@ -426,6 +501,154 @@ async def scenario(checks: dict) -> None:
             await c.aclose()
 
 
+async def cohost_scenario(checks: dict) -> None:
+    clients = [httpx.AsyncClient(base_url=BASE, timeout=60) for _ in range(3)]
+    alice_c, bob_c, anon = clients
+    R = 24_000
+    try:
+        alice = await sign_in(alice_c, "alice@example.com", "Alice")
+        await sign_in(bob_c, "bob@example.com", "Bob")
+        alice_cookie, bob_cookie = (c.cookies.get("gp_session") for c in (alice_c, bob_c))
+        body = {"request": {
+            "host": {"name": "Nova", "gender": "female", "persona": "A sharp, funny skeptic.",
+                     "context": "NOVA PRIVATE NOTE"},
+            "mode": "banter", "topic": "Is sourdough worth it?", "notes": "Starter is 3 days old.", "minutes": 5,
+        }, "visibility": "public"}
+
+        async def credits_for(sid: str, reason: str) -> int:
+            entries = (await alice_c.get("/api/me/ledger")).json()["entries"]
+            return sum(e["amount"] for e in entries if e["reason"] == reason and e["show_id"] == sid)
+
+        checks["co-host: signed out can't start a call"] = (await anon.post("/api/cohost", json=body)).status_code == 401
+        checks["co-host: a free account can't start a call"] = (await bob_c.post("/api/cohost", json=body)).status_code == 402
+        r = await alice_c.post("/api/cohost", json=body)
+        call_id = r.json()["id"]
+        checks["co-host: starting a call reserves its minutes"] = r.status_code == 200 and r.json()["credits"] == alice["credits"] - 5
+        checks["co-host: one call at a time"] = (await alice_c.post("/api/cohost", json=body)).status_code == 409
+
+        public = [s["id"] for s in (await anon.get("/api/shows", params={"scope": "public"})).json()["shows"]]
+        mine = {s["id"]: s for s in (await alice_c.get("/api/shows")).json()["shows"]}
+        own = (await alice_c.get(f"/api/shows/{call_id}")).json()
+        checks["co-host: a call in progress is hidden from everyone else"] = (
+            call_id not in public and (await bob_c.get(f"/api/shows/{call_id}")).status_code == 409)
+        checks["co-host: its owner sees it live, with a way back to the call"] = (
+            mine[call_id]["status"] == "live" and mine[call_id]["kind"] == "cohost"
+            and own["live"] and own["call"] == f"/cohost/{call_id}")
+
+        url = f"{WS}/ws/cohost/{call_id}"
+        checks["co-host: only the owner can join the call"] = await closed_with(url, bob_cookie) == 4403
+        first = await Phone("phone1", url, alice_cookie).connect()
+        await first.until(lambda: first.of("ready"), what="ready")
+        phone = await Phone("phone", url, alice_cookie).connect()
+        await phone.until(lambda: phone.of("ready"), what="ready")
+        await first.until(lambda: first.close_code is not None, timeout=10, what="being replaced")
+        checks["co-host: a newer connection takes the call over"] = first.close_code == 4410
+        phone.start_mic()
+        ready = phone.of("ready")[-1]
+        checks["co-host: ready says who's on the call"] = (
+            ready["host"]["name"] == "Nova" and ready["host"]["gender"] == "female" and ready["you"] == "Alice"
+            and ready["limit_s"] == 300 and ready["mode"] == "banter")
+
+        # The opening starts as soon as the first phone joins, so its words may have gone
+        # to that phone, or into the second one's ready snapshot, before the handover.
+        await phone.until(lambda: phone.done(1) or first.done(1), timeout=20, what="the opening")
+        said = first.of("said") + ready["said"] + phone.of("said")
+        checks["co-host: the co-host opens the show"] = (
+            any(e["who"] == "host" and "Welcome" in e["text"] for e in said)
+            and (first.turn_samples.get(1, 0) + phone.turn_samples.get(1, 0)) > 0)
+        await asyncio.sleep(1.6)                  # let it finish playing
+
+        await phone.say(1.0)                      # a mic check (the stub hears "can you hear me?")
+        await phone.until(lambda: phone.done(2), timeout=15, what="the answer to the mic check")
+        checks["co-host: your words are transcribed live"] = any(
+            e["who"] == "you" and "hear me" in e["text"] for e in phone.of("said"))
+        await asyncio.sleep(1.6)
+
+        await phone.say(1.0)                      # a point, then cut in as soon as it answers
+        await phone.until(lambda: phone.turn_samples.get(3), timeout=15, what="the third answer")
+        phone.talking = True
+        await phone.until(lambda: phone.of("interrupted"), timeout=10, what="interrupted")
+        await asyncio.sleep(0.8)
+        phone.talking = False
+        checks["co-host: cutting in stops the answer"] = phone.of("interrupted")[0]["turn"] == 3 and not phone.done(3)
+        await phone.until(lambda: phone.done(4), timeout=15, what="the answer after cutting in")
+        await asyncio.sleep(1.6)
+
+        await phone.send({"type": "mode", "mode": "debate"})
+        await phone.until(lambda: phone.of("mode") and phone.done(5), timeout=15, what="the mode switch")
+        await asyncio.sleep(0.7)
+        await phone.send({"type": "cut_in"})      # the phone cut it off, after it was all sent
+        await asyncio.sleep(1.5)                  # the stub recycles the connection meanwhile
+        seen = httpx.get(f"http://127.0.0.1:{FAKE_PORT}/_seen").json()
+        setups = seen["live_setups"]
+        checks["co-host: a mode switch reaches the co-host"] = any(
+            "switch it up" in t and "opposite side" in t for t in seen["live_texts"])
+        checks["co-host: a recycled Live connection resumes the session"] = (
+            len(setups) >= 2 and setups[1]["setup"].get("sessionResumption", {}).get("handle") == "handle-1")
+        first_setup = json.dumps(setups[0])
+        checks["co-host: the co-host gets its persona, private notes, the topic and your notes"] = (
+            "NOVA PRIVATE NOTE" in first_setup and "Starter is 3 days old" in first_setup
+            and "Is sourdough worth it?" in first_setup and f'"{ready["host"]["voice"]}"' in first_setup)
+        await phone.say(1.0)
+        await phone.until(lambda: phone.done(6), timeout=15, what="an answer after the reconnect")
+        await asyncio.sleep(1.6)
+
+        await phone.send({"type": "hangup"})
+        await phone.until(lambda: phone.of("saved") or phone.of("ended"), timeout=60, what="saved")
+        saved = (phone.of("saved") or [{}])[0]
+        checks["co-host: hanging up edits it and saves it"] = (
+            saved.get("url") == f"/show/{call_id}"
+            and [e["step"] for e in phone.of("editing")] == ["listening", "notes", "cutting", "mastering"])
+        await phone.close()
+
+        data = (await alice_c.get(f"/api/shows/{call_id}")).json()
+        show, segs = data["show"], data["segments"]
+        speakers = {ln["speaker"] for s in segs for ln in s["lines"]}
+        text = " ".join(ln["text"] for s in segs for ln in s["lines"])
+        checks["co-host: saved as a finished, titled pod"] = (
+            show["status"] == "finished" and show["kind"] == "cohost" and show["title"] == "Fake Edited Episode"
+            and show["has_audio"] and show["has_raw_audio"] and data["live"] is False)
+        checks["co-host: both voices are in the transcript"] = {"Alice", "Nova"} <= speakers
+        checks["co-host: the mic check is cut, and the answer to it"] = (
+            "hear me" not in text and "Loud and clear" not in text and show["edit"]["flubs_cut"] == 1)
+        switched = [s for s in segs if any("Switching" in ln["text"] for ln in s["lines"])]
+        checks["co-host: an answer cut off at once is dropped; one cut later is shortened"] = (
+            "Reply 2" not in text and len(switched) == 1 and 1.5 * R < switched[0]["samples"] < 2.95 * R)
+        checks["co-host: segments sit back to back with chapters"] = (
+            all(b["start"] > a["start"] + a["samples"] for a, b in zip(segs, segs[1:]))
+            and [b["title"] for b in show["beats"]] == ["Opening", "The middle"] and show["beats"][0]["start"] == 0)
+        checks["co-host: the replay re-tints where the mode switched"] = (
+            [s["style_rev"] for s in segs][-1] == 1 and len(show["styles"]) == 2
+            and show["styles"][1]["label"] == "Co-host · Debate me")
+
+        audio = await alice_c.get(f"/api/shows/{call_id}/audio")
+        raw = await alice_c.get(f"/api/shows/{call_id}/audio", params={"raw": 1})
+        checks["co-host: the episode and the unedited call download"] = (
+            audio.status_code == raw.status_code == 200 and audio.headers["content-type"] == "audio/mpeg"
+            and len(raw.content) > len(audio.content) / 3)
+        checks["co-host: only the owner gets the unedited call"] = (
+            (await bob_c.get(f"/api/shows/{call_id}/audio", params={"raw": 1})).status_code == 403
+            and (await anon.get(f"/api/shows/{call_id}/audio", params={"raw": 1})).status_code == 401
+            and (await anon.get(f"/api/shows/{call_id}/audio")).status_code == 200)
+        listed = (await anon.get(f"/api/shows/{call_id}")).text
+        checks["co-host: the co-host's private notes stay private"] = "NOVA PRIVATE NOTE" not in listed
+        refund = await credits_for(call_id, "refund")
+        checks["co-host: unused minutes come back"] = (
+            await credits_for(call_id, "pod") == -5 and refund == 5 - math.ceil(show["call_s"] / 60) and refund > 0)
+
+        # a call nobody joins: no pod, every credit back
+        r = await alice_c.post("/api/cohost", json={**body, "visibility": "private"})
+        ghost = r.json()["id"]
+        deadline = time.time() + 30
+        while time.time() < deadline and (await alice_c.get(f"/api/shows/{ghost}")).status_code != 404:
+            await asyncio.sleep(0.5)
+        checks["co-host: a call nobody joined leaves no pod and refunds everything"] = (
+            (await alice_c.get(f"/api/shows/{ghost}")).status_code == 404 and await credits_for(ghost, "refund") == 5)
+    finally:
+        for c in clients:
+            await c.aclose()
+
+
 def main() -> int:
     data_dir = tempfile.mkdtemp(prefix="podcasts-smoke-")
     env = {
@@ -433,6 +656,7 @@ def main() -> int:
         "STORAGE_BACKEND": "local", "DATA_DIR": data_dir, "AUTH_MODE": "dev", "SESSION_SECRET": "smoke",
         "ADMIN_EMAILS": "alice@example.com", "SIGNUP_CREDITS": "0",
         "CLOCK_SPEED": "20", "LOW_WATER_SECONDS": "3", "LINES_PER_SEGMENT": "4", "IDLE_END_SECONDS": "5",
+        "COHOST_RECONNECT_SECONDS": "4",
     }
     py = sys.executable
     app_log = Path(data_dir, "app.log")
@@ -444,6 +668,7 @@ def main() -> int:
         _wait_up(f"http://127.0.0.1:{FAKE_PORT}/docs")
         _wait_up(f"{BASE}/healthz")
         asyncio.run(scenario(checks))
+        asyncio.run(cohost_scenario(checks))
     except Exception as exc:  # report what passed so far, then the failure
         error = exc
     finally:

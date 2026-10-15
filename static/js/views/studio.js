@@ -18,7 +18,9 @@ const TABS = [["callins", "Call-ins"], ["context", "Context"], ["rundown", "Rund
 
 export function mountStudio(root, ctl) {
   const s = ctl.store;
-  let tab = "callins";
+  const cohosted = s.show.kind === "cohost";   // a recorded call: nobody called in
+  const tabs = cohosted ? TABS.filter(([id]) => id !== "callins") : TABS;
+  let tab = tabs[0][0];
   let captionsOn = local.get("gp_captions", true);
   let muted = false;
 
@@ -85,14 +87,16 @@ export function mountStudio(root, ctl) {
       </main>
       <aside class="live-panel" aria-label="Live panel">
         <div class="tabs" role="tablist" aria-label="Live panel">
-          ${TABS.map(([id, label]) => html`<button role="tab" type="button" class="tab" data-tab="${id}" aria-selected="${id === tab}">${label}</button>`)}
+          ${tabs.map(([id, label]) => html`<button role="tab" type="button" class="tab" data-tab="${id}" aria-selected="${id === tab}">${label}</button>`)}
         </div>
         <div class="lp-body" data-r="panel" role="tabpanel"></div>
         ${ctl.live ? html`
           <div class="lp-foot">
             ${callinForm(ctl, { id: "d-callin", variant: "panel" })}
             <p class="faint small">The hosts read call-ins on air. Tap + to attach a file, link or photo and they'll use it too.</p>
-          </div>` : html`<div class="lp-foot"><p class="faint small">This pod has ended. Call-ins are shown as they aired.</p></div>`}
+          </div>` : html`<div class="lp-foot"><p class="faint small">${cohosted
+            ? "Recorded live with an AI co-host, then edited into this episode."
+            : "This pod has ended. Call-ins are shown as they aired."}</p></div>`}
       </aside>
     </div>`);
   root.append(el);

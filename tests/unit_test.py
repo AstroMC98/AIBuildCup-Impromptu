@@ -11,10 +11,14 @@ import tempfile
 import traceback
 
 import httpx
+import numpy as np
 
 os.environ.setdefault("DATA_DIR", tempfile.mkdtemp(prefix="podcasts-unit-"))
 
+from app import editing as ed  # noqa: E402
 from app import prompts, sources  # noqa: E402
+from app.catalog import VOICE_GENDER  # noqa: E402
+from app.cohost import cast_cohost  # noqa: E402
 from app.accounts import Accounts  # noqa: E402
 from app.audio import Mp3Writer, PcmWindow  # noqa: E402
 from app.auth import Auth, AuthError  # noqa: E402
@@ -23,7 +27,7 @@ from app.clock import LiveClock  # noqa: E402
 from app.config import Settings  # noqa: E402
 from app.limits import TokenBucket  # noqa: E402
 from app.models import (  # noqa: E402
-    Beat, ContextItem, Host, Line, SegmentDraft, ShowPlan, ShowRequest,
+    Beat, CohostRequest, ContextItem, Host, HostRequest, Line, SegmentDraft, ShowPlan, ShowRequest,
 )
 from app.show import Draft, ShowRunner  # noqa: E402
 from app.sources import SourceError, sniff_image  # noqa: E402
@@ -620,6 +624,232 @@ def _():
     s = prompts.writer_system(r.req, r.plan, "SOURCE TEXT", "THE STYLE", items)
     assert s.index("SOURCE TEXT") < s.index("TREE") < s.rindex("THE STYLE")
     assert "background: use silently" in s and s.rstrip().endswith("THE STYLE")
+
+
+# ---- co-hosting: recording a call and editing it into an episode ----------------------
+
+R, M = ed.RATE, ed.MIC_RATE
+
+
+def _tone(seconds: float, rate: int, amp: float = 0.3, f: float = 220.0) -> bytes:
+    t = np.arange(int(seconds * rate)) / rate
+    return ed.float_to_pcm((amp * np.sin(2 * np.pi * f * t)).astype(np.float32))
+
+
+def _quiet(seconds: float, rate: int) -> bytes:
+    return b"\x00\x00" * int(seconds * rate)
+
+
+def _conversation() -> ed.Take:
+    """You talk (1 s), the co-host answers (2 s) while you listen, you talk again (1 s)."""
+    take = ed.Take()
+    take.add_mic(_tone(1, M) + _quiet(1, M))
+    take.add_ai_audio(_tone(2, R, f=330))
+    take.add_ai_text("Great point. Tell me more!")
+    take.finish_turn()
+    take.add_mic(_quiet(2, M) + _tone(1, M) + _quiet(1, M))
+    return take
+
+
+@check("co-host: the mic is upsampled to 24 kHz without changing its length in time")
+def _():
+    x = ed.upsample_mic(np.zeros(M, np.float32))
+    assert len(x) == R
+    assert len(ed.upsample_mic(np.zeros(0, np.float32))) == 0
+
+
+@check("co-host: speech spans find talk between silences")
+def _():
+    x = ed.pcm_to_float(_quiet(1, R) + _tone(2, R) + _quiet(1, R))
+    spans = ed.speech_spans(x, -50.0)
+    assert len(spans) == 1
+    s, e = spans[0]
+    assert abs(s - R) <= ed.FRAME and abs(e - 3 * R) <= ed.FRAME
+
+
+@check("co-host: a take places each answer where it started playing, back to back")
+def _():
+    take = ed.Take()
+    take.add_mic(_quiet(2, M))
+    turn, pcm = take.add_ai_audio(_tone(1, R) + b"\x01")        # odd byte carried over
+    assert turn.start == 2 * R and len(pcm) == 2 * R
+    take.add_mic(_quiet(0.5, M))
+    turn2, _ = take.add_ai_audio(b"\x02" + _tone(1, R))
+    assert turn2 is turn and turn.end == 4 * R + 1                # one turn, no gap (+ the joined byte pair)
+    take.finish_turn()
+    nxt, _ = take.add_ai_audio(_tone(1, R))                       # the last one is still playing
+    assert nxt.id == 2 and nxt.start == turn.end
+
+
+@check("co-host: cutting in ends the answer where you did, even after it was all sent")
+def _():
+    take = ed.Take()
+    take.add_mic(_quiet(1, M))
+    take.add_ai_audio(_tone(3, R))
+    take.finish_turn()                                            # the model already finished sending
+    take.add_mic(_quiet(1, M))
+    cut = take.interrupt()
+    assert cut is not None and cut.cut_at == 2 * R and cut.samples == R and cut.end == 2 * R
+    take.add_mic(_quiet(5, M))
+    assert take.interrupt() is None                               # nothing playing any more
+
+
+@check("co-host: late words of a finished answer stay with it")
+def _():
+    take = ed.Take()
+    take.add_ai_audio(_tone(2, R))
+    take.add_ai_text("Hello ")
+    take.finish_turn()
+    take.add_ai_text("there.")
+    assert len(take.turns) == 1 and take.turns[0].text == "Hello there."
+
+
+@check("co-host: an answer cut off in its first 1.5 s is dropped")
+def _():
+    take = ed.Take()
+    take.add_mic(_quiet(1, M))
+    take.add_ai_audio(_tone(3, R))
+    take.add_mic(_tone(1, M))                                     # you cut in after 1 s
+    take.interrupt()
+    take.add_mic(_tone(1, M) + _quiet(0.5, M))
+    edit = ed.build_edit(take)
+    assert edit.dropped_cut_offs == 1
+    assert [t.you for t in edit.turns] == [True]
+
+
+@check("co-host: segments alternate speakers, sit back to back, and the chimes bracket them")
+def _():
+    edit = ed.build_edit(_conversation())
+    assert [t.you for t in edit.turns] == [True, False, True]
+    ep = ed.assemble(edit, ed.fallback_plan("Test"), "Marc", "Nova")
+    segs = ep.segments
+    assert [s["lines"][0]["speaker"] if s["lines"] else None for s in segs] == [None, "Nova", None]
+    assert segs[0]["start"] == len(ed.sting()) + len(ed.silence(0.35))
+    for a, b in zip(segs, segs[1:]):
+        assert b["start"] == a["start"] + a["samples"] + len(ed.silence(ed.TURN_GAP_S))
+    assert ep.samples == segs[-1]["start"] + segs[-1]["samples"] + len(ed.silence(0.5)) + len(ed.sting())
+    assert segs[-1]["final"] and not segs[0]["final"]
+    assert ep.beats[0]["start"] == 0 and ep.beats[-1]["end"] == ep.samples
+    assert ep.stats["call_s"] == 6.0 and ep.stats["tightened_s"] > 0
+
+
+@check("co-host: dead air is trimmed and long pauses inside a turn tightened")
+def _():
+    take = ed.Take()
+    take.add_mic(_quiet(2, M) + _tone(1.5, M) + _quiet(3, M) + _tone(1, M) + _quiet(2, M))
+    edit = ed.build_edit(take)
+    assert len(edit.turns) == 1 and len(edit.turns[0].phrases) == 2
+    seg = ed.assemble(edit, ed.fallback_plan("T"), "Marc", "Nova").segments[0]
+    pads = ed.PAD_BEFORE_S + ed.PAD_AFTER_S
+    assert seg["samples"] <= (1.5 + 1 + ed.TIGHT_PAUSE_S + 2 * pads + 0.05) * R
+    assert seg["samples"] >= (1.5 + 1 + ed.TIGHT_PAUSE_S) * R
+
+
+@check("co-host: the editor's cuts and dropped answers are applied")
+def _():
+    take = ed.Take()
+    take.add_mic(_tone(0.8, M) + _quiet(0.6, M))                 # "can you hear me?"
+    take.add_heard("Can you hear me?")
+    take.add_mic(_tone(1.5, M) + _quiet(1, M))
+    take.add_heard("So, sourdough.")
+    take.add_ai_audio(_tone(1, R, f=330))
+    take.add_ai_text("Loud and clear!")
+    take.finish_turn()
+    take.add_mic(_quiet(1, M) + _tone(1, M) + _quiet(1, M))
+    edit = ed.build_edit(take)
+    you = edit.turns[0]
+    assert len(you.phrases) == 2 and you.phrases[0].text == "Can you hear me?"
+    host_turn = edit.turns[1]
+    plan = ed.EditPlan(title="Bread", cut_phrases=[you.phrases[0].id], drop_turns=[host_turn.id],
+                       chapters=[ed.EditChapter(title="Intro", start_turn=0),
+                                 ed.EditChapter(title="More", start_turn=2)])
+    ep = ed.assemble(edit, plan, "Marc", "Nova")
+    assert ep.stats["flubs_cut"] == 1 and ep.stats["turns_dropped"] == 1
+    assert len(ep.segments) == 2 and ep.segments[0]["lines"][0]["text"] == "So, sourdough."
+    assert [b["title"] for b in ep.beats] == ["Intro", "More"]
+    assert ep.beats[1]["start"] == ep.segments[1]["start"] and ep.segments[1]["beat"] == 1
+
+
+@check("co-host: each turn is levelled to the same loudness")
+def _():
+    take = ed.Take()
+    take.add_mic(_tone(2, M, amp=0.05) + _quiet(1, M))
+    take.add_ai_audio(_tone(2, R, amp=0.5))
+    take.finish_turn()
+    take.add_mic(_quiet(3, M))
+    ep = ed.assemble(ed.build_edit(take), ed.fallback_plan("T"), "Marc", "Nova")
+    x = ed.pcm_to_float(ep.pcm)
+    for seg in ep.segments:
+        mid = x[seg["start"] + int(0.3 * R): seg["start"] + seg["samples"] - int(0.3 * R)]
+        db = 20 * math.log10(float(np.sqrt(np.mean(mid.astype(np.float64) ** 2))))
+        assert abs(db - ed.TARGET_DBFS) < 1.0, db
+
+
+@check("co-host: the live transcript is shared out across the phrases it covers")
+def _():
+    turns = [ed.Turn(id=0, you=True, phrases=[ed.Phrase(0, 0, R), ed.Phrase(1, int(1.5 * R), int(2.5 * R))])]
+    ed._attach_transcript(turns, [(int(0.6 * R), "Hi"), (int(0.9 * R), "there."),
+                                  (3 * R, "one two three four")])
+    p0, p1 = turns[0].phrases
+    assert p0.text == "Hi there." and p1.text == "one two three four"
+    turns = [ed.Turn(id=0, you=True, phrases=[ed.Phrase(0, 0, R), ed.Phrase(1, int(1.5 * R), int(2.5 * R))])]
+    ed._attach_transcript(turns, [(3 * R, "one two three four")])  # all at once, after both
+    p0, p1 = turns[0].phrases
+    assert p0.text == "one two" and p1.text == "three four"
+
+
+@check("co-host: mode switches tint the segments said after them")
+def _():
+    edit = ed.build_edit(_conversation())
+    ep = ed.assemble(edit, ed.fallback_plan("T"), "Marc", "Nova", revs=[(int(3.5 * R), 1)])
+    assert [s["style_rev"] for s in ep.segments] == [0, 0, 1]
+
+
+@check("co-host: the unedited mix has both sides where they happened")
+def _():
+    take = _conversation()
+    x = ed.pcm_to_float(ed.raw_mix(take))
+    assert len(x) == take.length == 6 * R
+    assert np.abs(x[int(2.5 * R):int(3.5 * R)]).max() > 0.2           # the co-host
+    assert np.abs(x[int(5.2 * R):]).max() == 0
+
+
+@check("co-host: nothing said means no episode")
+def _():
+    take = ed.Take()
+    take.add_mic(_quiet(3, M))
+    edit = ed.build_edit(take)
+    assert edit.turns == []
+    assert ed.assemble(edit, ed.fallback_plan("T"), "Marc", "Nova").segments == []
+
+
+@check("co-host: cast with a voice of its own gender; a picked voice wins")
+def _():
+    h = cast_cohost(HostRequest(name="Dr. Maya", gender="female"))
+    assert VOICE_GENDER[h.voice] == "female" and h.gender == "female" and h.persona
+    h = cast_cohost(HostRequest(name="Sam", voice="Puck", gender="female"))
+    assert h.voice == "Puck" and h.gender == "male"
+    assert cast_cohost(HostRequest()).name == "Alex"
+
+
+@check("co-host: the prompt carries the persona, its private notes, the mode and the topic")
+def _():
+    req = CohostRequest(host=HostRequest(name="Nova", persona="A skeptic.", context="SECRET NOTES"),
+                        mode="debate", topic="Is cereal soup?", minutes=5)
+    host = cast_cohost(req.host)
+    s = prompts.cohost_system(req, host, "Marc", "SOME NOTES")
+    assert "SECRET NOTES" in s and "SOME NOTES" in s and "Is cereal soup?" in s
+    assert "Take the opposite side" in s and "co-hosting a podcast episode live with Marc" in s
+    assert "Producer:" in prompts.cohost_mode_switch("interview")
+
+
+@check("co-host: the editor reads your phrases with words, and the co-host's turns")
+def _():
+    text = prompts.editor_input([
+        {"id": 0, "speaker": "Marc", "you": True, "phrases": [{"id": 0, "text": "Um"}, {"id": 1, "text": ""}]},
+        {"id": 1, "speaker": "Nova", "you": False, "cut_off": True, "text": "Well I"},
+    ])
+    assert "[p0] Um" in text and "[p1]" not in text and "T1 Nova (cut off): Well I" in text
 
 
 def main() -> int:

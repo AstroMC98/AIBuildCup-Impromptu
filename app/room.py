@@ -57,6 +57,24 @@ def _spawn(coro) -> None:
     task.add_done_callback(_background.discard)
 
 
+async def refund_unused(store: Store, settings: Settings, doc: dict, duration_s: float) -> int:
+    """Credits are charged up front for the length asked for; give back what
+    wasn't used (all of it if nothing was ever voiced)."""
+    charged = int(doc.get("credits_charged") or 0)
+    owner = doc.get("owner_uid")
+    if not charged or not owner:
+        return 0
+    used = math.ceil(duration_s / 60 * settings.credits_per_minute) if duration_s else 0
+    refund = max(0, charged - used)
+    if refund:
+        try:
+            await store.adjust_credits(owner, refund, reason="refund", show_id=doc["id"], note="Unused minutes")
+        except Exception:
+            log.exception("could not refund %d credits for show %s", refund, doc["id"])
+            return 0
+    return refund
+
+
 def style_revisions(doc: dict) -> list[dict]:
     """Every style the show has aired in, by revision. Segments carry their
     style_rev, so a late joiner or a replay re-tints exactly as the show did."""
@@ -491,22 +509,7 @@ class ShowRoom:
         log.info("show %s ended (%s), %.0fs of audio", self.id, reason, duration)
 
     async def _refund_unused(self, duration_s: float) -> int:
-        """Credits are charged up front for the length asked for; give back what
-        wasn't used (all of it if nothing was ever voiced)."""
-        charged = int(self.doc.get("credits_charged") or 0)
-        owner = self.doc.get("owner_uid")
-        if not charged or not owner:
-            return 0
-        used = math.ceil(duration_s / 60 * self.settings.credits_per_minute) if duration_s else 0
-        refund = max(0, charged - used)
-        if refund:
-            try:
-                await self.store.adjust_credits(owner, refund, reason="refund", show_id=self.id,
-                                                note="Unused minutes")
-            except Exception:
-                log.exception("could not refund %d credits for show %s", refund, self.id)
-                return 0
-        return refund
+        return await refund_unused(self.store, self.settings, self.doc, duration_s)
 
     async def _tick_loop(self) -> None:
         try:
@@ -643,6 +646,7 @@ class ShowRoom:
             "shared_with": d.get("shared_with", []),
             "album_ids": d.get("album_ids", []),
             "tags": d.get("tags", []),
+            "kind": d.get("kind", "pod"),
         }
 
     def snapshot(self, conn: Conn, backfill_from: int) -> dict:

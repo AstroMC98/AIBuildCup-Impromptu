@@ -198,27 +198,28 @@ class GcpStore:
         except NotFound:
             return None
 
-    async def put_audio(self, show_id: str, data: bytes) -> dict:
-        blob = self._blob(show_id, "episode.mp3")
+    async def put_audio(self, show_id: str, data: bytes, name: str = "episode.mp3") -> dict:
+        blob = self._blob(show_id, name)
         await asyncio.to_thread(blob.upload_from_string, data, content_type="audio/mpeg")
-        return {"path": "episode.mp3", "bytes": len(data), "mime": "audio/mpeg"}
+        return {"path": name, "bytes": len(data), "mime": "audio/mpeg"}
 
-    async def audio_response(self, show_id: str, doc: dict, download: bool, filename: str) -> Response:
-        if not doc.get("audio"):
+    async def audio_response(self, show_id: str, doc: dict, download: bool, filename: str,
+                             name: str = "episode.mp3") -> Response:
+        if not doc.get("raw_audio" if name == "raw.mp3" else "audio"):
             return Response("No audio saved for this show.", status_code=404)
-        key = (show_id, download)
+        key = (show_id, download, name)
         cached = self._signed.get(key)
         if cached and time.time() - cached[1] < SIGNED_URL_REUSE_SECONDS:
             return RedirectResponse(cached[0], status_code=307)
-        url = await asyncio.to_thread(self._sign, show_id, download, filename)
+        url = await asyncio.to_thread(self._sign, show_id, download, filename, name)
         self._signed[key] = (url, time.time())
         return RedirectResponse(url, status_code=307)
 
-    def _sign(self, show_id: str, download: bool, filename: str) -> str:
+    def _sign(self, show_id: str, download: bool, filename: str, name: str = "episode.mp3") -> str:
         creds = self._credentials
         creds.refresh(google.auth.transport.requests.Request())
         disposition = "attachment" if download else "inline"
-        return self._blob(show_id, "episode.mp3").generate_signed_url(
+        return self._blob(show_id, name).generate_signed_url(
             version="v4",
             expiration=SIGNED_URL_TTL,
             method="GET",
@@ -312,7 +313,8 @@ class GcpStore:
         await self._user(uid).collection("connections").document(other).delete()
 
     async def mark_interrupted(self, keep: set[str]) -> int:
-        query = self.db.collection("shows").where(filter=FieldFilter("status", "==", "live"))
+        # editing: a co-hosted call that was being turned into an episode
+        query = self.db.collection("shows").where(filter=FieldFilter("status", "in", ["live", "editing"]))
         count = 0
         async for snap in query.stream():
             if snap.id not in keep:

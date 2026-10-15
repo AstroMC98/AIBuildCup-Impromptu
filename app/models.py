@@ -205,3 +205,47 @@ class SegmentContext(BaseModel):
     hearts: int = 0
     beats_left: int = 0                 # beats after the current one
     planned_minutes_left: float = 0.0   # what the plan gives those beats
+
+
+# ---- Co-hosting: you talk live with an AI co-host (see cohost.py) ------------
+
+CohostMode = Literal["banter", "interview", "debate"]
+
+
+class CohostRequest(BaseModel):
+    host: HostRequest                     # the AI co-host, usually one of your personas
+    mode: CohostMode = "banter"
+    topic: str = Field(min_length=1, max_length=2_000)
+    # Material for the co-host to draw on; trimmed to settings.cohost_source_chars.
+    notes: str = Field(default="", max_length=400_000)
+    notes_names: list[str] = Field(default_factory=list, max_length=20)
+    your_name: str = Field(default="", max_length=40)   # blank = your account name
+    minutes: Literal[5, 10, 15] = 10
+    language: str = Field(default="English", max_length=60)
+
+    @field_validator("language")
+    @classmethod
+    def _default_language(cls, v: str) -> str:
+        return v.strip() or "English"
+
+
+class NewCohost(BaseModel):
+    request: CohostRequest
+    visibility: Visibility = "private"
+    shared_with: list[str] = Field(default_factory=list, max_length=200)
+
+
+class EditChapter(BaseModel):
+    title: str
+    notes: str = ""
+    start_turn: int = 0
+
+
+class EditPlan(BaseModel):
+    """The editor's notes on a recorded call: what to call it, and what to cut."""
+    title: str
+    tagline: str = ""
+    about: str = ""
+    chapters: list[EditChapter] = []
+    cut_phrases: list[int] = []   # your phrases to cut (false starts, mic checks, ...)
+    drop_turns: list[int] = []    # co-host turns that only answered something cut

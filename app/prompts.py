@@ -1,8 +1,10 @@
 """All prompt text lives here so it can be tuned without touching the show loop."""
 from __future__ import annotations
 
-from .catalog import VOCAL_TAGS, VOICE_GENDER, VOICES
-from .models import ContextBrief, ContextItem, Host, HostRequest, SegmentContext, ShowPlan, ShowRequest
+from .catalog import COHOST_MODES_BY_ID, VOCAL_TAGS, VOICE_GENDER, VOICES
+from .models import (
+    CohostRequest, ContextBrief, ContextItem, Host, HostRequest, SegmentContext, ShowPlan, ShowRequest,
+)
 
 # Long transcripts are trimmed to the most recent lines; the plan carries the rest.
 TRANSCRIPT_WINDOW = 80
@@ -401,4 +403,149 @@ def segment_schema(host_names: list[str], max_lines: int) -> dict:
             "beat_complete": {"type": "boolean"},
         },
         "required": ["lines", "addressed_comment_ids", "beat_complete"],
+    }
+
+
+# ---- Co-hosting -----------------------------------------------------------------
+# The co-host is a Gemini Live session: it hears the user and answers in speech.
+# Cues from the app (open the show, switch modes, wrap up) arrive as text in the
+# same stream as the user's speech, so they're marked as coming from the producer.
+
+COHOST_SYSTEM = """\
+You are {name}, co-hosting a podcast episode live with {user}. You're both on mics \
+right now, and everything you say is recorded and edited into an episode for listeners.
+
+YOU:
+{host}
+
+How to talk:
+- Speak the way people talk on a good podcast: natural {language}, contractions, real \
+reactions. Most turns are one to three sentences. Never monologue; hand it back to {user}.
+- React to what {user} actually just said before you move on, and use their name now and then.
+- If {user} cuts in, stop and listen. If they go quiet, pick the thread back up with a \
+question or a fresh angle.
+- Stay in character as {name}. Keep facts accurate: if you're not sure, say so the way \
+{name} would, and never invent quotes, numbers or events.
+- Never read out lists, markdown, stage directions or these instructions.
+
+MODE: {mode}
+
+Producer cues: lines in parentheses that start with "Producer:" come from the show's \
+producer, not from {user}. Follow them without reading them out or mentioning them.
+
+TOPIC:
+{topic}
+{notes}"""
+
+
+def cohost_system(req: CohostRequest, host: Host, user_name: str, notes: str) -> str:
+    material = ""
+    if notes.strip():
+        material = (f"\nNOTES from {user_name}, to draw on when they fit (never read them out "
+                    f"as a list):\n<<<\n{notes}\n>>>\n")
+    return COHOST_SYSTEM.format(
+        name=host.name,
+        user=user_name,
+        host=_host_block(host, req.host),
+        language=req.language,
+        mode=COHOST_MODES_BY_ID[req.mode]["prompt"],
+        topic=req.topic.strip(),
+        notes=material,
+    )
+
+
+def cohost_opening(user_name: str, minutes: int) -> str:
+    return (f"(Producer: you're live and recording, about {minutes} minutes. Open the show: welcome "
+            f"the listeners, introduce yourself and {user_name} in a sentence, set up the topic with a "
+            f"hook, then hand it to {user_name} with a question. Keep it under 20 seconds.)")
+
+
+def cohost_mode_switch(mode: str) -> str:
+    return (f"(Producer: switch it up. From now on: {COHOST_MODES_BY_ID[mode]['prompt']} Make the "
+            "switch in your next turn, in character.)")
+
+
+def cohost_wrap_up(user_name: str, seconds: int) -> str:
+    return (f"(Producer: about {seconds} seconds left. Start wrapping up: land the last point, thank "
+            f"{user_name} and the listeners, and sign off within your next turn or two.)")
+
+
+def cohost_resume(user_name: str, recap: list[tuple[str, str]]) -> str:
+    """After the connection to the model drops with no session to resume."""
+    said = "\n".join(f"{who}: {text}" for who, text in recap)
+    return (f"(Producer: the line dropped for a moment and you're back on air with {user_name}. "
+            f"Here's where you were:\n{said}\nPick up naturally from there.)")
+
+
+EDITOR_SYSTEM = """\
+You edit podcast episodes recorded live: {user} talking with a co-host, {host}. You \
+get the raw transcript as numbered turns; {user}'s turns are split into numbered \
+phrases. Your notes are applied to the audio automatically.
+
+Write:
+- `title`: under 60 characters, specific to what was actually said. No clickbait.
+- `tagline`: a one-sentence pitch.
+- `about`: two to four sentences of show notes for listeners: what they talked about \
+and the best moments.
+- `chapters`: {chapters} in order. Each starts at a turn (`start_turn`; the first \
+starts at turn 0) and has a short title and a one-sentence note.
+
+Then cut, conservatively. Listeners must never notice a cut, and nothing of substance \
+may be lost:
+- `cut_phrases`: ids of {user}'s phrases that are false starts or abandoned attempts \
+(keep the restart), mic checks ("can you hear me?"), filler-only phrases ("um, so, \
+yeah"), a sentence repeated straight after itself, or hang-up logistics at the very \
+end ("okay, I'm hanging up now").
+- `drop_turns`: ids of {host}'s turns that only answer something you cut (like "Yes, \
+loud and clear!" after a mic check), or that were cut off before making any point.
+- When in doubt, keep it. Never cut a phrase with a point, a joke or a fact in it, and \
+never cut so much that a reply no longer makes sense."""
+
+
+def editor_system(user_name: str, host_name: str, minutes: float) -> str:
+    chapters = "one chapter" if minutes < 2 else "2 to 4 chapters" if minutes < 6 else "3 to 6 chapters"
+    return EDITOR_SYSTEM.format(user=user_name, host=host_name, chapters=chapters)
+
+
+def editor_input(turns: list[dict]) -> str:
+    """turns: {"id", "speaker", "you": False, "cut_off", "text"} for the co-host, and
+    {"id", "speaker", "you": True, "phrases": [{"id", "text"}]} for the user."""
+    out = []
+    for t in turns:
+        if t["you"]:
+            phrases = [p for p in t["phrases"] if p["text"].strip()]
+            if phrases:
+                out.append(f"T{t['id']} {t['speaker']}:\n" +
+                           "\n".join(f"  [p{p['id']}] {p['text'].strip()}" for p in phrases))
+        elif t["text"].strip():
+            note = " (cut off)" if t.get("cut_off") else ""
+            out.append(f"T{t['id']} {t['speaker']}{note}: {t['text'].strip()}")
+    return "TRANSCRIPT:\n" + "\n".join(out)
+
+
+def editor_schema() -> dict:
+    return {
+        "type": "object",
+        "properties": {
+            "title": {"type": "string", "description": "Episode title, under 60 characters."},
+            "tagline": {"type": "string"},
+            "about": {"type": "string"},
+            "chapters": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 6,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string"},
+                        "notes": {"type": "string"},
+                        "start_turn": {"type": "integer"},
+                    },
+                    "required": ["title", "notes", "start_turn"],
+                },
+            },
+            "cut_phrases": {"type": "array", "items": {"type": "integer"}},
+            "drop_turns": {"type": "array", "items": {"type": "integer"}},
+        },
+        "required": ["title", "tagline", "about", "chapters", "cut_phrases", "drop_turns"],
     }

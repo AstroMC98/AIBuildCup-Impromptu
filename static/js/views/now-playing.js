@@ -57,7 +57,7 @@ export function mountNowPlaying(host, ctl, { page = false, onClose } = {}) {
         <button class="icon-btn round dark" type="button" data-action="download-transcript" aria-label="Download the full transcript">${icon("download", 16, 2.4)}</button></div>
       <div class="np-lines" data-r="transcript" aria-live="polite"></div>
     </section>
-    <section class="card" id="np-callins" aria-labelledby="np-c">
+    <section class="card" id="np-callins" aria-labelledby="np-c" ${s.show.kind === "cohost" ? "hidden" : ""}>
       <div class="card-head"><h2 id="np-c">Call-ins</h2></div>
       <div data-r="callins"></div>
       ${callinForm(ctl, { id: "np-callin", variant: "inline" })}

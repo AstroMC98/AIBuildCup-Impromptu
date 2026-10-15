@@ -65,6 +65,9 @@ export const api = {
   deleteShow: (showId) => call("DELETE", `/api/shows/${id(showId)}`),
   addContext: (showId, form) => call("POST", `/api/shows/${id(showId)}/context`, { form }),
   audioUrl: (showId, download = false) => `/api/shows/${id(showId)}/audio${download ? "?download=1" : ""}`,
+  rawAudioUrl: (showId) => `/api/shows/${id(showId)}/audio?raw=1&download=1`,   // a co-hosted call, unedited
+  // co-hosting
+  createCohost: (body) => call("POST", "/api/cohost", { json: body }),
   organize: (showId, body) => call("PATCH", `/api/shows/${id(showId)}/organize`, { json: body }),
   showStats: (showId) => call("GET", `/api/shows/${id(showId)}/stats`),
   myStats: () => call("GET", "/api/me/stats"),

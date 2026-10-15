@@ -31,6 +31,10 @@ export async function showView(root, { params }) {
       ? "This pod doesn't exist, or it isn't shared with you. Ask its creator to share it with you as a connection."
       : err.message);
   }
+  if (data.call) {   // a co-hosted call still going (or being edited): back to the call
+    navigate(data.call, { replace: true });
+    return null;
+  }
   if (data.show.status === "draft") return draftScreen(root, data);
 
   const ctl = new ShowController({

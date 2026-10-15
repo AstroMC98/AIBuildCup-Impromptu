@@ -9,15 +9,20 @@ import base64
 import json
 import logging
 import re
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from typing import AsyncIterator
 
 from google import genai
+from google.genai import types
 from pydantic import ValidationError
 
 from . import prompts
 from .catalog import GENDERS, VOICE_GENDER, VOICES, pick_voice
 from .config import Settings
-from .models import ContextItem, Host, Line, SegmentContext, SegmentDraft, ShowPlan, ShowRequest
+from .models import (
+    ContextItem, EditPlan, Host, Line, SegmentContext, SegmentDraft, ShowPlan, ShowRequest,
+)
 
 log = logging.getLogger("podcasts.llm")
 
@@ -44,6 +49,12 @@ class Gemini:
         http_options = {"base_url": settings.gemini_base_url} if settings.gemini_base_url else None
         self.client = genai.Client(api_key=settings.gemini_api_key, http_options=http_options)
         self.settings = settings
+        if settings.gemini_base_url and settings.gemini_base_url.startswith("http://"):
+            # The SDK opens Live sessions over wss:// only; the local stub speaks ws://.
+            api = self.client._api_client
+            ws_url = "ws://" + settings.gemini_base_url.removeprefix("http://").rstrip("/")
+            api._websocket_base_url = lambda: ws_url
+            api._websocket_ssl_ctx = {}
 
     # ---- text ---------------------------------------------------------------
 
@@ -172,6 +183,134 @@ class Gemini:
                     raise ModelOutputError(f"speech stream error: {detail}")
         finally:
             await stream.close()
+
+    # ---- live co-hosting ----------------------------------------------------
+
+    @asynccontextmanager
+    async def cohost_link(self, *, system: str, voice: str, handle: str | None = None
+                          ) -> AsyncIterator["CohostLink"]:
+        """A Gemini Live session: it hears the user and answers in speech. `handle`
+        resumes an earlier session (see ResumeHandle) with its whole conversation."""
+        config = types.LiveConnectConfig(
+            response_modalities=[types.Modality.AUDIO],
+            speech_config=types.SpeechConfig(voice_config=types.VoiceConfig(
+                prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=voice))),
+            system_instruction=system,
+            input_audio_transcription=types.AudioTranscriptionConfig(),
+            output_audio_transcription=types.AudioTranscriptionConfig(),
+            realtime_input_config=types.RealtimeInputConfig(
+                automatic_activity_detection=types.AutomaticActivityDetection(
+                    silence_duration_ms=self.settings.cohost_silence_ms)),
+            # Connections are recycled every few minutes (GoAway); a handle carries
+            # the conversation over. Compression lifts the audio session's length cap.
+            session_resumption=types.SessionResumptionConfig(handle=handle),
+            context_window_compression=types.ContextWindowCompressionConfig(sliding_window=types.SlidingWindow()),
+        )
+        async with self.client.aio.live.connect(model=self.settings.cohost_model, config=config) as session:
+            yield CohostLink(session)
+
+    async def edit_cohost(self, turns: list[dict], you: str, host: str, minutes: float) -> EditPlan:
+        """Title, show notes, chapters and what to cut, for a recorded co-host call."""
+        data = await self._json_call(
+            system=prompts.editor_system(you, host, minutes),
+            user=prompts.editor_input(turns),
+            schema=prompts.editor_schema(),
+        )
+        try:
+            return EditPlan.model_validate(data)
+        except ValidationError as exc:
+            raise ModelOutputError(f"edit notes did not match the schema: {exc}") from exc
+
+
+# ---- what a Live session sends back, as plain objects --------------------------------
+
+@dataclass
+class AudioOut:
+    data: bytes          # 24 kHz mono s16le
+
+
+@dataclass
+class InputText:
+    text: str            # the user's words, transcribed as they speak
+
+
+@dataclass
+class OutputText:
+    text: str            # the co-host's words
+
+
+@dataclass
+class Interrupted:
+    """The user started talking over the co-host; its turn stops here."""
+
+
+@dataclass
+class TurnDone:
+    """The co-host finished its turn (all of its audio has been sent)."""
+
+
+@dataclass
+class GoAway:
+    seconds: float | None    # this connection closes soon; reconnect with the handle
+
+
+@dataclass
+class ResumeHandle:
+    handle: str
+
+
+LiveEvent = AudioOut | InputText | OutputText | Interrupted | TurnDone | GoAway | ResumeHandle
+MIC_MIME = "audio/pcm;rate=16000"
+
+
+class CohostLink:
+    def __init__(self, session) -> None:
+        self._session = session
+
+    async def send_audio(self, pcm: bytes) -> None:
+        await self._session.send_realtime_input(audio=types.Blob(data=pcm, mime_type=MIC_MIME))
+
+    async def send_text(self, text: str) -> None:
+        await self._session.send_realtime_input(text=text)
+
+    async def pause(self) -> None:
+        """The mic went away (the phone dropped off): don't wait for more of it."""
+        await self._session.send_realtime_input(audio_stream_end=True)
+
+    async def events(self) -> AsyncIterator[LiveEvent]:
+        """Until the connection closes. The SDK's receive() stops after each turn."""
+        while True:
+            got = False
+            async for message in self._session.receive():
+                got = True
+                for event in _live_events(message):
+                    yield event
+            if not got:
+                return
+
+
+def _live_events(message: types.LiveServerMessage) -> list[LiveEvent]:
+    out: list[LiveEvent] = []
+    content = message.server_content
+    if content:
+        for part in (content.model_turn.parts or []) if content.model_turn else []:
+            if part.inline_data and part.inline_data.data:
+                out.append(AudioOut(part.inline_data.data))
+        if content.input_transcription and content.input_transcription.text:
+            out.append(InputText(content.input_transcription.text))
+        if content.output_transcription and content.output_transcription.text:
+            out.append(OutputText(content.output_transcription.text))
+        if content.interrupted:
+            out.append(Interrupted())
+        if content.turn_complete:
+            out.append(TurnDone())
+    if message.go_away:
+        match = re.match(r"([\d.]+)s", str(message.go_away.time_left or ""))
+        out.append(GoAway(float(match.group(1)) if match else None))
+    update = message.session_resumption_update
+    if update and update.resumable and update.new_handle:
+        out.append(ResumeHandle(update.new_handle))
+    return out
 
 
 def _reconcile_hosts(req: ShowRequest, planned: list[Host]) -> list[Host]:

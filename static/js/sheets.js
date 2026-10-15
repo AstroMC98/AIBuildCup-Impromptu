@@ -311,6 +311,8 @@ export function openMoreSheet(ctl) {
   const live = ctl.live && !s.ended;
   setHtml(div, html`
     <button type="button" class="menu-item" data-dl-audio>${icon("download", 20)}Download audio${live ? " so far" : ""}</button>
+    ${s.producer && s.show.has_raw_audio ? html`
+      <button type="button" class="menu-item" data-dl-raw>${icon("download", 20)}Download the unedited call <span class="faint">before the editor's cuts</span></button>` : ""}
     <button type="button" class="menu-item" data-dl-text>${icon("note", 20)}Download transcript</button>
     <button type="button" class="menu-item" data-share>${icon("share", 20)}Share</button>
     ${s.producer && live ? html`
@@ -326,6 +328,8 @@ export function openMoreSheet(ctl) {
   div.addEventListener("click", async (e) => {
     if (e.target.closest("[data-dl-audio]")) {
       location.href = ctl.audioDownloadUrl();
+    } else if (e.target.closest("[data-dl-raw]")) {
+      location.href = api.rawAudioUrl(ctl.id);
     } else if (e.target.closest("[data-dl-text]")) {
       saveBlob(new Blob([s.transcriptMarkdown()], { type: "text/markdown" }), `${slug(s.show.title)}.md`);
     } else if (e.target.closest("[data-share]")) {
