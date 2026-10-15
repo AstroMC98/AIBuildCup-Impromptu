@@ -1,0 +1,17 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+data/
+.playwright-mcp/
+
+# Local copies of env files (may hold real keys); keep the committed template
+.env *
+.env.*
+!.env.example
+
+# Tooling / OS noise
+.pytest_cache/
+*.log
+.DS_Store
+Thumbs.db
