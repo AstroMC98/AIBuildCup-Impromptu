@@ -74,3 +74,7 @@ def restyle_bucket() -> TokenBucket:
 # Per show and client IP, for Add context over HTTP.
 GUEST_CONTEXT = Limiter(rate=1 / 60, burst=2)
 PRODUCER_CONTEXT = Limiter(rate=1 / 5, burst=3)
+
+# Per user. Transcribing and researching a memo is paid for before any credits are
+# (a memo held for review is only charged at Produce), so uploads are rationed.
+MEMO_UPLOADS = Limiter(rate=1 / 300, burst=3, ttl=6 * 3600)

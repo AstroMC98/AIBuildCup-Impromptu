@@ -6,6 +6,9 @@ python-multipart>=0.0.9
 httpx>=0.27
 pypdf>=4.0
 lameenc>=1.8
+# Voice-memo pods: decoding and mixing the music (self-contained wheels, no ffmpeg)
+numpy>=2.1
+miniaudio>=1.61
 # Only imported with STORAGE_BACKEND=gcp
 google-cloud-firestore>=2.20
 google-cloud-storage>=2.18

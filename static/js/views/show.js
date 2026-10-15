@@ -11,6 +11,7 @@ import { applyAccent } from "../theme.js";
 import { confirmSheet } from "../ui.js";
 import { toast } from "../util.js";
 import { mountMobile } from "./live-mobile.js";
+import { memoScreen } from "./memo-status.js";
 import { mountStudio } from "./studio.js";
 
 const FRAME_MS = 80;
@@ -32,6 +33,10 @@ export async function showView(root, { params }) {
       : err.message);
   }
   if (data.show.status === "draft") return draftScreen(root, data);
+  // A voice-memo pod being made, waiting for review, or failed: only its owner sees these.
+  if (data.show.kind === "memo" && ["rendering", "review", "failed"].includes(data.show.status) && !data.show.has_audio) {
+    return memoScreen(root, data);
+  }
 
   const ctl = new ShowController({
     id, data,

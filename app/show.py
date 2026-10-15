@@ -121,15 +121,24 @@ class ShowRunner:
         gemini: Gemini,
         settings: Settings,
         room: RoomPort,
+        *,
+        plan: ShowPlan | None = None,
+        write_timeout: float | None = None,
+        speech_retries: int = 0,
     ):
+        """plan: one made (and maybe edited) beforehand, so run() skips planning.
+        write_timeout and speech_retries suit a pre-recorded render, which nobody
+        hears live: it can wait out a slow writer and retry speech that never started."""
         self.req = request
         self.source = source
         self.gemini = gemini
         self.settings = settings
         self.room = room
         self.rate = settings.sample_rate
+        self.write_timeout = write_timeout
+        self.speech_retries = speech_retries
 
-        self.plan: ShowPlan | None = None
+        self.plan: ShowPlan | None = plan
         self.transcript: list[Line] = []
         self.beat = 0
         self.beat_lines = 0
@@ -237,16 +246,17 @@ class ShowRunner:
     async def run(self) -> str:
         """Runs the show to its end and returns why it ended."""
         try:
-            self.room.publish({"type": "status", "state": "planning"})
-            started = time.monotonic()
-            try:
-                self.plan = await asyncio.wait_for(
-                    self.gemini.plan_show(self.req, self.source), PLAN_TIMEOUT_SECONDS)
-            except TimeoutError:
-                log.warning("planning hung for %.0fs; trying once more", PLAN_TIMEOUT_SECONDS)
-                self.plan = await asyncio.wait_for(
-                    self.gemini.plan_show(self.req, self.source), PLAN_TIMEOUT_SECONDS)
-            log.info("planned in %.1fs", time.monotonic() - started)
+            if self.plan is None:
+                self.room.publish({"type": "status", "state": "planning"})
+                started = time.monotonic()
+                try:
+                    self.plan = await asyncio.wait_for(
+                        self.gemini.plan_show(self.req, self.source), PLAN_TIMEOUT_SECONDS)
+                except TimeoutError:
+                    log.warning("planning hung for %.0fs; trying once more", PLAN_TIMEOUT_SECONDS)
+                    self.plan = await asyncio.wait_for(
+                        self.gemini.plan_show(self.req, self.source), PLAN_TIMEOUT_SECONDS)
+                log.info("planned in %.1fs", time.monotonic() - started)
             self.room.publish({"type": "plan", **self.plan.model_dump(exclude={"cold_open"})})
             self.room.publish({"type": "status", "state": "writing"})
 
@@ -430,12 +440,13 @@ class ShowRunner:
         hearts: int,
     ) -> Draft:
         assert self.plan is not None
+        timeout = self.write_timeout or WRITE_TIMEOUT_SECONDS
         for attempt, delay in enumerate((*WRITE_RETRY_DELAYS, None)):
             try:
                 started = time.monotonic()
                 segment = await asyncio.wait_for(
                     self.gemini.write_segment(ctx, self.req, self.plan, self.source, style, context),
-                    WRITE_TIMEOUT_SECONDS,
+                    timeout,
                 )
                 took = time.monotonic() - started
                 self.write_s = 0.5 * self.write_s + 0.5 * took
@@ -448,7 +459,7 @@ class ShowRunner:
                     raise
                 if isinstance(exc, TimeoutError):
                     # A hung call, not an overloaded API: go again straight away.
-                    log.warning("writing hung for %.0fs (attempt %d); retrying now", WRITE_TIMEOUT_SECONDS, attempt + 1)
+                    log.warning("writing hung for %.0fs (attempt %d); retrying now", timeout, attempt + 1)
                     continue
                 log.warning("writing failed (attempt %d): %s; retrying in %.0fs", attempt + 1, exc, delay)
                 await asyncio.sleep(delay)
@@ -633,18 +644,22 @@ class ShowRunner:
 
     async def _speak(self, draft: Draft) -> None:
         assert self.plan is not None
-        carry = b""
+        hosts = self.plan.hosts
         samples = 0
         started = time.monotonic()
-        stream = self.gemini.stream_speech(draft.lines, self.plan.hosts)
-        try:
+
+        async def stream_once() -> bool:
+            """Voice the segment; False if the show stopped partway."""
+            nonlocal samples
+            carry = b""
+            stream = self.gemini.stream_speech(draft.lines, hosts)
             while True:
                 try:
                     chunk = await asyncio.wait_for(anext(stream), SPEECH_STALL_SECONDS)
                 except StopAsyncIteration:
-                    break
+                    return True
                 if self._stopped:
-                    return
+                    return False
                 if not samples and not carry:
                     lag = time.monotonic() - started
                     self.speech_lag_s = 0.5 * self.speech_lag_s + 0.5 * lag
@@ -655,6 +670,20 @@ class ShowRunner:
                 if cut:
                     self.room.push_audio(draft.seq, data[:cut])
                     samples += cut // 2
+
+        try:
+            for attempt in range(self.speech_retries + 1):
+                try:
+                    if not await stream_once():
+                        return
+                    break
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    # Only a segment nobody has heard any of can start over.
+                    if samples or attempt == self.speech_retries:
+                        raise
+                    log.warning("speech for segment %d failed before any audio (%s); trying again", draft.seq, exc)
         except asyncio.CancelledError:
             raise
         except Exception as exc:

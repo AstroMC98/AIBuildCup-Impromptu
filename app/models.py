@@ -38,6 +38,16 @@ class ShowRequest(BaseModel):
     language: str = Field(default="English", max_length=60)
     # Display names of the files and links the source was built from.
     source_names: list[str] = Field(default_factory=list, max_length=20)
+    # recorded: written and voiced ahead of time (a voice memo's pod), so the
+    # prompts leave out call-ins and the other live-only rules.
+    mode: Literal["live", "recorded"] = "live"
+    # Shape the planner and writers give the episode. Set by the server for memo
+    # pods; private like a persona's notes (see main._public_request).
+    direction: str = Field(default="", max_length=4_000)
+    # From the creator's saved show intro, if the pod uses it (set by the server):
+    # the hosts welcome listeners to the show by name and work in its intro line.
+    show_name: str = Field(default="", max_length=60)
+    intro_line: str = Field(default="", max_length=200)
 
     @field_validator("language")
     @classmethod
@@ -56,6 +66,58 @@ class NewShow(BaseModel):
     template: str | None = None
     album_ids: list[str] = Field(default_factory=list, max_length=20)
     tags: list[str] = Field(default_factory=list, max_length=20)
+    use_show_intro: bool = True   # open with your saved show intro, if you have one
+
+
+# Theme music for a pod: "auto" (your show intro's theme, else one from the library
+# that suits the pod), "none", a library pack id, or "mine:<id>" (music made for
+# you before). A memo pod can also ask for "generate": original music, for credits.
+MUSIC_CHARS = 80
+
+
+class ShowIntroIn(BaseModel):
+    """A creator's own show intro: every pod they make opens with it (unless they
+    switch it off for one)."""
+    show_name: str = Field(min_length=1, max_length=60)
+    intro_line: str = Field(default="", max_length=200)
+    music: str = Field(default="auto", max_length=MUSIC_CHARS)
+    enabled: bool = True
+
+
+class MemoOptions(BaseModel):
+    """What comes with a voice memo upload (the multipart `options` field, as JSON)."""
+    minutes: int = Field(default=15, ge=2, le=15)
+    review: bool = False                    # stop after the outline for the owner to check
+    music: str = Field(default="auto", max_length=MUSIC_CHARS)
+    # Any of these overrides the format the memo suggests.
+    template: str | None = None
+    vibe: str | None = None
+    style: str = Field(default="", max_length=2_000)
+    style_label: str | None = Field(default=None, max_length=40)
+    accent: str | None = Field(default=None, pattern=r"^#[0-9A-Fa-f]{6}$")
+    hosts: list[HostRequest] = Field(default_factory=list, max_length=2)
+    language: str = Field(default="", max_length=60)       # "" = the memo's own
+    credit_as: str = Field(default="", max_length=40)      # "" = your first name
+    use_show_intro: bool = True
+    visibility: Visibility = "private"
+    shared_with: list[str] = Field(default_factory=list, max_length=200)
+    album_ids: list[str] = Field(default_factory=list, max_length=20)
+    tags: list[str] = Field(default_factory=list, max_length=20)
+    client_duration_s: float | None = Field(default=None, ge=0, le=7_200)
+
+
+class BeatEdit(BaseModel):
+    title: str = Field(min_length=1, max_length=80)
+    notes: str = Field(default="", max_length=600)
+
+
+class ProduceMemo(BaseModel):
+    """The owner's changes to a memo pod's outline before it's made. Omitted = unchanged."""
+    title: str | None = Field(default=None, max_length=70)
+    beats: list[BeatEdit] | None = Field(default=None, min_length=3, max_length=10)
+    excluded_findings: list[int] | None = Field(default=None, max_length=20)
+    minutes: int | None = Field(default=None, ge=2, le=15)
+    music: str | None = Field(default=None, max_length=MUSIC_CHARS)
 
 
 class ShareSettings(BaseModel):
@@ -138,6 +200,56 @@ class SegmentDraft(BaseModel):
     used_context_ids: list[int] = []
     declined_comment_ids: list[int] = []
     beat_complete: bool = False
+
+
+# ---- What a voice memo becomes (see memo.py) ----------------------------------
+
+class MemoBrief(BaseModel):
+    """What the model heard in a voice memo: the makings of an episode."""
+    usable: bool                     # False: no speech, or nothing a show could be built on
+    reason: str = ""                 # why not, for the creator
+    language: str = "English"
+    transcript: str = ""             # tidied but faithful; for the owner only
+    working_title: str = ""
+    thesis: str = ""                 # the core idea or question
+    key_ideas: list[str] = []
+    questions: list[str] = []        # what the creator wondered about
+    claims_to_check: list[str] = []
+    research_queries: list[str] = []
+    tone: str = ""
+    music_mood: str = "warm"         # a catalog.MUSIC_MOODS entry
+    format: str = "idea-breakdown"   # a catalog.TEMPLATES id
+
+
+class Finding(BaseModel):
+    id: int = 0                      # [R1] in the episode's source
+    claim: str
+    outlet: str                      # who says so: a publication, institution or site
+    date: str = ""
+    answers: list[int] = []          # the memo's questions it speaks to (1-based)
+    confidence: Literal["solid", "mixed", "thin"] = "solid"
+
+
+class WebSource(BaseModel):
+    title: str
+    url: str
+    domain: str
+
+
+class ResearchDossier(BaseModel):
+    """What live research turned up. Searches, cited pages and suggestions are
+    read from the grounded response itself, not from what the model says."""
+    ok: bool = False
+    summary: str = ""
+    findings: list[Finding] = []
+    disagreements: list[str] = []
+    unanswered: list[str] = []
+    queries: list[str] = []
+    sources: list[WebSource] = []
+    # Google's Search Suggestions (HTML). The grounding terms want them shown with
+    # the results to the user who asked, so only the pod's owner sees them.
+    search_suggestions: list[str] = []
+    searched_at: float = 0.0
 
 
 # ---- Material handed to the hosts mid-show ----------------------------------

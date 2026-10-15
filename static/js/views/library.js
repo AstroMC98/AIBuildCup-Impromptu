@@ -92,6 +92,8 @@ export async function openAccountSheet() {
         ${session.incoming ? html`<span class="pill pink">${session.incoming} new</span>` : ""}</a>
       <a class="menu-item" href="/personas" data-link>${icon("user", 20)}Personas</a>
       <a class="menu-item" href="/styles" data-link>${icon("restyle", 20)}Styles</a>
+      <a class="menu-item" href="/intro" data-link>${icon("sparkle", 20)}Show intro</a>
+      <a class="menu-item" href="/memo" data-link>${icon("mic", 20)}Pod from a voice memo</a>
       ${me.admin ? html`<a class="menu-item" href="/admin" data-link>${icon("shield", 20)}Admin</a>` : ""}
       <button class="menu-item" type="button" data-signout>${icon("signOut", 20)}Sign out</button>
     </nav>`);
@@ -111,8 +113,9 @@ export async function openAccountSheet() {
 function ledgerLabel(e) {
   const when = fmtAgo(e.at);
   switch (e.reason) {
-    case "pod": return `Pod went live · ${when}`;
-    case "refund": return `Unused minutes back · ${when}`;
+    case "pod": return `Pod made · ${when}`;
+    case "music": return `Original music · ${when}`;
+    case "refund": return `Refund: ${e.note || "Unused minutes"} · ${when}`;
     case "signup": return `Welcome credits · ${when}`;
     case "grant": return `${e.note || "Credits added"} · ${when}`;
     default: return `${e.note || "Adjustment"} · ${when}`;
@@ -240,9 +243,12 @@ export function row(s, active, scope) {
   const live = s.status === "live";
   const by = scope === "following" && s.via ? `${s.via} · `
     : scope !== "mine" && s.owner_name ? `by ${s.owner_name} · ` : "";
+  const memo = s.kind === "memo";
   const meta = live ? `${by}Live now`
     : s.status === "draft" ? `Draft, ${s.style_label}`
-      : s.status === "failed" ? "Didn't finish"
+      : s.status === "rendering" ? `From a voice memo · making it, ${Math.round((s.render?.progress || 0) * 100)}%`
+      : s.status === "review" ? "From a voice memo · ready for you to review"
+      : s.status === "failed" ? (memo ? "From a voice memo · didn't get made" : "Didn't finish")
         : s.status === "interrupted" ? `${by}Interrupted${s.duration_s ? `, ${fmtTime(s.duration_s)}` : ""}`
           : `${by}${s.style_label}${s.duration_s ? `, ${fmtTime(s.duration_s)}` : ""} · ${fmtAgo(s.created_at)}`;
   return html`
@@ -250,9 +256,9 @@ export function row(s, active, scope) {
       <a class="lib-row ${active ? "active" : ""}" href="/show/${s.id}" data-link>
         <span class="lib-cover" style="--tile:${s.accent || "#30284F"}" aria-hidden="true">${initial(s.title)}</span>
         <span class="lib-text"><span class="lib-title">${s.title || "Untitled pod"}</span>
-          <span class="lib-meta ${live ? "live" : ""}">${meta}</span></span>
+          <span class="lib-meta ${live || s.status === "review" ? "live" : ""}">${meta}</span></span>
         ${s.new ? html`<span class="pill pink new-pill">New</span>` : ""}
-        ${scope === "mine" && s.status !== "draft" ? html`
+        ${scope === "mine" && !["draft", "rendering", "review"].includes(s.status) ? html`
           <span class="vis-ic" title="${VISIBILITY_LABEL[s.visibility]}" aria-label="${VISIBILITY_LABEL[s.visibility]}">${icon(VISIBILITY_ICON[s.visibility] || "lock", 16)}</span>` : ""}
       </a>
     </li>`;
@@ -304,7 +310,11 @@ export async function libraryView(root, { url }) {
               <a class="btn white big" href="${loginPath("/new")}" data-link>Get started</a>
               <a class="btn quiet big" href="/discover" data-link>Listen to public pods</a>
             </div>`
-            : me.credits > 0 ? html`<a class="btn white big go" href="/new" data-link><span class="rec-dot"></span>Start a new pod</a>`
+            : me.credits > 0 ? html`
+              <div class="row gap wrap">
+                <a class="btn white big go" href="/new" data-link><span class="rec-dot"></span>Start a new pod</a>
+                <a class="btn quiet big" href="/memo" data-link>${icon("mic", 20)}From a voice memo</a>
+              </div>`
               : html`<div class="free-note">${icon("coin", 18)}<span><strong>Free account.</strong> Listen, call in, connect, and build personas and styles for free.
                   Creating pods uses credits (${session.options.credits_per_minute} per minute); ask an admin for demo credits.</span></div>`}
           ${me && !session.options.api_key_set ? html`<p class="error">GEMINI_API_KEY isn't set on the server yet, so pods can't start.</p>` : ""}

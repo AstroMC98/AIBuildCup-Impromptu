@@ -20,6 +20,11 @@ It checks:
   - the pod signs off, is saved, replays with Range requests, unused credits are refunded
   - publishing makes it public for anon; visitors on a public live pod can't call in
   - drafts, deleting, and a pod with nobody listening ending by itself
+  - every live pod opens on a theme from the music library, before the first segment
+  - voice memos: a saved show intro; bad, oversized and unaffordable uploads refused; a
+    one-shot memo hidden until it's made, then researched, scored and timed to the sample;
+    a reviewed memo made with the owner's edits, Lyria failing and its credits coming
+    back; deleting a memo pod mid-way refunds it
 """
 import asyncio
 import json
@@ -34,14 +39,46 @@ import time
 from pathlib import Path
 
 import httpx
+import numpy as np
 import websockets
 from websockets.exceptions import ConnectionClosed
 
-FAKE_PORT, APP_PORT = 8765, 8766
+from app.audio import Mp3Writer
+from app.mixer import INTRO_LEAD_S, LIVE_INTRO_S, OUTRO_PLAYOUT_S, STING_S
+
+# Override to run alongside another checkout's smoke test (each git worktree, say).
+FAKE_PORT = int(os.environ.get("SMOKE_FAKE_PORT", "8765"))
+APP_PORT = int(os.environ.get("SMOKE_APP_PORT", str(FAKE_PORT + 1)))
 BASE = f"http://127.0.0.1:{APP_PORT}"
 WS = f"ws://127.0.0.1:{APP_PORT}"
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 200
+WEBM = b"\x1a\x45\xdf\xa3\x9f\x42\x86\x81\x01\x42\x82\x84webm" + b"\x00" * 2000   # what Chrome records
 PERSONA = "A precise neuroscientist who loves mechanisms and practical protocols."
+RATE = 24_000
+
+
+def music_library(root: Path) -> Path:
+    """A one-pack music library: a 30 s chord, enough for every pod's theme."""
+    t = np.arange(30 * RATE) / RATE
+    chord = sum(np.sin(2 * np.pi * f * t) for f in (220, 277, 330)) / 3
+    writer = Mp3Writer(RATE, 64)
+    writer.feed(np.rint(chord * 0.3 * 32767).astype("<i2").tobytes())
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "theme.mp3").write_bytes(writer.finish())
+    (root / "manifest.json").write_text(json.dumps({"version": 1, "packs": [
+        {"id": "warm-test", "label": "Warm test", "mood": "warm", "file": "theme.mp3"}]}))
+    return root
+
+
+async def wait_for_status(client: httpx.AsyncClient, show_id: str, statuses: set[str], timeout: float = 120) -> dict:
+    deadline = time.time() + timeout
+    data: dict = {}
+    while time.time() < deadline:
+        data = (await client.get(f"/api/shows/{show_id}")).json()
+        if data["show"]["status"] in statuses:
+            return data
+        await asyncio.sleep(0.5)
+    raise AssertionError(f"memo pod {show_id} never got to {statuses}: {data.get('show', {}).get('render')}")
 
 
 def _start(cmd: list[str], env: dict, log_path: Path) -> subprocess.Popen:
@@ -336,7 +373,8 @@ async def scenario(checks: dict) -> None:
         checks["producer frames contiguous"] = contiguous(prod.frames) and prod.frames[0][1] == 0
         snap = late.of("snapshot")[0]
         checks["late join starts at a segment start"] = late.frames[0][1] == snap["backfill_from"] and (
-            snap["backfill_from"] in {s["start"] for s in snap["segments"]}) and snap["backfill_from"] <= snap["clock"]["live"]
+            snap["backfill_from"] in {0} | {s["start"] for s in snap["segments"]}   # 0: still in the intro theme
+        ) and snap["backfill_from"] <= snap["clock"]["live"]
         checks["late frames contiguous"] = contiguous(late.frames)
         checks["the planner's cold open is voiced first"] = segs[0]["lines"][0]["text"].startswith("COLD OPEN")
         checks["ended then saved"] =[e["type"] for e in prod.events if e["type"] in {"ended", "saved"}] == ["ended", "saved"]
@@ -345,6 +383,9 @@ async def scenario(checks: dict) -> None:
         data = (await bob_c.get(f"/api/shows/{show_id}")).json()
         checks["replay data for the connection"] = (not data["live"] and data["show"]["status"] == "finished"
                                                     and len(data["segments"]) == len(segs) and data["show"]["has_audio"])
+        checks["a live pod opens on its theme, then the hosts"] = (
+            prod.frames[0][0] == 0 and data["segments"][0]["start"] == int(LIVE_INTRO_S * RATE)
+            and data["show"]["music"]["source"] == "library")
         accents = {s["rev"]: s["accent"] for s in data["show"]["styles"]}
         checks["replay keeps each style's accent"] = accents.get(0) == "#B8336A" and accents.get(1) == "#B5521C"
         checks["anon can't replay a connections pod"] = (await anon.get(f"/api/shows/{show_id}")).status_code == 401
@@ -421,9 +462,106 @@ async def scenario(checks: dict) -> None:
             await asyncio.sleep(1)
         checks["idle pod signs off by itself"] = idle_doc.get("show", {}).get("ended_reason") == "idle"
         checks["idle pod refunds unused minutes"] = await credits_for(idle["id"], "refund") >= 1
+
+        await memo_scenario(checks, alice_c, bob_c, anon, credits_for, opts)
     finally:
         for c in clients:
             await c.aclose()
+
+
+async def memo_scenario(checks: dict, alice_c, bob_c, anon, credits_for, opts: dict) -> None:
+    def memo(audio: bytes = WEBM, **options) -> dict:
+        return {"files": {"audio": ("walk.webm", audio, "audio/webm")},
+                "data": {"options": json.dumps({"minutes": 2, **options})}}
+
+    music_credits = opts["music"]["credits"]
+    checks["options list the music library and memo limits"] = (
+        [p["id"] for p in opts["music"]["library"]] == ["warm-test"] and opts["music"]["generate"]
+        and "webm" in opts["memo"]["audio_types"])
+
+    # your show intro: every pod you make opens with it
+    r = await alice_c.put("/api/me/intro", json={"show_name": "Walk & Talk", "intro_line": "ideas from the sidewalk"})
+    checks["show intro saved"] = r.status_code == 200 and (
+        await alice_c.get("/api/me/intro")).json()["intro"]["show_name"] == "Walk & Talk"
+    checks["show intro: unknown music refused"] = (
+        await alice_c.put("/api/me/intro", json={"show_name": "x", "music": "nope"})).status_code == 422
+
+    # uploads that can't become a pod
+    checks["memo: not a recording -> 422"] = (await alice_c.post("/api/memos", **memo(b"just some text"))).status_code == 422
+    checks["memo: too big -> 413"] = (await alice_c.post("/api/memos", **memo(WEBM + b"\x00" * (1024 * 1024)))).status_code == 413
+    checks["memo: free account -> 402"] = (await bob_c.post("/api/memos", **memo())).status_code == 402
+
+    # a one-shot public memo: charged on upload, hidden until it's made. (Credits are
+    # checked in the ledger: /api/me caches balances for a few seconds.)
+    r = await alice_c.post("/api/memos", **memo(visibility="public"))
+    memo_id = r.json().get("id", "")
+    checks["memo: charged when it's sent"] = r.status_code == 200 and await credits_for(memo_id, "pod") == -2
+    public = [s["id"] for s in (await anon.get("/api/shows", params={"scope": "public"})).json()["shows"]]
+    checks["memo pod hidden while it's made"] = (
+        memo_id not in public and (await anon.get(f"/api/shows/{memo_id}")).status_code == 401
+        and (await bob_c.get(f"/api/shows/{memo_id}")).status_code == 404)
+    checks["one memo pod at a time -> 409"] = (await alice_c.post("/api/memos", **memo())).status_code == 409
+    data = await wait_for_status(alice_c, memo_id, {"finished", "failed"})
+    show, segs = data["show"], data["segments"]
+    stings = sum(r_[2] == "sting" for r_ in show["music"]["regions"])
+    inserted = int(INTRO_LEAD_S * RATE) + stings * int(STING_S * RATE) + int(OUTRO_PLAYOUT_S * RATE)
+    checks["memo pod made: intro, stings and outro, every start shifted"] = (
+        show["status"] == "finished" and show["kind"] == "memo" and show["render"]["stage"] == "done"
+        and segs[0]["start"] == int(INTRO_LEAD_S * RATE) and show["samples"] == sum(s["samples"] for s in segs) + inserted
+        # back to back, or with a sting between chapters
+        and all(b["start"] - a["start"] - a["samples"] in {0, int(STING_S * RATE)} for a, b in zip(segs, segs[1:])))
+    seen = httpx.get(f"http://127.0.0.1:{FAKE_PORT}/_seen").json()
+    memo_writers = [s for s in seen["writer_systems"] if "EPISODE DIRECTION" in s]
+    checks["memo pod: written from the memo and the live research, as a recorded show"] = bool(memo_writers) and all(
+        "[R1]" in s and "Acoustical Society of America" in s and "pre-recorded" in s and "Listener comments" not in s
+        for s in memo_writers)
+    checks["memo pod opens with your show intro"] = all('an episode of "Walk & Talk"' in s for s in memo_writers)
+    checks["memo pod: show notes credit the memo and list the sources"] = (
+        show["show_notes"]["credit"] == "Made from a voice memo by Alice." and
+        [x["domain"] for x in show["show_notes"]["sources"]] == ["who.int", "acousticalsociety.org"])
+    anon_view = await anon.get(f"/api/shows/{memo_id}")
+    checks["memo pod: out for everyone, the memo itself owner-only"] = (
+        anon_view.status_code == 200 and "memo" not in anon_view.json() and data["memo"]["brief"]["transcript"]
+        and (await alice_c.get(f"/api/memos/{memo_id}/audio")).content == WEBM
+        and (await alice_c.get(f"/api/memos/{memo_id}/audio", headers={"Range": "bytes=0-9"})).status_code == 206
+        and (await bob_c.get(f"/api/memos/{memo_id}/audio")).status_code in {403, 404})
+    ranged = await anon.get(f"/api/shows/{memo_id}/audio", headers={"Range": "bytes=0-99"})
+    charged = -await credits_for(memo_id, "pod")
+    checks["memo pod: mp3 with Range; unused minutes refunded"] = ranged.status_code == 206 and await credits_for(
+        memo_id, "refund") == max(0, charged - math.ceil(show["duration_s"] / 60))
+
+    # held for review, made with the owner's edits; original music fails and its credits come back
+    httpx.post(f"http://127.0.0.1:{FAKE_PORT}/_config", json={"lyria_fail": True})
+    r = await alice_c.post("/api/memos", **memo(review=True, music="generate", use_show_intro=False))
+    rid = r.json().get("id", "")
+    checks["reviewed memo: not charged until Produce"] = r.status_code == 200 and await credits_for(rid, "pod") == 0
+    data = await wait_for_status(alice_c, rid, {"review", "failed"})
+    owner = data.get("memo") or {}
+    checks["review: the owner sees the transcript, research and outline"] = (
+        data["show"]["status"] == "review" and owner["brief"]["transcript"] and len(owner["research"]["findings"]) == 3
+        and owner["research"]["search_suggestions"] and len(owner["plan"]["beats"]) >= 3)
+    checks["review: nobody else sees it"] = (await bob_c.get(f"/api/shows/{rid}")).status_code == 404
+    beats = [{"title": b["title"], "notes": b["notes"]} for b in owner["plan"]["beats"]]
+    beats[1]["title"] = "EDITED BEAT"
+    p = await alice_c.post(f"/api/memos/{rid}/produce", json={"beats": beats, "excluded_findings": [3]})
+    checks["produce charges the minutes and the music"] = p.status_code == 200 and (
+        await credits_for(rid, "pod"), await credits_for(rid, "music")) == (-2, -music_credits)
+    data = await wait_for_status(alice_c, rid, {"finished", "failed"})
+    show = data["show"]
+    spent = -sum([await credits_for(rid, k) for k in ("pod", "music", "refund")])
+    checks["the outline made is the edited one"] = (
+        show["status"] == "finished" and show["beats"][1]["title"] == "EDITED BEAT"
+        and data["memo"]["excluded_findings"] == [3])
+    checks["Lyria failed: library music, music credits back"] = (
+        show["music"]["source"] == "library" and spent == min(2 + music_credits, math.ceil(show["duration_s"] / 60)))
+    httpx.post(f"http://127.0.0.1:{FAKE_PORT}/_config", json={"lyria_fail": False})
+
+    # deleting a memo pod while it's being made gives everything back
+    r = await alice_c.post("/api/memos", **memo())
+    did = r.json().get("id", "")
+    await asyncio.sleep(0.5)
+    deleted = await alice_c.delete(f"/api/shows/{did}")
+    checks["deleting a memo pod mid-way refunds it"] = deleted.status_code == 200 and await credits_for(did, "refund") == 2
 
 
 def main() -> int:
@@ -433,6 +571,7 @@ def main() -> int:
         "STORAGE_BACKEND": "local", "DATA_DIR": data_dir, "AUTH_MODE": "dev", "SESSION_SECRET": "smoke",
         "ADMIN_EMAILS": "alice@example.com", "SIGNUP_CREDITS": "0",
         "CLOCK_SPEED": "20", "LOW_WATER_SECONDS": "3", "LINES_PER_SEGMENT": "4", "IDLE_END_SECONDS": "5",
+        "MUSIC_DIR": str(music_library(Path(data_dir, "music"))), "MEMO_MAX_MB": "1",
     }
     py = sys.executable
     app_log = Path(data_dir, "app.log")

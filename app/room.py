@@ -67,6 +67,19 @@ def style_revisions(doc: dict) -> list[dict]:
     return [first, *later]
 
 
+def beats_with_times(beats: list[dict], chapters: dict[int, int], end: int | None) -> list[dict]:
+    """The plan's beats with where each one starts and ends on the show timeline
+    (samples). The last chapter ends at `end`, which is None while it's still on."""
+    beats = [dict(b) for b in beats]
+    starts = sorted(chapters.items())
+    for n, (i, start) in enumerate(starts):
+        if i < len(beats):
+            beats[i]["start"] = start
+            nxt = starts[n + 1][1] if n + 1 < len(starts) else None
+            beats[i]["end"] = nxt if nxt is not None else end
+    return beats
+
+
 class Conn:
     """One listener's socket."""
 
@@ -161,8 +174,11 @@ class ShowRoom:
         settings: Settings,
         store: Store,
         on_closed: Callable[[str], None],
+        intro: bytes = b"",
     ):
+        """intro: the theme to open on (s16le), played while the episode is planned."""
         self.id: str = doc["id"]
+        self._intro = intro
         self.doc = doc
         self.settings = settings
         self.store = store
@@ -299,6 +315,10 @@ class ShowRoom:
             if seg["start"] <= target < seg["start"] + max(length, 1):
                 start = seg["start"]
                 break
+        else:
+            first = min((s["start"] for s in self.segments.values()), default=None)
+            if first is None or target < first:
+                start = 0   # still in the intro theme: from its beginning
         return max(start, self.pcm.start or 0)
 
     def _listening_state(self) -> str:
@@ -433,6 +453,8 @@ class ShowRoom:
             self._runner_task.cancel()
 
     async def _run(self) -> None:
+        if self._intro:
+            self.push_audio(0, self._intro)   # seq 0: audio before the first segment
         self._runner_task = asyncio.create_task(self.runner.run())
         try:
             reason = await self._runner_task
@@ -612,14 +634,8 @@ class ShowRoom:
         }
 
     def _beats_with_times(self) -> list[dict]:
-        beats = [dict(b) for b in (self.plan or {}).get("beats", [])]
-        starts = sorted(self.chapters.items())
-        for n, (i, start) in enumerate(starts):
-            if i < len(beats):
-                beats[i]["start"] = start
-                nxt = starts[n + 1][1] if n + 1 < len(starts) else None
-                beats[i]["end"] = nxt if nxt is not None else (self.clock.audio_end if self.ended_reason else None)
-        return beats
+        end = self.clock.audio_end if self.ended_reason else None
+        return beats_with_times((self.plan or {}).get("beats", []), self.chapters, end)
 
     def public_show(self) -> dict:
         d = self.doc

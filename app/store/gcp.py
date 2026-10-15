@@ -14,6 +14,8 @@ Cloud Storage (GCS_BUCKET, uniform access, public access prevented):
     shows/{id}/source.txt
     shows/{id}/context/{id}.txt
     shows/{id}/episode.mp3
+    shows/{id}/files/{name}          a voice memo's recording
+    users/{uid}/files/{name}         music made for that user
 
 Only single-field queries are used (order by created_at, filter by status), so
 no composite indexes are needed. Finished episodes are served with a V4 signed
@@ -35,7 +37,7 @@ from google.cloud.firestore_v1.base_query import FieldFilter
 from starlette.responses import RedirectResponse, Response
 
 from ..config import Settings
-from . import InsufficientCredits
+from . import InsufficientCredits, check_file_name
 
 SIGNED_URL_TTL = dt.timedelta(hours=1)
 SIGNED_URL_REUSE_SECONDS = 50 * 60
@@ -96,6 +98,10 @@ class GcpStore:
         docs.sort(key=lambda d: d.get("created_at", 0), reverse=True)
         return docs[:limit]
 
+    async def shows_with_status(self, status: str, limit: int = 500) -> list[dict]:
+        query = self.db.collection("shows").where(filter=FieldFilter("status", "==", status)).limit(limit)
+        return [snap.to_dict() async for snap in query.stream()]
+
     async def delete_show(self, show_id: str) -> None:
         ref = self._show(show_id)
         for sub in ("segments", "comments", "context", "sessions"):
@@ -141,6 +147,31 @@ class GcpStore:
     async def list_sessions(self, show_id: str) -> list[dict]:
         docs = [snap.to_dict() async for snap in self._show(show_id).collection("sessions").stream()]
         return sorted(docs, key=lambda d: d.get("joined_at", 0))
+
+    # ---- show and user files ------------------------------------------------------------
+
+    async def _put_file(self, path: str, data: bytes, mime: str) -> dict:
+        blob = self.bucket.blob(path)
+        await asyncio.to_thread(blob.upload_from_string, data, content_type=mime)
+        return {"path": path.rsplit("/", 1)[-1], "bytes": len(data), "mime": mime}
+
+    async def _get_file(self, path: str) -> bytes | None:
+        try:
+            return await asyncio.to_thread(self.bucket.blob(path).download_as_bytes)
+        except NotFound:
+            return None
+
+    async def put_show_file(self, show_id: str, name: str, data: bytes, mime: str) -> dict:
+        return await self._put_file(f"shows/{show_id}/files/{check_file_name(name)}", data, mime)
+
+    async def get_show_file(self, show_id: str, name: str) -> bytes | None:
+        return await self._get_file(f"shows/{show_id}/files/{check_file_name(name)}")
+
+    async def put_user_file(self, uid: str, name: str, data: bytes, mime: str) -> dict:
+        return await self._put_file(f"users/{uid}/files/{check_file_name(name)}", data, mime)
+
+    async def get_user_file(self, uid: str, name: str) -> bytes | None:
+        return await self._get_file(f"users/{uid}/files/{check_file_name(name)}")
 
     # ---- albums and subscriptions ---------------------------------------------------
 
@@ -282,6 +313,10 @@ class GcpStore:
 
     async def ledger(self, uid: str, limit: int = 50) -> list[dict]:
         query = self._user(uid).collection("ledger").order_by("at", direction=firestore.Query.DESCENDING).limit(limit)
+        return [snap.to_dict() async for snap in query.stream()]
+
+    async def ledger_for_show(self, uid: str, show_id: str) -> list[dict]:
+        query = self._user(uid).collection("ledger").where(filter=FieldFilter("show_id", "==", show_id))
         return [snap.to_dict() async for snap in query.stream()]
 
     # ---- personas and styles ---------------------------------------------------------------

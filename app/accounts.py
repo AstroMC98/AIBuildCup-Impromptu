@@ -18,6 +18,19 @@ from .store import Store
 
 USER_CACHE_SECONDS = 15.0
 
+# Pods only their owner can see, whatever their visibility: drafts, and voice-memo
+# pods still being made (rendering) or waiting for the owner to approve the outline.
+UNPUBLISHED = {"draft", "rendering", "review"}
+
+
+def published(doc: dict) -> bool:
+    """Whether a pod is out, so others may see it. A memo pod that failed before
+    any audio was saved never came out; a live pod that failed did (people heard it)."""
+    status = doc.get("status")
+    if status in UNPUBLISHED:
+        return False
+    return not (status == "failed" and doc.get("kind") == "memo" and not doc.get("audio"))
+
 
 @dataclass
 class User:
@@ -98,13 +111,13 @@ class Accounts:
         return bool(edge and edge.get("status") == "connected")
 
     async def can_view(self, user: User | None, doc: dict) -> bool:
-        if doc.get("visibility") == "public" and doc.get("status") != "draft":
+        if doc.get("visibility") == "public" and published(doc):
             return True
         if user is None:
             return False
         if user.uid == doc.get("owner_uid") or user.admin:
             return True
-        if doc.get("status") == "draft":
+        if not published(doc):
             return False
         if user.uid in doc.get("shared_with", []):
             return True

@@ -2,9 +2,9 @@
 
     shows/{id}/show.json, segments/00001.json, comments/1.json, context/1.json,
               context/1.txt, source.txt, episode.mp3
-              sessions/{id}.json
+              sessions/{id}.json, files/{name}
     users/{uid}/user.json, ledger/{id}.json, personas/{id}.json, styles/{id}.json,
-              connections/{other_uid}.json
+              connections/{other_uid}.json, files/{name}
     albums/{id}.json    subscriptions/{id}.json
 
 Every write goes to a temp file first and is then swapped in, so a crash never
@@ -25,7 +25,7 @@ from pathlib import Path
 
 from starlette.responses import FileResponse, Response
 
-from . import InsufficientCredits
+from . import InsufficientCredits, check_file_name
 
 _SAFE_ID = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 
@@ -47,6 +47,13 @@ def _read_json(path: Path) -> dict | None:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError):
+        return None
+
+
+def _read_bytes(path: Path) -> bytes | None:
+    try:
+        return path.read_bytes()
+    except FileNotFoundError:
         return None
 
 
@@ -121,6 +128,9 @@ class LocalStore:
             docs.sort(key=lambda d: d.get("created_at", 0), reverse=True)
             return docs[:limit]
         return await asyncio.to_thread(run)
+
+    async def shows_with_status(self, status: str, limit: int = 500) -> list[dict]:
+        return [d for d in await self.list_shows(limit=100_000) if d.get("status") == status][:limit]
 
     async def delete_show(self, show_id: str) -> None:
         await asyncio.to_thread(shutil.rmtree, self._dir(show_id), True)
@@ -212,6 +222,22 @@ class LocalStore:
             docs = [d for p in (self._dir(show_id) / "sessions").glob("*.json") if (d := _read_json(p))]
             return sorted(docs, key=lambda d: d.get("joined_at", 0))
         return await asyncio.to_thread(run)
+
+    # ---- files ---------------------------------------------------------------------------------
+
+    async def put_show_file(self, show_id: str, name: str, data: bytes, mime: str) -> dict:
+        await asyncio.to_thread(_atomic_write, self._dir(show_id) / "files" / check_file_name(name), data)
+        return {"path": name, "bytes": len(data), "mime": mime}
+
+    async def get_show_file(self, show_id: str, name: str) -> bytes | None:
+        return await asyncio.to_thread(_read_bytes, self._dir(show_id) / "files" / check_file_name(name))
+
+    async def put_user_file(self, uid: str, name: str, data: bytes, mime: str) -> dict:
+        await asyncio.to_thread(_atomic_write, self._udir(uid) / "files" / check_file_name(name), data)
+        return {"path": name, "bytes": len(data), "mime": mime}
+
+    async def get_user_file(self, uid: str, name: str) -> bytes | None:
+        return await asyncio.to_thread(_read_bytes, self._udir(uid) / "files" / check_file_name(name))
 
     # ---- albums ---------------------------------------------------------------------------------
 
@@ -326,6 +352,9 @@ class LocalStore:
             entries.sort(key=lambda e: e.get("at", 0), reverse=True)
             return entries[:limit]
         return await asyncio.to_thread(run)
+
+    async def ledger_for_show(self, uid: str, show_id: str) -> list[dict]:
+        return [e for e in await self.ledger(uid, limit=100_000) if e.get("show_id") == show_id]
 
     # ---- personas and styles ------------------------------------------------------------------
 

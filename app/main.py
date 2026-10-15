@@ -3,6 +3,7 @@
 Pages (all serve the single-page UI)
 GET  /  /discover  /following  /new  /login  /personas  /styles  /connections  /admin
 GET  /albums  /stats  /show/{id}  /show/{id}/stats  /album/{id}  /creator/{uid}  /invite/{uid}
+GET  /memo  /intro                         make a pod from a voice memo; your show intro
 
 API ("you" = the signed-in user; pods are visible per accounts.can_view)
 GET    /healthz
@@ -35,6 +36,13 @@ POST   /api/shows/{id}/start             owner: take a draft live (charges credi
 DELETE /api/shows/{id}                   owner or admin
 POST   /api/shows/{id}/context           signed-in listeners: text|file|link|photo (+ optional call-in)
 GET    /api/shows/{id}/audio             the MP3 (so far, while live)
+POST   /api/memos  (multipart: audio, options=MemoOptions JSON)   a pod from a voice memo
+                                         (needs credits; charged now, or at produce if reviewed)
+POST   /api/memos/{id}/produce {title?, beats?, excluded_findings?, minutes?, music?}
+                                         owner: make a reviewed memo pod, or try a failed one again
+GET    /api/memos/{id}/audio             owner: the memo as it was recorded
+GET    /api/me/music                     music made for you (to reuse as "mine:<id>")
+GET|PUT|DELETE /api/me/intro {show_name, intro_line, music, enabled}   your saved show intro
 GET    /api/admin/users?q=               admin
 POST   /api/admin/users/{uid}/credits {amount, note}   admin
 WS     /ws/show/{id}                     one connection per listener of a live pod
@@ -58,6 +66,10 @@ WebSocket protocol
     JSON: snapshot | status | plan | segment | segment_end | chapter | comment |
           context | restyle | react | tick | ended | saved | error
     binary: <seq:u32 LE><start_sample:u32 LE> + raw 24 kHz mono s16le PCM
+            (seq 0: the intro theme, before the first segment)
+
+Every pod opens with an intro: the theme (music.theme_for: the creator's saved show
+intro's, else a library pack that suits the pod) and the hosts' spoken welcome.
 """
 from __future__ import annotations
 
@@ -80,19 +92,27 @@ from starlette.requests import HTTPConnection
 from fastapi.staticfiles import StaticFiles
 
 from . import ingest as ingest_mod
-from .accounts import Accounts, User
+from . import memo as memo_mod
+from .accounts import Accounts, User, published
 from .auth import COOKIE, SESSION_MAX_AGE, Auth, AuthError, client_ip, same_origin
 from . import stats as stats_mod
 from .catalog import (
-    GENDERS, HOST_COLORS, PERSONA_PRESETS, STYLE_PRESETS, TEMPLATES, TEMPLATES_BY_ID, VOICE_GENDER, VOICE_INFO,
-    VOICES, accent_for, style_label,
+    GENDERS, HOST_COLORS, MUSIC_MOODS, PERSONA_PRESETS, STYLE_PRESETS, TEMPLATES, TEMPLATES_BY_ID, VOICE_GENDER,
+    VOICE_INFO, VOICES, accent_for, music_mood_for, style_label,
 )
 from .config import settings
-from .limits import COMMENT_CHARS, GUEST_CONTEXT, NAME_CHARS, PRODUCER_CONTEXT, WS_MESSAGE_BYTES, Limiter
+from .limits import (
+    COMMENT_CHARS, GUEST_CONTEXT, MEMO_UPLOADS, NAME_CHARS, PRODUCER_CONTEXT, WS_MESSAGE_BYTES, Limiter,
+)
 from .llm import Gemini
-from .models import AlbumIn, ContextItem, NewShow, Organize, PersonaIn, ShareSettings, ShowRequest, StyleIn
+from .mixer import intro_sting
+from .models import (
+    AlbumIn, ContextItem, MemoOptions, NewShow, Organize, PersonaIn, ProduceMemo, ShareSettings, ShowIntroIn,
+    ShowRequest, StyleIn,
+)
+from .music import MINE, Library, theme_for
 from .room import Conn, Rooms, ShowRoom, style_revisions
-from .sources import IMAGE_EXTENSIONS, SUPPORTED, SourceError
+from .sources import AUDIO_EXTENSIONS, IMAGE_EXTENSIONS, SUPPORTED, SourceError, sniff_audio
 from .store import InsufficientCredits, make_store
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -111,6 +131,8 @@ store = make_store(settings)
 auth = Auth(settings)
 accounts = Accounts(store, settings.admins, settings.signup_credits)
 rooms = Rooms()
+renders = memo_mod.Renders(settings.max_renders)
+library = Library.load(settings.music_dir)
 _gemini: Gemini | None = None
 
 
@@ -133,8 +155,12 @@ async def lifespan(_: FastAPI):
     stale = await store.mark_interrupted(set())
     if stale:
         log.info("marked %d shows that were live before a restart as interrupted", stale)
+    swept = await memo_mod.sweep(store, accounts)
+    if swept:
+        log.info("marked %d memo pods that were being made before a restart as failed", swept)
     yield
     await rooms.shutdown(timeout=6.0)
+    await renders.shutdown(timeout=6.0)
 
 
 app = FastAPI(title="Gemini Podcasts", lifespan=lifespan)
@@ -178,7 +204,8 @@ def _cost(minutes: int) -> int:
 
 async def _show_doc(show_id: str) -> tuple[dict, ShowRoom | None]:
     room = rooms.get(show_id)
-    doc = room.doc if room else await store.get_show(show_id)
+    job = renders.get(show_id)
+    doc = room.doc if room else job.doc if job else await store.get_show(show_id)
     if not doc:
         raise HTTPException(status_code=404, detail="No such pod.")
     return doc, room
@@ -223,10 +250,11 @@ def _clean_tags(tags: list[str]) -> list[str]:
 
 def _public_request(req: dict) -> dict:
     """What a pod was asked for, minus anything private: a persona's own notes stay
-    with its owner and the writers."""
+    with its owner and the writers, and so does a memo pod's direction (it quotes
+    the memo)."""
     hosts = [{**{k: v for k, v in h.items() if k != "context"}, "has_notes": bool(h.get("context"))}
              for h in req.get("hosts", [])]
-    return {**req, "hosts": hosts}
+    return {**{k: v for k, v in req.items() if k != "direction"}, "hosts": hosts}
 
 
 def _token(value) -> str | None:
@@ -235,16 +263,17 @@ def _token(value) -> str | None:
 
 
 def _fresh(doc: dict) -> dict:
-    """A live pod's room has the up-to-date document."""
-    room = rooms.get(doc["id"])
-    return room.doc if room else doc
+    """A live pod's room (or a memo pod's render) has the up-to-date document."""
+    live = rooms.get(doc["id"]) or renders.get(doc["id"])
+    return live.doc if live else doc
 
 
 async def _visible(user: User | None, docs: list[dict], *, drafts: bool = False) -> list[dict]:
+    """The pods `user` may see. drafts=True keeps the owner's unpublished pods too."""
     out = []
     for d in docs:
         d = _fresh(d)
-        if (drafts or d.get("status") != "draft") and await accounts.can_view(user, d):
+        if (drafts or published(d)) and await accounts.can_view(user, d):
             out.append(d)
     return out
 
@@ -321,7 +350,32 @@ def _public_doc(doc: dict) -> dict:
         "visibility": doc.get("visibility", "private"),
         "shared_with": doc.get("shared_with", []),
         "template": doc.get("template"),
+        "kind": doc.get("kind", "pod"),
+        "render": _public_render(doc),
+        "show_notes": doc.get("show_notes"),
+        "music": {k: v for k, v in (doc.get("music") or {}).items() if k in {"source", "label", "regions"}},
+        "show_name": (doc.get("intro") or {}).get("show_name", ""),
     }
+
+
+def _memo_for_owner(doc: dict) -> dict:
+    """What only a memo pod's owner sees: what was heard in the memo, the research
+    (with Google's Search Suggestions, which the grounding terms keep to the person
+    who asked), the outline to review, and what they asked for."""
+    memo = doc.get("memo") or {}
+    return {
+        "credit": memo.get("credit"), "duration_s": memo.get("duration_s"), "audio_url": f"/api/memos/{doc['id']}/audio",
+        "brief": memo.get("brief"), "research": doc.get("research"), "excluded_findings": doc.get("research_excluded", []),
+        "plan": doc.get("plan_draft"), "options": doc.get("memo_options"),
+        "credits": {"pod": _cost(int(doc.get("minutes") or 15)), "music": settings.music_credits},
+        "timings": (doc.get("render") or {}).get("timings", {}),     # seconds per stage
+    }
+
+
+def _public_render(doc: dict) -> dict | None:
+    """How making a memo pod is going: stage, progress, what's happening, why it failed."""
+    render = doc.get("render")
+    return {k: render.get(k) for k in ("stage", "progress", "detail", "error", "review")} if render else None
 
 
 def _list_item(d: dict) -> dict:
@@ -343,14 +397,58 @@ def _list_item(d: dict) -> dict:
         "visibility": d.get("visibility", "private"),
         "tags": d.get("tags", []),
         "album_ids": d.get("album_ids", []),
+        "kind": d.get("kind", "pod"),
+        "render": {k: d["render"].get(k) for k in ("stage", "progress", "error")} if d.get("render") else None,
     }
 
 
-def _start_room(doc: dict, req: ShowRequest, source: str, model: Gemini) -> ShowRoom:
+def _start_room(doc: dict, req: ShowRequest, source: str, model: Gemini, intro: bytes = b"") -> ShowRoom:
     room = ShowRoom(doc=doc, request=req, source=source, gemini=model,
-                    settings=settings, store=store, on_closed=rooms.remove)
+                    settings=settings, store=store, on_closed=rooms.remove, intro=intro)
     rooms.add(room)
     return room
+
+
+# ---- intros and music ------------------------------------------------------------------
+
+AUTO_INTRO = {"custom": False, "show_name": "", "intro_line": "", "music": "auto"}
+
+
+async def _intro_for(user: User, use_saved: bool) -> dict:
+    """The intro a new pod opens with: the creator's saved show intro, or automatic
+    (a theme that suits the pod, and the hosts' own welcome)."""
+    saved = (await store.get_user(user.uid) or {}).get("show_intro") if use_saved else None
+    if saved and saved.get("enabled", True):
+        return {"custom": True, "show_name": saved.get("show_name", ""), "intro_line": saved.get("intro_line", ""),
+                "music": saved.get("music") or "auto"}
+    return dict(AUTO_INTRO)
+
+
+async def _check_music(uid: str, choice: str, *, generate: bool = False) -> str:
+    """A music choice the user may make (see models.MUSIC_CHARS), or 422."""
+    choice = choice.strip() or "auto"
+    if choice in {"auto", "none"} or library.get(choice):
+        return choice
+    if choice == "generate" and generate:
+        if not settings.music_model:
+            raise HTTPException(status_code=422, detail="Original music isn't available right now.")
+        return choice
+    if choice.startswith(MINE) and any(i.get("id") == choice[len(MINE):] for i in await store.list_items(uid, "music")):
+        return choice
+    raise HTTPException(status_code=422, detail="That music isn't available.")
+
+
+async def _live_theme(uid: str, intro: dict, mood: str, seed: str) -> tuple[bytes, dict]:
+    """The theme a live pod opens on, and a note on it. None to be had: no theme."""
+    try:
+        cues, info = await theme_for(intro.get("music") or "auto", library=library, store=store, uid=uid,
+                                     mood=mood, seed=seed, rate=settings.sample_rate)
+        if cues is None or cues.intro is None:
+            return b"", {"source": "none"}
+        return await asyncio.to_thread(intro_sting, cues.intro, settings.sample_rate), info
+    except Exception:
+        log.exception("no intro theme for pod %s", seed)
+        return b"", {"source": "none"}
 
 
 def _check_capacity() -> Gemini:
@@ -360,6 +458,56 @@ def _check_capacity() -> Gemini:
         return gemini()
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+def _check_render_capacity(user: User) -> Gemini:
+    if renders.active_for(user.uid):
+        raise HTTPException(status_code=409, detail="You already have a pod being made. Wait for it to finish.")
+    if len(renders) >= settings.max_renders + settings.max_queued_renders:
+        raise HTTPException(status_code=429, detail="The studio is busy right now. Try again in a few minutes.")
+    try:
+        return gemini()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+async def _charge_memo(user: User, doc: dict, pod: int, music: int) -> None:
+    """A memo pod's minutes and, for original music, its music credits (a separate
+    ledger entry, so it can come back on its own if the music doesn't work out)."""
+    await _charge(user, pod, doc["id"])
+    if music:
+        try:
+            await accounts.adjust_credits(user.uid, -music, reason="music", show_id=doc["id"], note="Original music")
+        except InsufficientCredits as exc:
+            await accounts.adjust_credits(user.uid, pod, reason="refund", show_id=doc["id"], note="Couldn't start")
+            raise HTTPException(status_code=402, detail=(
+                f"This pod needs {pod + music} credits with original music, and you have {exc.balance + pod}."
+            )) from exc
+    fields = {"credits_charged": pod, "music_credits_charged": music}
+    doc.update(fields)
+    await store.update_show(doc["id"], fields)
+
+
+def _start_memo(doc: dict, model: Gemini, phase: str, edits: ProduceMemo | None = None) -> None:
+    memo_mod.MemoJob(doc, store=store, accounts=accounts, gemini=model, settings=settings, library=library,
+                     renders=renders).start(phase, edits)
+
+
+def _bytes_response(request: Request, data: bytes, mime: str) -> Response:
+    """In-memory audio with Range support (Safari won't play media without it)."""
+    headers = {"Accept-Ranges": "bytes", "Cache-Control": "private, no-store"}
+    match = re.fullmatch(r"bytes=(\d*)-(\d*)", request.headers.get("range", "").strip())
+    if not match or not (match[1] or match[2]):
+        return Response(data, media_type=mime, headers=headers)
+    size = len(data)
+    if match[1]:
+        start, end = int(match[1]), min(size - 1, int(match[2]) if match[2] else size - 1)
+    else:
+        start, end = max(0, size - int(match[2])), size - 1
+    if start >= size or start > end:
+        return Response(status_code=416, headers={"Content-Range": f"bytes */{size}"})
+    return Response(data[start:end + 1], status_code=206, media_type=mime,
+                    headers={**headers, "Content-Range": f"bytes {start}-{end}/{size}"})
 
 
 async def _charge(user: User, cost: int, show_id: str) -> None:
@@ -397,6 +545,8 @@ def _index() -> FileResponse:
 @app.get("/albums")
 @app.get("/stats")
 @app.get("/new")
+@app.get("/memo")
+@app.get("/intro")
 @app.get("/login")
 @app.get("/personas")
 @app.get("/styles")
@@ -438,6 +588,17 @@ async def options(request: Request) -> dict:
         "api_key_set": bool(settings.gemini_api_key),
         "models": {"script": settings.script_model, "tts": settings.tts_model},
         "credits_per_minute": settings.credits_per_minute,
+        "music": {
+            "library": [p.public() for p in library.packs],
+            "moods": MUSIC_MOODS,
+            "generate": bool(settings.music_model),       # original music for memo pods...
+            "credits": settings.music_credits,            # ...costs this much more
+        },
+        "memo": {
+            "max_mb": settings.memo_max_mb,
+            "max_seconds": settings.memo_max_seconds,
+            "audio_types": sorted(set(AUDIO_EXTENSIONS.values())),
+        },
         "auth": {
             "mode": auth.mode,
             "firebase": {
@@ -735,7 +896,11 @@ async def extract(
 async def create_show(body: NewShow, request: Request) -> dict:
     _require_origin(request)
     user = await require_user(request)
-    req = body.request
+    intro = await _intro_for(user, body.use_show_intro)
+    # Recorded pods, and the direction they're written to, only come from a voice
+    # memo; the show's name and intro line only from the creator's saved intro.
+    req = body.request.model_copy(update={"mode": "live", "direction": "", "show_name": intro["show_name"],
+                                          "intro_line": intro["intro_line"]})
     cost = _cost(req.minutes)
     if user.credits < cost:
         raise HTTPException(status_code=402, detail=(
@@ -780,8 +945,11 @@ async def create_show(body: NewShow, request: Request) -> dict:
         "duration_s": 0,
         "audio": None,
         "counts": {},
+        "intro": intro,
     }
+    theme = b""
     if model is not None:
+        theme, doc["music"] = await _live_theme(user.uid, intro, music_mood_for(req.vibe, doc["template"]), show_id)
         await _charge(user, cost, show_id)
         doc["credits_charged"] = cost
     try:
@@ -792,7 +960,7 @@ async def create_show(body: NewShow, request: Request) -> dict:
             await accounts.adjust_credits(user.uid, cost, reason="refund", show_id=show_id, note="Couldn't start")
         raise
     if model is not None:
-        _start_room(doc, req, source, model)
+        _start_room(doc, req, source, model, intro=theme)
     return {"id": show_id, "trimmed": len(req.source) > settings.max_source_chars,
             "credits": (await accounts.get(user.uid)).credits}  # type: ignore[union-attr]
 
@@ -816,7 +984,7 @@ async def list_shows(request: Request, scope: str = "mine") -> dict:
         room = rooms.get(show_id)
         if room and show_id in by_id:
             by_id[show_id] = room.doc
-    visible = [d for d in by_id.values() if scope == "mine" or d.get("status") != "draft"]
+    visible = [d for d in by_id.values() if scope == "mine" or published(d)]
     visible.sort(key=lambda d: d.get("created_at", 0), reverse=True)
     return {"shows": [_list_item(d) for d in visible]}
 
@@ -829,6 +997,8 @@ async def get_show(show_id: str, request: Request) -> dict:
     extras = await _show_extras(doc, user)
     if room and not room.finalized.is_set():
         return {"show": room.public_show(), "live": True, "role": role, "share_url": share, **extras}
+    if doc.get("kind") == "memo" and role == "producer":
+        extras["memo"] = _memo_for_owner(doc)
     children = await store.load_children(show_id)
     return {
         "show": _public_doc(doc),
@@ -1098,7 +1268,7 @@ async def show_stats(show_id: str, request: Request) -> dict:
 @app.get("/api/me/stats")
 async def my_stats(request: Request) -> dict:
     user = await require_user(request)
-    docs = [_fresh(d) for d in await store.list_shows(owner_uid=user.uid, limit=60) if d.get("status") != "draft"]
+    docs = [_fresh(d) for d in await store.list_shows(owner_uid=user.uid, limit=60) if published(d)]
     all_sessions = await asyncio.gather(*(store.list_sessions(d["id"]) for d in docs))
     rows = [stats_mod.overview_row(d, stats_mod.summarize(d, ss)) for d, ss in zip(docs, all_sessions)]
     albums = await store.list_albums(owner_uid=user.uid)
@@ -1170,13 +1340,15 @@ async def start_draft(show_id: str, request: Request) -> dict:
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail="This draft can't be started: its source is missing.") from exc
     model = _check_capacity()
+    intro = doc.get("intro") or AUTO_INTRO
+    theme, music = await _live_theme(user.uid, intro, music_mood_for(req.vibe, doc.get("template")), show_id)
     cost = _cost(req.minutes)
     await _charge(user, cost, show_id)
     now = time.time()
-    fields = {"status": "live", "started_at": now, "created_at": now, "credits_charged": cost}
+    fields = {"status": "live", "started_at": now, "created_at": now, "credits_charged": cost, "music": music}
     doc.update(fields)
     await store.update_show(show_id, fields)
-    _start_room(doc, req, source, model)
+    _start_room(doc, req, source, model, intro=theme)
     return {"id": show_id}
 
 
@@ -1194,8 +1366,148 @@ async def delete_show(show_id: str, request: Request) -> dict:
         except asyncio.TimeoutError:
             pass
         room.close()
+    job = renders.get(show_id)
+    if job:
+        await job.cancel()
+    if doc.get("kind") == "memo" and doc.get("status") in {"rendering", "review"}:
+        await memo_mod.settle(store, accounts, doc["owner_uid"], show_id, keep=0, note="Pod deleted")
     await store.delete_show(show_id)
     return {"ok": True}
+
+
+# ---- voice memos and your show intro --------------------------------------------------------
+
+@app.post("/api/memos")
+async def create_memo(request: Request, audio: UploadFile = File(...), options: str = Form(default="{}")) -> dict:
+    _require_origin(request)
+    user = await require_user(request)
+    try:
+        opts = MemoOptions.model_validate_json(options)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail="Those memo options aren't valid.") from exc
+    cap = settings.memo_max_mb * 1024 * 1024
+    data = await audio.read(cap + 1)
+    if len(data) > cap:
+        raise HTTPException(status_code=413, detail=f"Voice memos can be up to {settings.memo_max_mb} MB.")
+    mime = sniff_audio(data)
+    if not mime:
+        raise HTTPException(status_code=422, detail=(
+            "That doesn't look like a recording we can use. Try M4A, MP3, WAV, WebM or Ogg."))
+    if opts.client_duration_s and opts.client_duration_s > settings.memo_max_seconds:
+        raise HTTPException(status_code=422, detail=(
+            f"Voice memos can be up to {settings.memo_max_seconds // 60} minutes long."))
+    music = await _check_music(user.uid, opts.music, generate=True)
+    model = _check_render_capacity(user)
+    pod_cost = _cost(opts.minutes)
+    music_cost = settings.music_credits if music == "generate" else 0
+    if user.credits < pod_cost + music_cost:
+        raise HTTPException(status_code=402, detail=(
+            f"This pod needs {pod_cost + music_cost} credits and you have {user.credits}. "
+            "Listening, calling in and connecting are free."))
+    if not MEMO_UPLOADS.take(user.uid):
+        raise HTTPException(status_code=429, detail="That's a lot of memos at once. Try again in a few minutes.")
+
+    show_id = secrets.token_urlsafe(9)
+    credit = memo_mod.credit_name(opts.credit_as, user.name)
+    memo = {"file": f"memo.{AUDIO_EXTENSIONS[mime]}", "mime": mime, "bytes": len(data),
+            "duration_s": opts.client_duration_s, "credit": credit}
+    doc = memo_mod.new_doc(
+        show_id, uid=user.uid, owner_name=user.name, opts=opts.model_copy(update={"music": music}), memo=memo,
+        intro=await _intro_for(user, opts.use_show_intro),
+        shared_with=await _clean_share_list(user, opts.shared_with),
+        album_ids=await _owned_album_ids(user, opts.album_ids), tags=_clean_tags(opts.tags),
+    )
+    await store.create_show(doc)
+    try:
+        await store.put_show_file(show_id, memo["file"], data, mime)
+        if not opts.review:     # one-shot: charged now; a reviewed memo is charged at Produce
+            await _charge_memo(user, doc, pod_cost, music_cost)
+    except Exception:
+        await memo_mod.settle(store, accounts, user.uid, show_id, keep=0, note="Couldn't start")
+        await store.delete_show(show_id)
+        raise
+    _start_memo(doc, model, "prepare")
+    return {"id": show_id, "credits": (await accounts.get(user.uid)).credits}  # type: ignore[union-attr]
+
+
+@app.post("/api/memos/{show_id}/produce")
+async def produce_memo(show_id: str, body: ProduceMemo, request: Request) -> dict:
+    """Make a memo pod the owner has reviewed (with their edits), or try a failed one again."""
+    _require_origin(request)
+    user = await require_user(request)
+    doc, _ = await _show_doc(show_id)
+    _owner(doc, user)
+    status = doc.get("status")
+    if doc.get("kind") != "memo" or renders.get(show_id) or status not in {"review", "failed"}:
+        raise HTTPException(status_code=409, detail="This pod is already being made, or already made.")
+    phase = "produce" if doc.get("plan_draft") else "prepare"
+    if phase == "prepare" and not MEMO_UPLOADS.take(user.uid):
+        raise HTTPException(status_code=429, detail="That's a lot of memos at once. Try again in a few minutes.")
+    opts = MemoOptions.model_validate(doc["memo_options"])
+    minutes = body.minutes or opts.minutes
+    music = await _check_music(user.uid, body.music if body.music is not None else opts.music, generate=True)
+    model = _check_render_capacity(user)
+    pod_cost = _cost(minutes)
+    music_cost = settings.music_credits if music == "generate" else 0
+    if user.credits < pod_cost + music_cost:
+        raise HTTPException(status_code=402, detail=f"This pod needs {pod_cost + music_cost} credits and you have {user.credits}.")
+    await _charge_memo(user, doc, pod_cost, music_cost)
+    # How long the memo, research and outline took stays on record.
+    render = {**memo_mod.fresh_render(opts.review), "timings": (doc.get("render") or {}).get("timings", {})}
+    fields = {"status": "rendering", "ended_reason": None, "minutes": minutes, "render": render,
+              "memo_options": {**opts.model_dump(), "minutes": minutes, "music": music}}
+    doc.update(fields)
+    await store.update_show(show_id, fields)
+    _start_memo(doc, model, phase, body if phase == "produce" else None)
+    return {"id": show_id, "credits": (await accounts.get(user.uid)).credits}  # type: ignore[union-attr]
+
+
+@app.get("/api/memos/{show_id}/audio")
+async def memo_audio(show_id: str, request: Request) -> Response:
+    """The memo as it was recorded. Only ever its owner's to hear."""
+    user = await require_user(request)
+    doc, _ = await _show_doc(show_id)
+    _owner(doc, user)
+    memo = doc.get("memo") or {}
+    data = await store.get_show_file(show_id, memo["file"]) if memo.get("file") else None
+    if not data:
+        raise HTTPException(status_code=404, detail="That memo's recording isn't here any more.")
+    # Browsers know M4A as audio/mp4.
+    return _bytes_response(request, data, "audio/mp4" if memo.get("mime") == "audio/m4a" else memo.get("mime", ""))
+
+
+@app.get("/api/me/music")
+async def my_music(request: Request) -> dict:
+    """Original music made for you, to reuse on another pod or as your show's theme."""
+    user = await require_user(request)
+    items = sorted(await store.list_items(user.uid, "music"), key=lambda i: i.get("created_at", 0), reverse=True)
+    return {"music": [{"id": f"{MINE}{i['id']}", "label": i.get("label", ""), "mood": i.get("mood", ""),
+                       "created_at": i.get("created_at")} for i in items]}
+
+
+@app.get("/api/me/intro")
+async def get_show_intro(request: Request) -> dict:
+    user = await require_user(request)
+    return {"intro": (await store.get_user(user.uid) or {}).get("show_intro")}
+
+
+@app.put("/api/me/intro")
+async def save_show_intro(body: ShowIntroIn, request: Request) -> dict:
+    """Your show intro: every pod you make opens with it, unless you switch it off for one."""
+    _require_origin(request)
+    user = await require_user(request)
+    intro = {"show_name": body.show_name.strip(), "intro_line": body.intro_line.strip(),
+             "music": await _check_music(user.uid, body.music), "enabled": body.enabled, "updated_at": time.time()}
+    await store.update_user(user.uid, {"show_intro": intro})
+    return {"intro": intro}
+
+
+@app.delete("/api/me/intro")
+async def delete_show_intro(request: Request) -> dict:
+    _require_origin(request)
+    user = await require_user(request)
+    await store.update_user(user.uid, {"show_intro": None})
+    return {"intro": None}
 
 
 # ---- during a pod -------------------------------------------------------------------------

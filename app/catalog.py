@@ -209,9 +209,55 @@ TEMPLATES = [
              "persona": "Argues against: quick-witted, loves a counterexample."},
         ],
     },
+    {
+        "id": "idea-breakdown",
+        "label": "Idea breakdown",
+        "blurb": "A curious host and an expert unpack one big idea: what's known, what's not, what it means.",
+        "accent": "#2E6F9E",
+        "minutes": 15,
+        "style": "A friendly explainer podcast built around one big idea. The curious host asks what a smart "
+        "friend would ask; the expert unpacks it: where it comes from, what the evidence says, where people "
+        "disagree, and what it means day to day. Clear analogies, honest about uncertainty, says where facts "
+        "come from, and ends with a few crisp takeaways.",
+        "hosts": [
+            {"name": "Ivy", "voice": "Autonoe", "gender": "female",
+             "persona": "The curious one: quick, warm, asks the obvious question nobody wants to ask."},
+            {"name": "Dr. Ravi Menon", "voice": "Sadaltager", "gender": "male",
+             "persona": "The expert: patient, precise, loves an analogy and admits what isn't known yet."},
+        ],
+    },
 ]
 
 TEMPLATES_BY_ID = {t["id"]: t for t in TEMPLATES}
+
+
+def template_request(template_id: str) -> dict | None:
+    """The ShowRequest fields picking a template fills in, as the Create screen does
+    (static/js/views/create.js, applyTemplate), for pods the server sets up itself."""
+    t = TEMPLATES_BY_ID.get(template_id)
+    if t is None:
+        return None
+    return {
+        "style": t["style"], "style_label": t["label"], "accent": t["accent"], "vibe": None,
+        "hosts": [{k: h[k] for k in ("name", "voice", "gender", "persona")} for h in t["hosts"]],
+    }
+
+
+# What a pod's theme music is picked by: each pack in music/manifest.json has one.
+MUSIC_MOODS = ["upbeat", "warm", "reflective", "dramatic", "playful", "calm", "tech", "newsy"]
+
+# The mood that suits each style preset and template, for pods whose music isn't
+# chosen by hand (a voice memo's mood comes from the memo itself).
+MUSIC_MOOD_FOR = {
+    "gossip": "playful", "late-night": "calm", "sports": "upbeat", "true-crime": "dramatic",
+    "documentary": "reflective", "professors": "warm", "bedtime": "calm", "morning-zoo": "upbeat",
+    "science-deep-dive": "tech", "couple-chat": "warm", "inspirational": "dramatic", "girl-talk": "playful",
+    "mens-talk": "upbeat", "debate-night": "newsy", "idea-breakdown": "warm",
+}
+
+
+def music_mood_for(vibe: str | None, template: str | None = None) -> str:
+    return MUSIC_MOOD_FOR.get(template or "") or MUSIC_MOOD_FOR.get(vibe or "") or "warm"
 
 # Premade personas anyone can cast as a host, or copy into their own personas and
 # customize. Fictional people, described by what they're like and what they know.

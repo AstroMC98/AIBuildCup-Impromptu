@@ -5,6 +5,7 @@ import { unlockAudio } from "../audio/context.js";
 import { html, setHtml } from "../html.js";
 import { icon, KIND_ICON } from "../icons.js";
 import { bindPersonaForm, fillPersona, GENDER_LABEL, personaFields, readPersona } from "../personas.js";
+import { albumChips, introRow, newAlbumSheet, shareWith, visibilityCards } from "../pod-options.js";
 import { navigate } from "../router.js";
 import { loginPath, session } from "../session.js";
 import { vibeTile } from "../sheets.js";
@@ -16,11 +17,6 @@ import { appHeader, bindHeader, templateCard } from "./library.js";
 const LENGTHS = [5, 10, 15];
 const BLANK_HOST = { name: "", voice: "auto", persona: "", gender: "", likes: "", specialties: "", skills: "", context: "" };
 const hostOf = (h) => ({ ...BLANK_HOST, ...Object.fromEntries(Object.keys(BLANK_HOST).map((k) => [k, h?.[k] ?? BLANK_HOST[k]])) });
-const VISIBILITY = [
-  ["private", "Private", "lock", "Only you, plus connections you pick."],
-  ["connections", "Connections", "people", "All your connections can listen and call in."],
-  ["public", "Public", "globe", "Anyone can listen, free. Signed-in listeners can call in."],
-];
 
 export async function createView(root, { query }) {
   if (!session.signedIn) {
@@ -41,9 +37,10 @@ export async function createView(root, { query }) {
     language: saved.language || "English",
     visibility: saved.visibility || "private",
     sharedWith: [],
+    useIntro: true,
     busy: "",
   };
-  const data = { personas: [], styles: [], connections: [], albums: [] };
+  const data = { personas: [], styles: [], connections: [], albums: [], intro: null };
 
   const el = document.createElement("div");
   el.className = "create-page";
@@ -53,6 +50,7 @@ export async function createView(root, { query }) {
       <div class="create-title">
         <h1>New pod</h1>
         <p class="muted">Start with anything. Add more while it's live.</p>
+        <a class="memo-link" href="/memo" data-link>${icon("mic", 16)}Got a rough voice memo? Turn it into a finished episode</a>
       </div>
       <div data-free></div>
 
@@ -92,6 +90,9 @@ export async function createView(root, { query }) {
 
       <h2 class="create-h2">How long?</h2>
       <div class="len-chips" role="group" aria-label="Length" data-lengths></div>
+
+      <h2 class="create-h2">Intro</h2>
+      <div data-intro></div>
 
       <h2 class="create-h2">Who can listen?</h2>
       <div class="radio-cards" role="radiogroup" aria-label="Who can listen" data-visibility></div>
@@ -179,22 +180,11 @@ export async function createView(root, { query }) {
     renderCost();
   };
   const renderVisibility = () => {
-    setHtml($("[data-visibility]"), html`${VISIBILITY.map(([id, title, ic, desc]) => html`
-      <button type="button" role="radio" class="radio-card" data-vis="${id}" aria-checked="${state.visibility === id}">
-        <span class="radio-dot" aria-hidden="true"></span>
-        <span class="radio-text"><span class="radio-title">${icon(ic, 16)} ${title}</span><span class="radio-desc">${desc}</span></span>
-      </button>`)}`);
-    setHtml($("[data-share-with]"), state.visibility !== "private" ? "" : data.connections.length ? html`
-      <p class="field-label share-label">Also share with</p>
-      <div class="chips">${data.connections.map((c) => html`
-        <button type="button" class="chip" data-share="${c.uid}" aria-pressed="${state.sharedWith.includes(c.uid)}">${c.name}</button>`)}</div>`
-      : html`<p class="faint small share-label">Want friends to hear it? <a href="/connections" data-link>Add connections</a>.</p>`);
+    setHtml($("[data-visibility]"), visibilityCards(state.visibility));
+    setHtml($("[data-share-with]"), shareWith(state.visibility, data.connections, state.sharedWith));
   };
-  const renderAlbums = () => {
-    setHtml($("[data-albums]"), html`${data.albums.map((a) => html`
-      <button type="button" class="chip" data-album="${a.id}" aria-pressed="${state.albums.includes(a.id)}">${a.title}</button>`)}
-      <button type="button" class="chip dashed" data-new-album>${icon("plus", 14, 2.6)}New album</button>`);
-  };
+  const renderAlbums = () => setHtml($("[data-albums]"), albumChips(data.albums, state.albums));
+  const renderIntro = () => setHtml($("[data-intro]"), introRow(data.intro, state.useIntro));
   const renderCost = () => {
     const cost = session.cost(state.minutes);
     const enough = session.credits >= cost;
@@ -284,6 +274,9 @@ export async function createView(root, { query }) {
     } else if (t.closest("[data-host-count]")) {
       state.hosts = state.hosts.length === 2 ? [state.hosts[0]] : [state.hosts[0], hostOf({})];
       renderHosts();
+    } else if (t.closest("[data-use-intro]")) {
+      state.useIntro = !state.useIntro;
+      renderIntro();
     } else if (t.closest("[data-vis]")) {
       state.visibility = t.closest("[data-vis]").dataset.vis;
       renderVisibility();
@@ -395,26 +388,10 @@ export async function createView(root, { query }) {
   }
 
   function newAlbum() {
-    const form = document.createElement("form");
-    form.className = "stack";
-    setHtml(form, html`
-      <label class="field-label" for="album-title">Album name</label>
-      <input id="album-title" class="field" maxlength="80" required placeholder="Bible stories, gossip edition">
-      <p class="faint small">It starts private. Change who can see it on the album's page.</p>
-      <p class="error" role="alert" data-error></p>
-      <button class="btn white big block" type="submit">Create album</button>`);
-    const sheet = openSheet({ title: "New album", body: form });
-    form.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      try {
-        const album = await api.createAlbum({ title: form.querySelector("#album-title").value.trim() });
-        data.albums.unshift(album);
-        state.albums.push(album.id);
-        renderAlbums();
-        sheet.close();
-      } catch (err) {
-        form.querySelector("[data-error]").textContent = err.message;
-      }
+    newAlbumSheet((album) => {
+      data.albums.unshift(album);
+      state.albums.push(album.id);
+      renderAlbums();
     });
   }
 
@@ -450,6 +427,7 @@ export async function createView(root, { query }) {
         template: state.pick.kind === "template" ? state.pick.id : null,
         album_ids: state.albums,
         tags: $("#tags").value.split(",").map((t) => t.trim()).filter(Boolean),
+        use_show_intro: state.useIntro,
       });
       session.refresh();
       navigate(live ? `/show/${res.id}` : "/");
@@ -471,16 +449,20 @@ export async function createView(root, { query }) {
   renderChips();
   tint();
   renderAlbums();
-  const [personas, styles, conns, albums] = await Promise.all([
+  renderIntro();
+  const [personas, styles, conns, albums, intro] = await Promise.all([
     api.list("personas").catch(() => ({ items: [] })),
     api.list("styles").catch(() => ({ items: [] })),
     api.connections().catch(() => ({ connected: [] })),
     api.albums().catch(() => ({ albums: [] })),
+    api.showIntro().catch(() => ({ intro: null })),
   ]);
   data.personas = personas.items;
   data.styles = styles.items;
   data.connections = conns.connected;
   data.albums = albums.albums;
+  data.intro = intro.intro;
+  renderIntro();
   const intoAlbum = query.get("album");
   if (intoAlbum && data.albums.some((a) => a.id === intoAlbum)) state.albums = [intoAlbum];
   renderAlbums();

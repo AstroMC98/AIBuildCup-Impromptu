@@ -252,3 +252,42 @@ Renders slot (FIFO, max_renders) ─► MemoJob.produce:
   - no memo clips in v1
   - auto hosts with override
   - Google grounding for every visibility setting, with the terms risk accepted
+
+## Progress notes
+- **Phase 6, code and docs done; the real-API runs are yours:**
+  - `tests/live_test.py --memo FILE [--memo-minutes] [--music] [--review] [--gemini-base-url]`. It reports per-stage times, how much faster than real time the show was voiced, the research and the music, and writes the MP3, transcript, outline and show notes to `data/live-tests/<ts>/`. Checked against the fake Gemini.
+  - Pressing Produce kept the stage timings from before the review, so the report adds the two halves.
+  - Dockerfile `COPY music ./music`; `.env.example` has the memo and music settings.
+  - README:
+    - "How a voice memo becomes a pod" and "Music and intros".
+    - Deploy notes: build the library first; memo files in GCS; a render on scale-in.
+    - Security notes, the tuning rows, the testing commands and the code map.
+  - **Still to run (they spend API credits):**
+    1. `python tools/probe_memo_apis.py --memo <chrome.webm> <iphone.mp4> <voicememo.m4a> --music --tts`
+    2. `python tools/build_music_library.py --lyria`. Listen to the themes, then commit `music/`.
+    3. `python -m tests.live_test --memo <walk.m4a> --music generate`. Use it to decide whether `MAX_RENDERS` can go above 1.
+    4. Record on a phone (Chrome Android, iPhone Safari) and upload an iOS Voice Memos file.
+- **Phase 5 done:**
+  - `/memo`: record (`audio/recorder.js`) or upload, length, music, format, intro, review switch, sharing.
+  - The memo pod's page while unfinished (`views/memo-status.js`): being made, waiting for review (transcript, findings you can untick, sources, Search Suggestions in a sandboxed iframe, editable outline), failed with Try again.
+  - `/intro`: the show-intro settings page.
+  - `pod-options.js`, shared with Create: visibility, sharing, albums, music cards, the intro row, the New album sheet.
+  - Show notes on replays (`components.showNotes`); "Theme music" in the status line during intros.
+  - Library labels for memo pods; menu entries.
+  - Checked in a browser against the fake Gemini at phone and desktop sizes.
+- **Phase 4 done, plus intros for every pod** (asked for during Phase 4):
+  - Every pod, live or memo, opens with a theme from the music library and a spoken intro: the planner's cold open now covers the hook, a welcome, the hosts introducing themselves and a preview.
+  - Live pods stream about 7 s of the theme (`mixer.intro_sting`, PCM with seq 0) while the episode is planned. Memo pods get the full mix.
+  - A creator can save a show intro (`PUT /api/me/intro`: show name, intro line, theme). It is snapshotted into each pod's `intro` and can be switched off per pod with `use_show_intro`.
+  - The theme comes from `music.theme_for`: "auto" (the saved intro's theme, else a library pack by `catalog.music_mood_for`), a pack id, "mine:<id>" (Lyria music kept for that user) or "none".
+  - The live-intro UI and the show-intro settings screen are Phase 5.
+- **Phases 1–3 done.** Departures from the plan:
+  - Memo pods are tagged `kind: "memo"`, not `origin`, to match `cohost`'s `kind` field.
+  - `refund_unused` stays in `room.py`; memo credits settle from the ledger instead.
+  - `mixer.mix()` takes no segment list.
+  - The smoke test's ports can be overridden with `SMOKE_FAKE_PORT` / `SMOKE_APP_PORT`.
+- **Merging with `worktree-cohost`** (commit `64a5a26`):
+  - `cohost` hides calls in progress with `main._recording()` inside `_visible` only. Fold its `live` and `editing` states for `kind == "cohost"` into `accounts.published()`, so `can_view` covers direct links too.
+  - Expect simple conflicts in the imports of `llm.py`, `prompts.py` and `main.py`, and in `main.py`'s `_public_request`, `_visible` and `list_shows`.
+- **Phase 6, Dockerfile:** also set `ENV OPENBLAS_NUM_THREADS=1`. OpenBLAS reserves buffers for every CPU thread when numpy loads, and nothing here needs BLAS threads; on a machine short of memory, numpy then failed to import at all.
+- **Smoke test race (existing):** "the planner's cold open is voiced first" and "replay data for the connection" count only live `segment` events. If the producer's socket connects after the cold open is broadcast, both fail. This was seen once under heavy memory pressure and passed on rerun.

@@ -18,6 +18,8 @@ Shows (shows/{id}): see main.create_show for the full document. Access fields:
   Organizing: album_ids [album id], tags [label]
   Children: segments (by seq), comments (by id), context (by id; text in context/{id}.txt),
             sessions (one per listen: live socket or replay; see stats.py)
+  Files: shows/{id}/files/{name} (a voice memo's recording); users/{uid}/files/{name}
+            (music made for that user, reusable on their later pods)
 Albums (albums/{id}): owner_uid, owner_name, title, description, visibility, accent, created_at
   A pod is in an album when the album's id is in the pod's album_ids.
 Subscriptions (subscriptions/{subscriber}__{kind}__{target}): subscriber_uid, kind
@@ -32,6 +34,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from typing import Protocol
 
 from starlette.responses import Response
@@ -39,6 +42,15 @@ from starlette.responses import Response
 from ..config import Settings
 
 log = logging.getLogger("podcasts.store")
+
+_FILE_NAME = re.compile(r"^[A-Za-z0-9_-]{1,64}\.[a-z0-9]{1,5}$")
+
+
+def check_file_name(name: str) -> str:
+    """A stored file's name: one plain segment with an extension, never a path."""
+    if not _FILE_NAME.match(name or ""):
+        raise ValueError(f"bad file name: {name!r}")
+    return name
 
 
 class InsufficientCredits(Exception):
@@ -56,6 +68,7 @@ class Store(Protocol):
     async def list_shows(self, *, owner_uid: str | None = None, visibility: str | None = None,
                          owner_in: list[str] | None = None, shared_with: str | None = None,
                          album_id: str | None = None, limit: int = 200) -> list[dict]: ...
+    async def shows_with_status(self, status: str, limit: int = 500) -> list[dict]: ...
     async def delete_show(self, show_id: str) -> None: ...
     async def put_segment(self, show_id: str, seg: dict) -> None: ...
     async def put_comment(self, show_id: str, comment: dict) -> None: ...
@@ -69,6 +82,11 @@ class Store(Protocol):
     async def put_session(self, show_id: str, session: dict) -> None: ...   # merges into an existing one
     async def get_session(self, show_id: str, session_id: str) -> dict | None: ...
     async def list_sessions(self, show_id: str) -> list[dict]: ...
+    # files (names checked by check_file_name); deleted along with their show
+    async def put_show_file(self, show_id: str, name: str, data: bytes, mime: str) -> dict: ...
+    async def get_show_file(self, show_id: str, name: str) -> bytes | None: ...
+    async def put_user_file(self, uid: str, name: str, data: bytes, mime: str) -> dict: ...
+    async def get_user_file(self, uid: str, name: str) -> bytes | None: ...
     # albums
     async def put_album(self, album: dict) -> None: ...
     async def get_album(self, album_id: str) -> dict | None: ...
@@ -89,6 +107,7 @@ class Store(Protocol):
     async def adjust_credits(self, uid: str, amount: int, *, reason: str, show_id: str | None = None,
                              by: str | None = None, note: str = "") -> int: ...
     async def ledger(self, uid: str, limit: int = 50) -> list[dict]: ...
+    async def ledger_for_show(self, uid: str, show_id: str) -> list[dict]: ...
     # personas and styles (kind = "personas" | "styles")
     async def list_items(self, uid: str, kind: str) -> list[dict]: ...
     async def put_item(self, uid: str, kind: str, item: dict) -> None: ...

@@ -2,6 +2,8 @@
 
     python -m tests.live_test --minutes 5          # one 5-minute pod
     python -m tests.live_test --minutes 10 15      # two pods at once
+    python -m tests.live_test --memo walk.m4a      # a 15-minute pod from a voice memo
+    python -m tests.live_test --memo walk.m4a --memo-minutes 5 --music generate --review
 
 Starts the app on its own port (dev sign-in, local storage under
 data/live-tests/<time>/), signs in a producer and a connected listener, and for
@@ -11,7 +13,14 @@ each pod:
     and (10+ minute pods) restyles at ~60%
   - every audio chunk's arrival time is recorded and replayed against a
     real-time player, to find stalls: moments a listener would hear silence
+For a voice memo: sends the recording, follows it through every stage (pressing
+Produce if --review), and reports how long each stage took, how much faster than
+real time the hosts were voiced (what MAX_RENDERS should be), what the research
+found and cited, the music, and the credits. The theme comes from MUSIC_DIR
+(build it first: tools/build_music_library.py), or Lyria with --music generate.
 Writes report.md and report.json, each pod's transcript and MP3, and the app log.
+--gemini-base-url points the app at a stub (tests/fake_gemini.py) to try the
+harness itself without spending anything.
 """
 from __future__ import annotations
 
@@ -287,7 +296,95 @@ async def run_pod(minutes: int, spec: dict, producer: httpx.AsyncClient, guest: 
     return result
 
 
-async def main_async(minutes_list: list[int], out: Path, args: argparse.Namespace) -> list[dict]:
+MEMO_STAGES = ("queued", "transcribing", "researching", "outlining", "review", "voicing", "scoring", "mixing", "saving")
+
+
+async def run_memo(producer: httpx.AsyncClient, path: Path, args: argparse.Namespace, out: Path) -> dict:
+    """A voice memo through every stage to a finished pod."""
+    options = {"minutes": args.memo_minutes, "music": args.music, "review": args.review,
+               "visibility": "public" if args.public else "private"}
+    t0 = time.monotonic()
+    r = await producer.post("/api/memos", files={"audio": (path.name, path.read_bytes(), "application/octet-stream")},
+                            data={"options": json.dumps(options)})
+    if r.status_code != 200:
+        return {"memo": path.name, "crashed": f"upload refused ({r.status_code}): {r.text[:300]}"}
+    show_id = r.json()["id"]
+    print(f"[memo] sent {path.name}: {show_id}  watch: {BASE}/show/{show_id}", flush=True)
+
+    seen: list[tuple[str, float]] = []          # (stage, seconds after sending) as the owner saw them
+    deadline = t0 + args.memo_minutes * 60 * 4 + 900
+    data: dict = {}
+    produced_at = None
+    while time.monotonic() < deadline:
+        data = (await producer.get(f"/api/shows/{show_id}")).json()
+        show = data["show"]
+        render = show.get("render") or {}
+        if not seen or seen[-1][0] != render.get("stage"):
+            seen.append((render.get("stage"), round(time.monotonic() - t0, 1)))
+            print(f"[memo] {seen[-1][1]:7.1f}s  {render.get('stage')}: {render.get('detail', '')}", flush=True)
+        if show["status"] == "review" and produced_at is None:
+            produced_at = time.monotonic() - t0
+            p = await producer.post(f"/api/memos/{show_id}/produce", json={})
+            if p.status_code != 200:
+                return {"memo": path.name, "show_id": show_id, "crashed": f"produce refused ({p.status_code}): {p.text[:300]}"}
+        if show["status"] in ("finished", "failed"):
+            break
+        await asyncio.sleep(2)
+    total = time.monotonic() - t0
+    show, memo, segs = data["show"], data.get("memo") or {}, data.get("segments", [])
+    brief, research = memo.get("brief") or {}, memo.get("research") or {}
+    timings = memo.get("timings") or {}
+
+    # transcript, research and outline, then the episode as made
+    lines = [f"# Voice memo pod: {show.get('title')}", "", f"From `{path.name}`, {show.get('status')}.", ""]
+    if brief:
+        lines += ["## What was heard", "", brief.get("transcript", ""), "",
+                  f"**Idea:** {brief.get('thesis', '')}  ", f"**Format:** {brief.get('format')} · **mood:** "
+                  f"{brief.get('music_mood')} · **tone:** {brief.get('tone')}", "",
+                  "Questions: " + "; ".join(brief.get("questions", [])), ""]
+    if research:
+        lines += ["## Research", "", research.get("summary", ""), ""]
+        lines += [f"- [R{f['id']}] {f['claim']} — {f['outlet']} {f.get('date', '')} ({f.get('confidence')})"
+                  for f in research.get("findings", [])]
+        lines += ["", "Searched: " + "; ".join(research.get("queries", []))]
+        lines += [f"- {s['domain']}: {s['title']} <{s['url']}>" for s in research.get("sources", [])] + [""]
+    lines += ["## Outline", ""] + [f"{i + 1}. **{b['title']}** at {b.get('start', 0) / RATE:.0f}s: {b.get('notes', '')}"
+                                    for i, b in enumerate(show.get("beats", []))] + ["", "## Episode", ""]
+    for s in segs:
+        lines.append(f"<!-- segment {s['seq']}, chapter {s['beat'] + 1}, at {s['start'] / RATE:.0f}s -->")
+        lines += [f"**{ln['speaker']}:** {ln['text']}" for ln in s["lines"]] + [""]
+    if show.get("show_notes"):
+        lines += ["## Show notes", "", json.dumps(show["show_notes"], indent=1, ensure_ascii=False)]
+    (out / f"memo-{path.stem}.md").write_text("\n".join(lines), encoding="utf-8")
+    audio = await producer.get(f"/api/shows/{show_id}/audio", follow_redirects=True)
+    if audio.status_code == 200:
+        (out / f"memo-{path.stem}.mp3").write_bytes(audio.content)
+
+    ledger = (await producer.get("/api/me/ledger")).json()["entries"]
+    spent = {k: -sum(e["amount"] for e in ledger if e.get("show_id") == show_id and e["reason"] == k) for k in ("pod", "music")}
+    refunded = sum(e["amount"] for e in ledger if e.get("show_id") == show_id and e["reason"] == "refund")
+    duration = show.get("duration_s") or 0
+    voicing = timings.get("voicing")
+    result = {
+        "memo": path.name, "show_id": show_id, "status": show.get("status"), "error": (show.get("render") or {}).get("error"),
+        "title": show.get("title"), "duration_s": duration, "target_s": args.memo_minutes * 60,
+        "total_s": round(total, 1), "outline_ready_s": produced_at and round(produced_at, 1),
+        "stage_s": {k: timings[k] for k in MEMO_STAGES if k in timings}, "stages_seen": seen,
+        "voicing_speed": round(duration / voicing, 2) if voicing and duration else None,
+        "segments": len(segs), "chapters": len(show.get("beats", [])),
+        "research_ok": research.get("ok"), "findings": len(research.get("findings", [])),
+        "sources": len(research.get("sources", [])), "searches": len(research.get("queries", [])),
+        "suggestions": len(research.get("search_suggestions", [])),
+        "music": show.get("music", {}).get("source"), "music_label": show.get("music", {}).get("label"),
+        "credits_charged": spent, "credits_refunded": refunded,
+        "mp3_bytes": len(audio.content) if audio.status_code == 200 else 0,
+    }
+    print(f"[memo] done: {json.dumps(result)}", flush=True)
+    return result
+
+
+async def main_async(minutes_list: list[int], out: Path, args: argparse.Namespace) -> tuple[list[dict], list[dict]]:
+    """(live pod results, memo pod results)"""
     async with httpx.AsyncClient(base_url=BASE, timeout=120) as producer, \
                httpx.AsyncClient(base_url=BASE, timeout=120) as guest:
         me = (await producer.post("/api/auth/dev", json={"email": "producer@live.test", "name": "Marc"})).json()["me"]
@@ -310,10 +407,42 @@ async def main_async(minutes_list: list[int], out: Path, args: argparse.Namespac
                 except Exception as exc:  # keep the other pods going
                     return {"minutes": m, "crashed": f"{type(exc).__name__}: {exc}"}
             tasks.append(asyncio.create_task(one()))
-        return await asyncio.gather(*tasks)
+
+        async def memo(path: Path):
+            try:
+                return await run_memo(producer, path, args, out)
+            except Exception as exc:
+                return {"memo": path.name, "crashed": f"{type(exc).__name__}: {exc}"}
+        memos = [asyncio.create_task(memo(p)) for p in args.memo]
+        return list(await asyncio.gather(*tasks)), list(await asyncio.gather(*memos))
 
 
-def report(results: list[dict], out: Path, log: str) -> None:
+def memo_report(m: dict, log: str) -> list[str]:
+    head = [f"## Voice memo: {m['memo']}", ""]
+    if "crashed" in m:
+        return head + [f"Crashed: {m['crashed']}", ""]
+    one_call = "no (fell back to two calls)" if "search with a JSON answer was refused" in log else "yes"
+    charged = m["credits_charged"]
+    rows = [
+        ("Status", m["status"] + (f": {m['error']}" if m.get("error") else "")),
+        ("Title", m["title"]),
+        ("Length (s) / asked", f"{m['duration_s']} / {m['target_s']}"),
+        ("Sent to finished (s)", m["total_s"]),
+        ("Outline ready for review (s)", m["outline_ready_s"]),
+        ("Seconds per stage", " · ".join(f"{k} {v}" for k, v in m["stage_s"].items())),
+        ("Voicing speed", f"{m['voicing_speed']}x real time" if m["voicing_speed"] else "n/a"),
+        ("Segments / chapters", f"{m['segments']} / {m['chapters']}"),
+        ("Research", f"{m['findings']} findings, {m['sources']} cited pages, {m['searches']} searches, "
+                     f"{m['suggestions']} Search Suggestions" if m["research_ok"] else "none came back"),
+        ("Search + JSON in one call", one_call),
+        ("Music", f"{m['music']}: {m['music_label']}" if m.get("music_label") else m.get("music")),
+        ("Credits charged / refunded", f"{charged['pod']} + {charged['music']} music / {m['credits_refunded']}"),
+        ("MP3 (bytes)", m["mp3_bytes"]),
+    ]
+    return head + ["| | |", "|---|---|"] + [f"| {k} | {v} |" for k, v in rows] + [""]
+
+
+def report(results: list[dict], memos: list[dict], out: Path, log: str) -> None:
     posts = len(re.findall(r"HTTP Request: POST https://", log))
     r429 = len(re.findall(r'HTTP/1\.1 429', log))
     r5xx = len(re.findall(r'HTTP/1\.1 5\d\d', log))
@@ -329,8 +458,10 @@ def report(results: list[dict], out: Path, log: str) -> None:
         ("Credits charged / refunded", None), ("Errors", None),
     ]
     head = "| | " + " | ".join(f"{r['minutes']} min" for r in results) + " |"
-    lines = [f"# Live test, {datetime.now():%Y-%m-%d %H:%M}", "", head, "|---" * (len(results) + 1) + "|"]
-    for label, key in rows:
+    lines = [f"# Live test, {datetime.now():%Y-%m-%d %H:%M}", ""]
+    if results:
+        lines += [head, "|---" * (len(results) + 1) + "|"]
+    for label, key in (rows if results else []):
         cells = []
         for r in results:
             if "crashed" in r:
@@ -349,25 +480,39 @@ def report(results: list[dict], out: Path, log: str) -> None:
             else:
                 cells.append(str(len(r["errors"])))
         lines.append(f"| {label} | " + " | ".join(cells) + " |")
-    lines += ["", f"Gemini requests: {posts}, 429s: {r429}, 5xx: {r5xx}, draft rewrites: {rewrites}", ""]
+    lines.append("")
+    for m in memos:
+        lines += memo_report(m, log)
+    lines += [f"Gemini requests: {posts}, 429s: {r429}, 5xx: {r5xx}, draft rewrites: {rewrites}", ""]
     (out / "report.md").write_text("\n".join(lines), encoding="utf-8")
-    (out / "report.json").write_text(json.dumps(results, indent=1), encoding="utf-8")
+    (out / "report.json").write_text(json.dumps({"pods": results, "memos": memos}, indent=1), encoding="utf-8")
     print("\n".join(lines))
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--minutes", type=int, nargs="+", default=[5], choices=sorted(PODS))
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--minutes", type=int, nargs="+", choices=sorted(PODS), help="live pods to run (default 5, or none with --memo)")
     ap.add_argument("--public", action="store_true",
                     help="publish the pods so anyone can open the printed links and listen along")
     ap.add_argument("--first-callin", type=float, default=60, help="seconds into the pod for the first call-in")
+    ap.add_argument("--memo", type=Path, nargs="*", default=[], help="voice memo recordings to make pods from")
+    ap.add_argument("--memo-minutes", type=int, default=15, choices=[5, 10, 15])
+    ap.add_argument("--music", default="auto", help="auto (the library), generate (Lyria, extra credits) or none")
+    ap.add_argument("--review", action="store_true", help="stop at the outline, then press Produce")
+    ap.add_argument("--gemini-base-url", help="a Gemini stub to use instead of the real API (spends nothing)")
     args = ap.parse_args()
+    for p in args.memo:
+        if not p.is_file():
+            ap.error(f"no such recording: {p}")
+    minutes_list = args.minutes if args.minutes is not None else ([] if args.memo else [5])
     out = ROOT / "data" / "live-tests" / datetime.now().strftime("%Y%m%d-%H%M%S")
     out.mkdir(parents=True, exist_ok=True)
     env = {**os.environ, "STORAGE_BACKEND": "local", "DATA_DIR": str(out / "data"), "AUTH_MODE": "dev",
            "ADMIN_EMAILS": "producer@live.test", "SESSION_SECRET": secrets.token_urlsafe(24),
            "CLOCK_SPEED": "1", "MAX_LIVE_SHOWS": "3"}
     env.pop("GEMINI_BASE_URL", None)
+    if args.gemini_base_url:
+        env.update(GEMINI_BASE_URL=args.gemini_base_url, GEMINI_API_KEY="fake")
     log_path = out / "app.log"
     srv = subprocess.Popen([sys.executable, "-m", "uvicorn", "app.main:app", "--port", str(PORT)],
                            cwd=ROOT, env=env, stdout=open(log_path, "wb"), stderr=subprocess.STDOUT)
@@ -378,13 +523,14 @@ def main() -> int:
                 break
             except httpx.HTTPError:
                 time.sleep(0.2)
-        results = asyncio.run(main_async(args.minutes, out, args))
+        results, memos = asyncio.run(main_async(minutes_list, out, args))
     finally:
         srv.terminate()
         srv.wait(timeout=15)
-    report(results, out, log_path.read_text(encoding="utf-8", errors="replace"))
+    report(results, memos, out, log_path.read_text(encoding="utf-8", errors="replace"))
     print(f"\nTranscripts, MP3s and the app log are in {out}")
-    return 0 if all(r.get("saved") for r in results) else 1
+    ok = all(r.get("saved") for r in results) and all(m.get("status") == "finished" for m in memos)
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":

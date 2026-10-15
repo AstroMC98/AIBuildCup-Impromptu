@@ -33,7 +33,7 @@ export function liveBadge(store, ctl, pos) {
 export function statusText(store, ctl, pos) {
   if (store.ended === "error" && (!ctl.live || ctl.atAudioEdge(pos))) return "The pod hit a problem and stopped.";
   if (!store.segments.length) {
-    if (store.state === "planning") return "Planning the episode…";
+    if (store.state === "planning") return store.inIntro(pos) ? "Theme music, while the hosts get ready…" : "Planning the episode…";
     if (store.state === "ended") return "This show ended before it started.";
     return "Writing the cold open…";
   }
@@ -43,6 +43,7 @@ export function statusText(store, ctl, pos) {
     ? pos >= ctl.timeline.end - 0.2 * store.rate
     : pos >= (store.clock.audio_end || 0) - 0.3 * store.rate);
   if (endOfShow || ctl.play.ended) return "That's the show. Thanks for listening.";
+  if (store.inIntro(pos)) return "Theme music";
   if (ctl.play.buffering || ctl.atAudioEdge(pos)) {
     return store.state === "holding" ? "Waiting for listeners…" : "The hosts are writing what comes next.";
   }
@@ -255,6 +256,29 @@ export function chapters(store, pos, { rows = false } = {}) {
 
 export function chaptersKey(store, pos) {
   return `${store.version}|${store.chapterAt(pos)}`;
+}
+
+/** Research sources that are web pages: only http(s) links are ever made clickable
+ *  (the server keeps only those too, but a link is the browser's to guard). */
+export function webSources(sources) {
+  return (sources || []).filter((src) => /^https?:\/\//i.test(src?.url || ""));
+}
+
+/** Show notes: where a memo pod came from and what its research drew on, and any
+ *  pod's theme music. "" when there's nothing to say. */
+export function showNotes(store) {
+  const notes = store.show.show_notes;
+  const music = notes?.music || (store.show.music?.label ? `Theme music: ${store.show.music.label}.` : "");
+  const sources = webSources(notes?.sources);
+  if (!notes?.credit && !sources.length && !music) return "";
+  return html`
+    ${notes?.credit ? html`<p class="sn-credit">${icon("mic", 16)}<span>${notes.credit}</span></p>` : ""}
+    ${sources.length ? html`
+      <p class="sn-h">What the research drew on</p>
+      <ul class="sn-sources">${sources.map((src) => html`
+        <li><a href="${src.url}" target="_blank" rel="noopener noreferrer">${src.title || src.domain}</a>
+          <span class="faint small">${src.domain}</span></li>`)}</ul>` : ""}
+    ${music ? html`<p class="faint small">${music}</p>` : ""}`;
 }
 
 export function talking(store, pos) {

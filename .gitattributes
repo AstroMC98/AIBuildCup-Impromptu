@@ -3,3 +3,5 @@
 *.sh text eol=lf
 Dockerfile text eol=lf
 *.rules text eol=lf
+# The music library's themes (music/); never touched for line endings or diffed.
+*.mp3 binary

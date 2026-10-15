@@ -53,6 +53,31 @@ class Settings(BaseSettings):
     # Credits every new account starts with. 0 = new accounts are free accounts.
     signup_credits: int = 0
 
+    # ---- voice memos (a memo becomes a finished, pre-recorded pod; see memo.py) ----
+    # Uploads go to Gemini inline, and requests cap at 20 MB after base64.
+    memo_max_mb: int = 14
+    memo_max_seconds: int = 600
+    memo_model: str = ""              # "" = script_model
+    max_research_queries: int = 5
+    research_timeout_seconds: float = 120.0
+    # Memo pods render one at a time next to the live rooms; raise once TTS
+    # throughput is measured (tests/live_test.py --memo).
+    max_renders: int = 1
+    max_queued_renders: int = 6
+    render_max_minutes: float = 30.0
+    # A render has no listeners to react to, so it writes bigger segments and can
+    # wait longer on a slow writer call than a live show can.
+    render_segment_seconds: float = 40.0
+    render_lines_per_segment: int = 8
+    render_write_timeout_seconds: float = 45.0
+    render_mp3_kbps: int = 64         # music needs more than the live 48
+    # The prepackaged music library (music/manifest.json). Empty = voice only.
+    music_dir: str = "music"
+    # Original music for a pod costs extra credits. "" turns that option off.
+    music_model: str = "lyria-3-clip-preview"
+    music_credits: int = 2
+    music_timeout_seconds: float = 120.0
+
     # ---- storage ------------------------------------------------------------
     storage_backend: Literal["local", "gcp"] = "local"
     data_dir: str = "data"

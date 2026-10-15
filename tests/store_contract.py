@@ -66,7 +66,10 @@ async def contract(store, tag: str) -> list[str]:
         except InsufficientCredits:
             pass
         assert [e["amount"] for e in await store.ledger(u1)] == [-4, 10]
-    await check("users, credit transaction, ledger", users)
+        await store.adjust_credits(u1, 1, reason="refund", show_id=s1)
+        assert sorted(e["amount"] for e in await store.ledger_for_show(u1, s1)) == [-4, 1]
+        assert await store.ledger_for_show(u1, s2) == [] and await store.ledger_for_show(u2, s1) == []
+    await check("users, credit transaction, ledger, a show's ledger entries", users)
 
     async def items():
         await store.put_item(u1, "personas", {"id": "p1", "name": "Maya", "context": "secret " * 2000, "created_at": 1})
@@ -102,7 +105,8 @@ async def contract(store, tag: str) -> list[str]:
         assert ids(await store.list_shows(shared_with=u2)) == [s2]
         assert ids(await store.list_shows(owner_in=[u1, u3], visibility="connections")) == [s3]
         assert s1 in ids(await store.list_shows(visibility="public")) and s2 not in ids(await store.list_shows(visibility="public"))
-    await check("shows: owner, album, shared, connections and public queries", shows)
+        assert ids(await store.shows_with_status("live")) == [s2]
+    await check("shows: owner, album, shared, connections, public and status queries", shows)
 
     async def children():
         await store.put_segment(s1, {"seq": 2, "lines": []})

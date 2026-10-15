@@ -185,6 +185,12 @@ export class ShowStore {
     return found;
   }
 
+  /** Whether pos is in the theme music every pod opens on, before the hosts start. */
+  inIntro(pos) {
+    const first = this.segments.length ? this.segments[0].start : this.clock.audio_end || 0;
+    return first > 0 && pos < first;
+  }
+
   /** { seg, idx } of the line being spoken at pos, or null before the first line. */
   lineAt(pos) {
     const seg = this.segmentAt(pos);

@@ -24,6 +24,7 @@ const P = {
   jumpLive: ["M5 5l9 7-9 7z", "M18 5v14"],
   search: ["M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14z", "M20 20l-4-4"],
   chevronDown: ["M6 9l6 6 6-6"],
+  chevronUp: ["M6 15l6-6 6 6"],
   chevronLeft: ["M15 6l-6 6 6 6"],
   more: ["M5 12h.01", "M12 12h.01", "M19 12h.01"],
   check: ["M5 12l5 5 9-10"],

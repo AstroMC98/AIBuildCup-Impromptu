@@ -2,7 +2,7 @@
 // live transcript, call-ins, context and chapters. An overlay over the phone
 // live view, or the whole page for a replay.
 import {
-  callins, callinsKey, chapterBar, chapterBarKey, chapters, chaptersKey, contextList, statusText, talking,
+  callins, callinsKey, chapterBar, chapterBarKey, chapters, chaptersKey, contextList, showNotes, statusText, talking,
 } from "../components.js";
 import { html, renderSpoken, setHtml } from "../html.js";
 import { icon } from "../icons.js";
@@ -67,6 +67,10 @@ export function mountNowPlaying(host, ctl, { page = false, onClose } = {}) {
       <div data-r="context"></div>
       ${ctl.live ? html`<button class="btn outline block" type="button" data-action="add-context">${icon("plus", 18, 2.2)}Add context</button>` : ""}
     </section>
+    <section class="card show-notes" aria-labelledby="np-sn" data-notes hidden>
+      <h2 id="np-sn" class="card-h">Show notes</h2>
+      <div data-r="notes"></div>
+    </section>
     <section class="np-chapters" aria-labelledby="np-ch">
       <h2 id="np-ch" class="card-h">Chapters</h2>
       <ol class="chapter-cards" data-r="chaptercards"></ol>
@@ -96,6 +100,9 @@ export function mountNowPlaying(host, ctl, { page = false, onClose } = {}) {
       <span class="cover-glyph" aria-hidden="true">${icon("mic", 190, 0.9)}</span>
       <span class="cover-title">${s.show.title || "…"}</span>`);
     r.el("cover").setAttribute("aria-label", `Episode cover: ${s.show.title || ""}`);
+    const notes = showNotes(s);
+    el.querySelector("[data-notes]").hidden = !notes;
+    r.set("notes", String(notes), () => notes);
   };
 
   const layout = {

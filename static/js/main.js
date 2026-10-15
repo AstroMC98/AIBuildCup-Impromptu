@@ -7,8 +7,10 @@ import { albumsView, albumView } from "./views/albums.js";
 import { connectionsView, inviteView } from "./views/connections.js";
 import { createView } from "./views/create.js";
 import { creatorView } from "./views/creator.js";
+import { introView } from "./views/intro.js";
 import { libraryView } from "./views/library.js";
 import { loginView } from "./views/login.js";
+import { memoView } from "./views/memo.js";
 import { savedView } from "./views/saved.js";
 import { showView } from "./views/show.js";
 import { showStatsView, statsView } from "./views/stats.js";
@@ -32,6 +34,8 @@ async function boot() {
     [/^\/stats$/, statsView],
     [/^\/show\/([\w-]+)\/stats$/, showStatsView],
     [/^\/new$/, createView],
+    [/^\/memo$/, memoView],
+    [/^\/intro$/, introView],
     [/^\/login$/, loginView],
     [/^\/personas$/, savedView],
     [/^\/styles$/, savedView],

@@ -2,7 +2,7 @@
 // left, the 16:9 live player in the middle, call-ins / context / rundown on the right.
 import {
   callins, callinsKey, captions, captionsKey, chapterBar, chapterBarKey, chapterLabel, chapters, chaptersKey,
-  contextList, hostAvatars, liveBadge, liveBadgeKey,
+  contextList, hostAvatars, liveBadge, liveBadgeKey, showNotes,
 } from "../components.js";
 import { html, renderSpoken, setHtml } from "../html.js";
 import { icon, VISIBILITY_LABEL } from "../icons.js";
@@ -80,6 +80,10 @@ export function mountStudio(root, ctl) {
             <h3>Context the hosts ${ctl.live ? "are using" : "used"}</h3>
             <div class="ctx-grid"><div class="ctx-grid-items" data-r="contextgrid"></div>
               ${ctl.live ? html`<button class="ctx-add" type="button" data-action="add-context">${icon("plus", 16, 2.4)}Add context</button>` : ""}</div>
+          </div>
+          <div class="col gap-s show-notes" data-notes hidden>
+            <h3>Show notes</h3>
+            <div data-r="notes"></div>
           </div>
         </section>
       </main>
@@ -180,6 +184,9 @@ export function mountStudio(root, ctl) {
     onEvent(e) {
       r.set("title", s.show.title, () => s.show.title || "Getting the studio ready");
       r.set("about", `${s.show.about}|${s.show.tagline}`, () => s.show.about || s.show.tagline || "");
+      const notes = showNotes(s);
+      el.querySelector("[data-notes]").hidden = !notes;
+      r.set("notes", String(notes), () => notes);
       r.set("avatars", `${s.version}`, () => hostAvatars(s, 40));
       r.set("hostnames", s.hostNames(), () => s.hostNames() || "Hosts coming up");
       const by = s.producer ? VISIBILITY_LABEL[s.show.visibility] || "" : "";

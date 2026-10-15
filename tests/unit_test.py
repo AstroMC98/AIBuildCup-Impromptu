@@ -3,19 +3,23 @@
     python -m tests.unit_test
 """
 import asyncio
+import json
 import math
 import os
+import re
 import struct
 import sys
 import tempfile
 import traceback
+from pathlib import Path
 
 import httpx
+import numpy as np
 
 os.environ.setdefault("DATA_DIR", tempfile.mkdtemp(prefix="podcasts-unit-"))
 
 from app import prompts, sources  # noqa: E402
-from app.accounts import Accounts  # noqa: E402
+from app.accounts import Accounts, published  # noqa: E402
 from app.audio import Mp3Writer, PcmWindow  # noqa: E402
 from app.auth import Auth, AuthError  # noqa: E402
 from app.store import InsufficientCredits  # noqa: E402
@@ -26,7 +30,7 @@ from app.models import (  # noqa: E402
     Beat, ContextItem, Host, Line, SegmentDraft, ShowPlan, ShowRequest,
 )
 from app.show import Draft, ShowRunner  # noqa: E402
-from app.sources import SourceError, sniff_image  # noqa: E402
+from app.sources import SourceError, sniff_audio, sniff_image  # noqa: E402
 from app.store.local import LocalStore  # noqa: E402
 
 RESULTS: list[tuple[str, bool, str]] = []
@@ -223,6 +227,24 @@ async def _():
     assert acc.role(ann, pod) == "producer" and acc.role(bob, pod) == "listener" and acc.role(None, pod) == "visitor"
 
 
+@check("memo pods stay with their owner until they're out")
+async def _():
+    acc, _ = await _accounts()
+    ann, bob = await acc.get("ann"), await acc.get("bob")
+    pod = {"owner_uid": "ann", "kind": "memo", "visibility": "public", "shared_with": ["bob"], "audio": None}
+    for status in ("rendering", "review"):
+        pod["status"] = status
+        assert not published(pod) and await acc.can_view(ann, pod)
+        assert not await acc.can_view(bob, pod) and not await acc.can_view(None, pod)
+    pod["status"] = "failed"                     # nothing was ever saved: it never came out
+    assert not published(pod) and not await acc.can_view(None, pod)
+    pod["audio"] = {"path": "episode.mp3"}
+    assert published(pod)
+    assert published({"status": "failed", "audio": None})          # a live pod that failed was heard
+    pod.update(status="finished")
+    assert await acc.can_view(None, pod) and await acc.can_view(bob, pod)
+
+
 # ---- links and images -------------------------------------------------------------
 
 @check("private addresses are refused")
@@ -294,6 +316,25 @@ def _():
     assert sniff_image(b"%PDF-1.7") is None
 
 
+@check("recordings are recognised by their bytes, whatever the browser or phone")
+def _():
+    assert sniff_audio(b"RIFF\x24\x00\x00\x00WAVEfmt ") == "audio/wav"
+    assert sniff_audio(b"OggS\x00\x02" + b"\x00" * 20) == "audio/ogg"                 # Firefox
+    assert sniff_audio(b"\x1a\x45\xdf\xa3\x9f\x42\x86\x81\x01\x42\x82\x84webm") == "audio/webm"   # Chrome
+    assert sniff_audio(b"\x1a\x45\xdf\xa3\x9f\x42\x82\x88matroska") is None
+    assert sniff_audio(b"\x00\x00\x00\x1cftypM4A \x00\x00\x00\x00") == "audio/m4a"     # iOS Voice Memos
+    assert sniff_audio(b"\x00\x00\x00\x1cftypiso5\x00\x00\x02\x00") == "audio/m4a"     # Safari
+    assert sniff_audio(b"\x00\x00\x00\x18ftypheic....") is None                        # a photo
+    assert sniff_audio(b"fLaC\x00\x00\x00\x22") == "audio/flac"
+    assert sniff_audio(b"FORM\x00\x00\x10\x00AIFFCOMM") == "audio/aiff"
+    assert sniff_audio(b"ID3\x04\x00\x00\x00\x00\x00\x00") == "audio/mpeg"
+    assert sniff_audio(b"\xff\xfb\x90\x64") == "audio/mpeg"                            # a bare MP3 frame
+    assert sniff_audio(b"\xff\xf1\x50\x80") == "audio/aac"                             # ADTS
+    assert sniff_audio(b"\xff\xd8\xff\xe0") is None                                    # JPEG
+    assert sniff_audio(b"%PDF-1.7") is None and sniff_audio(b"") is None
+    assert all(m in sources.AUDIO_EXTENSIONS for m in ("audio/webm", "audio/m4a", "audio/ogg"))
+
+
 # ---- audio ---------------------------------------------------------------------------
 
 @check("mp3 writer produces mp3 frames, mid-show and at the end")
@@ -341,6 +382,26 @@ async def _():
     assert await s.mark_interrupted(set()) == 1 and (await s.get_show("a1"))["status"] == "interrupted"
     await s.delete_show("a1")
     assert await s.get_show("a1") is None and await s.get_show("../etc") is None
+
+
+@check("local store keeps show and user files; a name can't be a path")
+async def _():
+    s = LocalStore(tempfile.mkdtemp(prefix="store-"))
+    await s.create_show({"id": "m1", "status": "rendering", "created_at": 1.0})
+    await s.create_show({"id": "m2", "status": "finished", "created_at": 2.0})
+    assert (await s.put_show_file("m1", "memo.webm", b"abc", "audio/webm"))["bytes"] == 3
+    assert await s.get_show_file("m1", "memo.webm") == b"abc" and await s.get_show_file("m1", "x.mp3") is None
+    for bad in ("../show.json", "show", "a/b.mp3", "", "episode.mp3/.."):
+        try:
+            await s.put_show_file("m1", bad, b"x", "audio/mpeg")
+            raise AssertionError(f"accepted {bad!r}")
+        except ValueError:
+            pass
+    await s.put_user_file("u1", "music-1.mp3", b"\xff\xfb", "audio/mpeg")
+    assert await s.get_user_file("u1", "music-1.mp3") == b"\xff\xfb"
+    assert [d["id"] for d in await s.shows_with_status("rendering")] == ["m1"]
+    await s.delete_show("m1")
+    assert await s.get_show_file("m1", "memo.webm") is None
 
 
 # ---- the show loop ------------------------------------------------------------------
@@ -451,6 +512,45 @@ async def _():
     assert any(e["type"] == "error" and "no audio" in e["message"] for e in r.room.events)
 
 
+@check("a plan made beforehand skips planning; speech that never started gets another try")
+async def _():
+    speech = []
+
+    class Stub:
+        async def plan_show(self, *args):
+            raise AssertionError("planned again")
+
+        async def write_segment(self, *args):
+            return SegmentDraft(lines=[Line(speaker="A", text="hi")] * 3, beat_complete=True)
+
+        async def stream_speech(self, lines, hosts):
+            speech.append(1)
+            if len(speech) == 1:
+                raise RuntimeError("503 overloaded")
+            yield b"\x00\x00" * 2400
+
+    req = ShowRequest(source="x", style="calm", hosts=[{"name": "A"}], minutes=2, mode="recorded")
+    plan = ShowPlan(title="T", tagline="t", hosts=[Host(name="A", persona="", voice="Kore")],
+                    beats=[Beat(title="b1", notes="", minutes=0.01), Beat(title="b2", notes="", minutes=0.01)])
+    room = StubRoom()
+    runner = ShowRunner(req, "x", Stub(), Settings(), room, plan=plan, speech_retries=1)
+    assert await asyncio.wait_for(runner.run(), 10) == "signed_off"
+    assert [e["title"] for e in room.events if e["type"] == "plan"] == ["T"]
+    assert not any(e.get("state") == "planning" for e in room.events)
+    assert not any(e["type"] == "error" for e in room.events) and len(speech) == 3   # fail, retry, segment 2
+    assert [e["samples"] for e in room.events if e["type"] == "segment_end"] == [2400, 2400]
+
+
+@check("beats get their start and end from the chapters")
+def _():
+    from app.room import beats_with_times
+    beats = [{"title": "a"}, {"title": "b"}, {"title": "c"}]
+    live = beats_with_times(beats, {0: 0, 1: 100}, end=None)
+    assert (live[0]["start"], live[0]["end"], live[1]["start"], live[1]["end"]) == (0, 100, 100, None)
+    assert "start" not in live[2] and "start" not in beats[0]           # the plan's own beats are untouched
+    assert beats_with_times(beats, {0: 0, 1: 100}, end=250)[1]["end"] == 250
+
+
 @check("call-ins get an ETA on the show timeline")
 async def _():
     rate = 24_000
@@ -538,6 +638,505 @@ async def _():
     assert ctx.comments[1].attachment and ctx.comments[1].attachment.name == "tree.png"
 
 
+# ---- rendering, mixing and music ---------------------------------------------------------
+
+def _tone(seconds: float, rate: int, amp: float, freq: float = 30.0) -> np.ndarray:
+    t = np.arange(int(seconds * rate)) / rate
+    return (amp * np.sin(2 * np.pi * freq * t)).astype(np.float32)
+
+
+def _pcm(x: np.ndarray) -> bytes:
+    return np.rint(np.clip(x, -1, 1) * 32767).astype("<i2").tobytes()
+
+
+def _mp3(seconds: float, rate: int = 24_000) -> bytes:
+    from app.mixer import encode_mp3
+    return encode_mp3(_pcm(_tone(seconds, rate, 0.3, 220)), rate, 64)
+
+
+@check("a render's playhead keeps up with its audio")
+def _():
+    from app.render import RenderRoom
+    voiced = []
+    room = RenderRoom(1000, on_voiced=voiced.append)
+    room.publish({"type": "chapter", "i": 0, "start": 0})
+    room.publish({"type": "segment", "seq": 1, "start": 0, "lines": []})
+    room.push_audio(1, b"\x01\x00" * 500)
+    assert room.clock.ahead_s() == 0 and room.clock.live == 500     # never waits for a listener
+    room.publish({"type": "segment_end", "seq": 1, "samples": 500})
+    room.publish({"type": "error", "fatal": False, "message": "skipped"})
+    assert room.segment_list()[0]["samples"] == 500 and room.chapters == {0: 0}
+    assert len(room.voice) == 1000 and voiced == [0.5] and room.errors == ["skipped"] and room.fatal is None
+
+
+@check("a show renders start to finish with nobody listening")
+async def _():
+    from app.render import RenderRoom
+
+    class Stub:
+        async def write_segment(self, *args):
+            return SegmentDraft(lines=[Line(speaker="A", text="hello there")] * 3, beat_complete=True)
+
+        async def stream_speech(self, lines, hosts):
+            for _ in range(4):
+                yield b"\x00\x01" * 6000            # a second of audio per segment, in pieces
+
+    req = ShowRequest(source="x", style="calm", hosts=[{"name": "A"}], minutes=2, mode="recorded")
+    plan = ShowPlan(title="T", tagline="t", hosts=[Host(name="A", persona="", voice="Kore")],
+                    beats=[Beat(title=f"b{i}", notes="", minutes=0.01) for i in range(3)],
+                    cold_open=[Line(speaker="A", text="Cold open.")])
+    room = RenderRoom(24_000)
+    runner = ShowRunner(req, "x", Stub(), Settings(), room, plan=plan)
+    assert await asyncio.wait_for(runner.run(), 10) == "signed_off"
+    segs = room.segment_list()
+    assert segs[0]["lines"][0]["text"] == "Cold open." and segs[-1]["final"] and len(segs) >= 3
+    assert all(b["start"] == a["start"] + a["samples"] for a, b in zip(segs, segs[1:]))    # contiguous
+    assert sorted(room.chapters) == [0, 1, 2] and set(room.chapters.values()) <= {s["start"] for s in segs}
+    assert len(room.voice) // 2 == sum(s["samples"] for s in segs) == room.clock.audio_end
+
+
+@check("the mixer opens on the theme, stings a chapter, plays out, and says where everything moved")
+def _():
+    from app.mixer import INTRO_LEAD_S, OUTRO_PLAYOUT_S, STING_S, Cues, mix
+    rate = 1000
+    cues = Cues(intro=_tone(14, rate, 0.1), sting=_tone(3, rate, 0.1), outro=_tone(20, rate, 0.1))
+    chapters = {0: 0, 1: 60 * rate, 2: 90 * rate}       # chapter 2 comes too soon after 1 for a sting
+    m = mix(_pcm(_tone(120, rate, 0.3, 50)), chapters, cues, rate)
+    intro, sting, playout = int(INTRO_LEAD_S * rate), int(STING_S * rate), int(OUTRO_PLAYOUT_S * rate)
+    assert [(i.kind, i.at) for i in m.inserts] == [("intro", 0), ("sting", 60 * rate), ("outro", 120 * rate)]
+    assert m.samples == 120 * rate + intro + sting + playout
+    assert m.shift(0) == intro and m.shift(60 * rate - 1) == 60 * rate - 1 + intro
+    assert m.shift(60 * rate) == 60 * rate + intro + sting
+    assert m.chapter_start(0, 0) == 0 and m.chapter_start(1, 60 * rate) == 60 * rate + intro   # the sting opens it
+    assert m.chapter_start(2, 90 * rate) == m.shift(90 * rate)
+    assert [r[2] for r in m.regions] == ["intro", "sting", "outro"]
+    assert m.regions[1][:2] == [60 * rate + intro, 60 * rate + intro + sting] and m.regions[2][1] == m.samples
+
+
+@check("music ducks under speech, and the limiter keeps peaks down")
+def _():
+    from app.mixer import DUCK_DB, INTRO_LEAD_S, PEAK, Cues, from_db, mix
+    rate = 1000
+    lead = int(INTRO_LEAD_S * rate)
+    out = np.frombuffer(mix(bytes(2 * 60 * rate), {0: 0}, Cues(intro=_tone(14, rate, 0.1)), rate).pcm, "<i2") / 32768
+    alone, under = np.abs(out[1000:lead - 500]).max(), np.abs(out[lead + 1000:lead + 4000]).max()
+    assert math.isclose(under / alone, from_db(DUCK_DB), rel_tol=0.05)
+    loud = _pcm(np.sign(_tone(30, rate, 1.0)))                       # a full-scale square wave
+    pcm = mix(loud, {0: 0}, Cues(intro=_tone(14, rate, 0.9)), rate).pcm
+    assert np.abs(np.frombuffer(pcm, "<i2")).max() / 32767 <= PEAK + 1e-4
+
+
+@check("with no music the voice is only levelled")
+def _():
+    from app.mixer import SPEECH_RMS_DBFS, active_rms, from_db, mix
+    rate = 1000
+    m = mix(_pcm(_tone(10, rate, 0.05, 50)), {0: 0}, None, rate)
+    assert m.inserts == [] and m.regions == [] and m.samples == 10 * rate and m.shift(500) == 500
+    out = np.frombuffer(m.pcm, "<i2").astype(np.float32) / 32768
+    assert math.isclose(active_rms(out, rate), from_db(SPEECH_RMS_DBFS), rel_tol=0.05)
+
+
+@check("a theme becomes an intro, its punchiest bit and an outro, levelled")
+def _():
+    from app.mixer import MUSIC_RMS_DBFS, STING_S, active_rms, from_db
+    from app.music import cues_from_theme
+    rate = 1000
+    c = cues_from_theme(_tone(30, rate, 0.5), rate)
+    assert (len(c.intro), len(c.outro), len(c.sting)) == (14 * rate, 20 * rate, int(STING_S * rate))
+    assert math.isclose(active_rms(c.intro, rate), from_db(MUSIC_RMS_DBFS), rel_tol=0.05)
+    theme = _tone(30, rate, 0.05)
+    theme[15 * rate:18 * rate] *= 4                                                   # the punchy bit
+    punchy = cues_from_theme(theme, rate)
+    assert np.abs(punchy.sting).max() > 3 * np.abs(punchy.intro).max()
+    assert len(cues_from_theme(theme, rate, {"sting": [1, 2]}).sting) == rate          # a hand-picked window
+
+
+@check("the music library picks by mood, falls back, skips what it can't play, and works empty")
+def _():
+    from app.music import Library
+    d = Path(tempfile.mkdtemp(prefix="music-"))
+    assert not Library.load(d).available and Library.load(d).pick("warm") is None
+    for name in ("a.mp3", "b.mp3", "c.mp3"):
+        (d / name).write_bytes(_mp3(1))
+    packs = [{"id": "pop", "mood": "upbeat", "file": "a.mp3"},
+             {"id": "folk", "mood": "warm", "also": ["calm"], "file": "b.mp3"},
+             {"id": "folk2", "mood": "warm", "file": "c.mp3"},
+             {"id": "ghost", "mood": "tech", "file": "missing.mp3"},
+             {"id": "broken"}]
+    (d / "manifest.json").write_text(json.dumps({"version": 1, "packs": packs}), encoding="utf-8")
+    lib = Library.load(d)
+    assert [p.id for p in lib.packs] == ["pop", "folk", "folk2"] and lib.available
+    assert lib.pick("upbeat").id == "pop" and lib.pick("calm").id == "folk" and lib.pick("tech") is not None
+    assert lib.pick("warm", seed="pod1").id == lib.pick("warm", seed="pod1").id
+    assert {lib.pick("warm", seed=s).id for s in "abcdefgh"} == {"folk", "folk2"}        # ties are spread
+    cues = lib.cues(lib.get("pop"), 24_000)
+    assert abs(len(cues.intro) - 24_000) < 3_000 and lib.cues(lib.get("pop"), 24_000) is cues   # decoded once
+
+
+@check("every music mood has a sound, and prompts never take user text")
+def _():
+    from app.catalog import MUSIC_MOODS
+    from app.music import MOOD_MUSIC, music_prompt
+    assert set(MOOD_MUSIC) == set(MUSIC_MOODS)
+    assert all(music_prompt(m).startswith("Instrumental only, no vocals.") for m in MUSIC_MOODS)
+    assert music_prompt("Taylor Swift") == music_prompt("warm")
+
+
+# ---- voice memos: the brief, live research, and the episode's source -------------------
+
+def _brief(**kw) -> "MemoBrief":
+    from app.models import MemoBrief
+    base = dict(usable=True, transcript="I keep wondering why the city sounds louder at night.",
+                working_title="Louder at night", thesis="Night sounds louder.", key_ideas=["It feels louder"],
+                questions=["Is it louder?", "Does it hurt sleep?"], research_queries=["night sound"])
+    return MemoBrief(**{**base, **kw})
+
+
+@check("a memo brief stays inside the catalog and the limits")
+def _():
+    from app.llm import _tidy_brief
+    b = _tidy_brief(_brief(music_mood="Taylor Swift", format="huberman-lab",
+                           research_queries=[" a ", "a", "", "b", "c", "d", "e", "f"]), max_queries=4)
+    assert (b.music_mood, b.format, b.research_queries) == ("warm", "idea-breakdown", ["a", "b", "c", "d"])
+    empty = _tidy_brief(_brief(transcript="  "), max_queries=4)
+    assert not empty.usable and empty.reason
+
+
+@check("a grounded answer's searches, cited pages and suggestions come from its steps")
+def _():
+    from app.llm import grounding
+    note = lambda url, title="": {"type": "url_citation", "url": url, "title": title}  # noqa: E731
+    interaction = {"steps": [
+        {"type": "user_input", "content": [{"type": "text", "text": "q"}]},
+        {"type": "google_search_call", "id": "1", "arguments": {"queries": ["night noise", "night noise ", "sleep"]}},
+        {"type": "google_search_result", "call_id": "1", "result": [{"search_suggestions": f"<b>{i}</b>"} for i in range(7)]},
+        {"type": "model_output", "content": [{"type": "text", "text": "...", "annotations": [
+            note("https://www.who.int/x", "WHO guidelines"), note("https://www.who.int/x", "again"),
+            note("https://vertexaisearch.cloud.google.com/grounding-api-redirect/Ab1", "nature.com"),
+            note("javascript:alert(1)", "evil"), note("https:///nohost"), {"type": "place_citation"}]}]},
+    ]}
+    queries, sources, suggestions = grounding(interaction)
+    assert queries == ["night noise", "sleep"] and len(suggestions) == 5
+    assert [(s.domain, s.title) for s in sources] == [("who.int", "WHO guidelines"), ("nature.com", "nature.com")]
+
+
+@check("research findings are numbered, and malformed ones dropped")
+def _():
+    from types import SimpleNamespace
+    from app.llm import _dossier
+    interaction = SimpleNamespace(model_dump=lambda mode=None: {"steps": []})
+    data = {"summary": " S ", "findings": [
+        {"claim": "A.", "outlet": "Reuters", "confidence": "solid"}, "not a finding",
+        {"claim": "B.", "outlet": " ", "confidence": "solid"}, {"claim": "C.", "outlet": "AP", "confidence": "odd"},
+        {"claim": "D.", "outlet": "BBC", "confidence": "thin", "answers": [2]}], "disagreements": ["x", " "]}
+    d = _dossier(data, interaction, searched_at=5.0)
+    assert d.ok and [(f.id, f.outlet) for f in d.findings] == [(1, "Reuters"), (2, "BBC")]
+    assert d.summary == "S" and d.disagreements == ["x"] and d.searched_at == 5.0
+    assert not _dossier({"findings": []}, interaction, 0).ok
+
+
+@check("the episode's source carries the memo, then each finding with its outlet")
+def _():
+    from app.models import Finding, ResearchDossier
+    dossier = ResearchDossier(ok=True, summary="Mostly true.", searched_at=1_760_000_000, findings=[
+        Finding(id=1, claim="Inversions carry sound.", outlet="Acoustical Society", date="2023", answers=[1]),
+        Finding(id=2, claim="It's debated.", outlet="Nature", confidence="mixed"),
+        Finding(id=3, claim="Left out.", outlet="Blog")], unanswered=["Why exactly?"])
+    s = prompts.memo_source(_brief(), dossier, "Ana", excluded={3})
+    assert s.startswith("VOICE MEMO from Ana") and "ANA'S QUESTIONS:\n1. Is it louder?" in s
+    assert "[R1] Inversions carry sound. — Acoustical Society (2023) (question 1)" in s
+    assert "[R2] It's debated. — Nature [sources disagree]" in s and "Left out" not in s
+    assert "STILL UNCLEAR:\n- Why exactly?" in s and "October" in s
+    fallback = prompts.memo_source(_brief(), ResearchDossier(ok=False), "Ana")
+    assert "LIVE RESEARCH: none came back" in fallback and "[R" not in fallback
+
+
+@check("memo prompts and schemas offer exactly the catalog's formats and moods")
+def _():
+    from app.catalog import MUSIC_MOODS, TEMPLATES
+    schema = prompts.memo_schema(5)["properties"]
+    assert schema["format"]["enum"] == [t["id"] for t in TEMPLATES] and schema["music_mood"]["enum"] == MUSIC_MOODS
+    assert schema["research_queries"]["maxItems"] == 5 and "2 to 5 web searches" in prompts.memo_system(5)
+    assert all(t["id"] in prompts.memo_system(5) for t in TEMPLATES)
+    assert prompts.research_schema()["properties"]["findings"]["items"]["required"] == ["claim", "outlet", "confidence"]
+    assert "plain notes" in prompts.research_system(5, notes=True) and "plain notes" not in prompts.research_system(5)
+    direction = prompts.memo_direction("Ana")
+    assert "Ana's memo" in direction and "pre-recorded" in direction and len(direction) < 4_000
+
+
+# ---- making memo pods, and every pod's intro ------------------------------------------------
+
+def _music_library(moods=("warm", "calm")) -> "Library":
+    from app.music import Library
+    d = Path(tempfile.mkdtemp(prefix="music-"))
+    packs = []
+    for mood in moods:
+        (d / f"{mood}.mp3").write_bytes(_mp3(30))
+        packs.append({"id": f"{mood}-pack", "label": mood.title(), "mood": mood, "file": f"{mood}.mp3"})
+    (d / "manifest.json").write_text(json.dumps({"version": 1, "packs": packs}), encoding="utf-8")
+    return Library.load(d)
+
+
+@check("memo pods: talk time leaves room for the music; credit goes to a first name")
+def _():
+    from app.memo import credit_name, voice_minutes
+    assert voice_minutes(15, True) == 14 and voice_minutes(15, False) == 15 and voice_minutes(2, True) == 2
+    assert credit_name("", "Ana Lopez") == "Ana" and credit_name(" DJ Ana ", "x") == "DJ Ana"
+    assert credit_name("", " ") == "the creator"
+
+
+@check("a memo pod's format: your template, else your vibe or style, else the memo's pick")
+def _():
+    from app.catalog import PRESETS_BY_ID, TEMPLATES_BY_ID
+    from app.memo import build_request
+    from app.models import MemoOptions
+    brief = _brief(format="debate-night", language="Spanish")
+    intro = {"show_name": "Walk & Talk", "intro_line": "ideas from the sidewalk"}
+    r = build_request(brief, MemoOptions(), "SRC", credit="Ana", intro=intro)
+    assert r.style == TEMPLATES_BY_ID["debate-night"]["style"] and [h.name for h in r.hosts] == ["Theo", "Ruby"]
+    assert (r.mode, r.language, r.show_name, r.intro_line) == ("recorded", "Spanish", "Walk & Talk", "ideas from the sidewalk")
+    assert "Ana's memo" in r.direction and r.source_names == ["Voice memo by Ana"] and r.minutes == 15
+    r = build_request(brief, MemoOptions(template="couple-chat", vibe="gossip"), "SRC", credit="Ana", intro=None)
+    assert r.style_label == "Married couple chat" and r.hosts[0].name == "Mia" and r.show_name == ""
+    r = build_request(brief, MemoOptions(vibe="gossip"), "SRC", credit="Ana", intro=None)
+    assert r.vibe == "gossip" and r.style == PRESETS_BY_ID["gossip"]["prompt"] and r.hosts[0].name == "Theo"
+    r = build_request(brief, MemoOptions(style="Very calm.", hosts=[{"name": "Solo"}], minutes=5), "SRC",
+                      credit="Ana", intro=None)
+    assert r.style == "Very calm." and [h.name for h in r.hosts] == ["Solo"] and r.minutes == 5
+
+
+@check("outline edits keep beat lengths, and a changed outline loses its cold open")
+def _():
+    from app.memo import apply_edits
+    from app.models import ProduceMemo
+    plan = ShowPlan(title="T", tagline="t", hosts=[Host(name="A", persona="", voice="Kore")],
+                    beats=[Beat(title="Hook", notes="n1", minutes=2), Beat(title="Middle", notes="n2", minutes=6),
+                           Beat(title="End", notes="n3", minutes=2)], cold_open=[Line(speaker="A", text="Hi")])
+    same = [{"title": b.title, "notes": b.notes} for b in plan.beats]
+    kept = apply_edits(plan, ProduceMemo(title="New title", beats=same))
+    assert kept.title == "New title" and kept.cold_open and plan.title == "T"
+    edited = apply_edits(plan, ProduceMemo(beats=[same[0], {"title": "Brand new", "notes": "x"}, same[2]]))
+    assert [b.minutes for b in edited.beats] == [2, 10 / 3, 2] and edited.cold_open == []
+
+
+async def _memo_world(credits: int = 30):
+    from app.memo import Renders
+    s = LocalStore(tempfile.mkdtemp(prefix="memo-"))
+    acc = Accounts(s, admins=set(), signup_credits=credits)
+    await acc.sign_in({"uid": "ann", "email": "ann@example.com", "name": "Ann Lee"})
+    return s, acc, Renders(1)
+
+
+@check("settling a pod's credits is worked out from its ledger, so it never refunds twice")
+async def _():
+    from app.memo import settle
+    s, acc, _ = await _memo_world()
+    await acc.adjust_credits("ann", -15, reason="pod", show_id="p1")
+    await acc.adjust_credits("ann", -2, reason="music", show_id="p1")
+    assert await settle(s, acc, "ann", "p1", keep=11, note="x") == 6
+    assert await settle(s, acc, "ann", "p1", keep=11, note="x") == 0 and (await acc.get("ann")).credits == 19
+    assert await settle(s, acc, "ann", "p1", keep=0, note="x") == 11 and (await acc.get("ann")).credits == 30
+
+
+@check("after a restart, memo pods being made fail with their credits back; reviews wait")
+async def _():
+    from app.memo import sweep
+    s, acc, _ = await _memo_world()
+    for sid, status, kind in (("m1", "rendering", "memo"), ("m2", "review", "memo"), ("l1", "live", "pod")):
+        await s.create_show({"id": sid, "owner_uid": "ann", "status": status, "kind": kind, "render": {"stage": "voicing"}})
+    await acc.adjust_credits("ann", -10, reason="pod", show_id="m1")
+    assert await sweep(s, acc) == 1 and await sweep(s, acc) == 0
+    m1 = await s.get_show("m1")
+    assert m1["status"] == "failed" and "restarted" in m1["render"]["error"] and (await acc.get("ann")).credits == 30
+    assert (await s.get_show("m2"))["status"] == "review" and (await s.get_show("l1"))["status"] == "live"
+
+
+@check("renders take turns, first come first served, and say where you are in line")
+async def _():
+    from app.memo import Renders
+
+    class Job:
+        def __init__(self, n):
+            self.id, self.uid, self.told = f"j{n}", f"u{n}", []
+
+        def waiting(self, ahead):
+            self.told.append(ahead)
+
+    renders, order = Renders(1), []
+
+    async def go(job, hold):
+        async with renders.slot(job):
+            order.append(job.id)
+            await asyncio.sleep(hold)
+
+    jobs = [Job(n) for n in range(3)]
+    await asyncio.gather(go(jobs[0], 0.05), go(jobs[1], 0), go(jobs[2], 0))
+    assert order == ["j0", "j1", "j2"] and set(jobs[1].told) == {0} and jobs[2].told == [1, 0]   # 1 ahead, then next
+
+
+@check("a pod's theme: your saved music, a pack, or the library's pick; none when asked")
+async def _():
+    from app.music import theme_for
+    lib = _music_library()
+    s = LocalStore(tempfile.mkdtemp(prefix="theme-"))
+    await s.put_user_file("ann", "music-abc.mp3", _mp3(30), "audio/mpeg")
+    await s.put_item("ann", "music", {"id": "abc", "label": "Ann's theme", "file": "music-abc.mp3"})
+    kw = dict(library=lib, store=s, uid="ann", seed="pod1", rate=24_000)
+    cues, info = await theme_for("auto", mood="calm", **kw)
+    assert info == {"source": "library", "pack_id": "calm-pack", "label": "Calm", "license": ""} and len(cues.intro)
+    assert (await theme_for("warm-pack", mood="calm", **kw))[1]["pack_id"] == "warm-pack"
+    cues, info = await theme_for("mine:abc", mood="calm", **kw)
+    assert info["source"] == "mine" and info["label"] == "Ann's theme" and len(cues.outro)
+    assert (await theme_for("mine:gone", mood="calm", **kw))[1]["source"] == "library"
+    assert await theme_for("none", mood="calm", **kw) == (None, {"source": "none"})
+    from app.music import Library
+    assert (await theme_for("auto", **{**kw, "library": Library(Path("."), [])}, mood="calm"))[0] is None
+
+
+@check("every pod's intro: the hosts welcome listeners, to your show by name if you have one")
+def _():
+    from app.catalog import MUSIC_MOOD_FOR, MUSIC_MOODS, PRESETS_BY_ID, TEMPLATES_BY_ID, music_mood_for
+    r = _runner()
+    p = prompts.planner_system(r.req, "SRC")
+    assert "the episode's intro" in p and "welcome the listeners," in p and "introduce themselves" in p
+    named = r.req.model_copy(update={"show_name": "Walk & Talk", "intro_line": "ideas from the sidewalk"})
+    p = prompts.planner_system(named, "SRC")
+    assert 'welcome the listeners to "Walk & Talk"' in p and 'keeping its words: "ideas from the sidewalk"' in p
+    assert 'T (an episode of "Walk & Talk")' in prompts.writer_system(named, r.plan, "S", "STYLE", [])
+    assert "SHOW: T. t" in prompts.writer_system(r.req, r.plan, "S", "STYLE", [])
+    assert "welcome the listeners" in prompts.writer_input(r._context()[0], r.plan)    # no cold open: writers open
+    assert set(MUSIC_MOOD_FOR) == set(PRESETS_BY_ID) | set(TEMPLATES_BY_ID) and set(MUSIC_MOOD_FOR.values()) <= set(MUSIC_MOODS)
+    assert music_mood_for("gossip", "debate-night") == "newsy" and music_mood_for(None) == "warm"
+
+
+@check("a live pod opens on its theme, streamed before the first segment")
+async def _():
+    from app.mixer import LIVE_INTRO_S, intro_sting
+    from app.room import ShowRoom
+    rate = 24_000
+    sting = intro_sting(_tone(14, rate, 0.1), rate)
+    out = np.frombuffer(sting, "<i2")
+    assert len(out) == int(LIVE_INTRO_S * rate) and out[0] == 0 and abs(int(out[-1])) < 50   # fades in and out
+
+    class Planning:
+        async def plan_show(self, *args):
+            await asyncio.sleep(3600)
+
+    s = LocalStore(tempfile.mkdtemp(prefix="room-"))
+    doc = {"id": "live1", "owner_uid": "ann", "vibe": None, "style_label": "", "accent": "#2F6BD0"}
+    await s.create_show(doc)
+    req = ShowRequest(source="x", style="calm", hosts=[{"name": "A"}], minutes=2)
+    room = ShowRoom(doc=doc, request=req, source="x", gemini=Planning(), settings=Settings(), store=s,
+                    on_closed=lambda _id: None, intro=sting)
+    await asyncio.sleep(0.05)
+    assert room.clock.audio_end == len(out) and room.pcm.since(0)[0][:2] == (0, 0) and room.segments == {}
+    room.end_now("stopped")
+    await asyncio.wait_for(room.finalized.wait(), 5)
+    room.close()
+    assert (await s.get_show("live1"))["samples"] == len(out)
+
+
+class _StubGemini:
+    """Every model call a memo pod makes, canned. Speech is 10 s of tone a segment."""
+
+    def __init__(self, usable=True, music_fails=False):
+        self.usable, self.music_fails, self.calls = usable, music_fails, []
+
+    async def analyze_memo(self, audio, mime, *, creator, seconds=None):
+        self.calls.append(("analyze", mime, creator))
+        return _brief(usable=self.usable, reason="" if self.usable else "No speech in it.", music_mood="calm")
+
+    async def research(self, brief, *, max_queries):
+        from app.models import Finding, ResearchDossier, WebSource
+        self.calls.append(("research",))
+        return ResearchDossier(ok=True, findings=[Finding(id=1, claim="It is louder.", outlet="Reuters")],
+                               sources=[WebSource(title="r", url="https://reuters.com/x", domain="reuters.com")])
+
+    async def plan_show(self, req, source):
+        self.calls.append(("plan", req.mode, "[R1]" in source))
+        return ShowPlan(title="Louder at Night", tagline="t", about="About it.",
+                        hosts=[Host(name="Ivy", persona="", voice="Autonoe")],
+                        beats=[Beat(title=f"b{i}", notes="", minutes=1) for i in range(3)],
+                        cold_open=[Line(speaker="Ivy", text="Welcome!")])
+
+    async def write_segment(self, ctx, req, plan, source, style, context):
+        self.calls.append(("write", req.mode, req.minutes))
+        return SegmentDraft(lines=[Line(speaker="Ivy", text="More.")] * 3, beat_complete=True)
+
+    async def stream_speech(self, lines, hosts):
+        yield _pcm(_tone(10, 24_000, 0.2, 200))
+
+    async def generate_music(self, prompt):
+        self.calls.append(("music",))
+        if self.music_fails:
+            raise RuntimeError("blocked")
+        return _mp3(30), "audio/mpeg"
+
+
+async def _make_memo_pod(gemini, *, music="auto", review=False, credits=30):
+    from app.memo import MemoJob, new_doc
+    from app.models import MemoOptions
+    s, acc, renders = await _memo_world(credits)
+    opts = MemoOptions(minutes=3, music=music, review=review)
+    doc = new_doc("memo1", uid="ann", owner_name="Ann Lee", opts=opts, intro={"show_name": "", "music": "auto"},
+                  memo={"file": "memo.webm", "mime": "audio/webm", "bytes": 4, "credit": "Ann"},
+                  shared_with=[], album_ids=[], tags=[])
+    await s.create_show(doc)
+    await s.put_show_file("memo1", "memo.webm", b"\x1a\x45\xdf\xa3", "audio/webm")
+    await acc.adjust_credits("ann", -3, reason="pod", show_id="memo1")
+    if music == "generate":
+        await acc.adjust_credits("ann", -2, reason="music", show_id="memo1")
+    job = MemoJob(doc, store=s, accounts=acc, gemini=gemini, settings=Settings(), library=_music_library(),
+                  renders=renders)
+    job.start("prepare")
+    await asyncio.wait_for(job.task, 60)
+    return s, acc, doc
+
+
+@check("a memo becomes a finished pod: researched, voiced, scored, every start shifted")
+async def _():
+    from app.mixer import INTRO_LEAD_S
+    gemini = _StubGemini()
+    s, acc, doc = await _make_memo_pod(gemini)
+    saved = await s.get_show("memo1")
+    assert saved["status"] == "finished" and saved["render"]["stage"] == "done" and saved["audio"]["bytes"] > 0
+    assert ("plan", "recorded", True) in gemini.calls                    # the research reached the source
+    assert {c[2] for c in gemini.calls if c[0] == "write"} == {2}         # 3 minutes asked, 2 of talk + music
+    segs = (await s.load_children("memo1"))["segments"]
+    assert segs[0]["start"] == int(INTRO_LEAD_S * 24_000) and segs[0]["lines"][0]["text"] == "Welcome!"
+    assert saved["beats"][0]["start"] == 0 and saved["music"]["source"] == "library"
+    assert saved["music"]["regions"][0][2] == "intro" and saved["samples"] > sum(x["samples"] for x in segs)
+    assert saved["show_notes"]["credit"] == "Made from a voice memo by Ann." and saved["show_notes"]["sources"]
+    used = math.ceil(saved["duration_s"] / 60)
+    assert (await acc.get("ann")).credits == 30 - used and saved["credits_refunded"] == 3 - used
+
+
+@check("original music is kept for its owner; when it fails, the library steps in and credits come back")
+async def _():
+    s, acc, doc = await _make_memo_pod(_StubGemini(), music="generate")
+    saved = await s.get_show("memo1")
+    tracks = await s.list_items("ann", "music")
+    assert saved["music"]["source"] == "generated" and tracks and tracks[0]["show_id"] == "memo1"
+    assert await s.get_user_file("ann", tracks[0]["file"])
+    assert (await acc.get("ann")).credits == 30 - math.ceil(saved["duration_s"] / 60) - 2
+    s, acc, doc = await _make_memo_pod(_StubGemini(music_fails=True), music="generate")
+    saved = await s.get_show("memo1")
+    assert saved["music"]["source"] == "library" and (await acc.get("ann")).credits == 30 - math.ceil(saved["duration_s"] / 60)
+
+
+@check("a memo held for review stops at the outline; an unusable memo fails with its credits back")
+async def _():
+    gemini = _StubGemini()
+    s, acc, doc = await _make_memo_pod(gemini, review=True)
+    saved = await s.get_show("memo1")
+    assert saved["status"] == "review" and saved["plan_draft"]["title"] == "Louder at Night"
+    assert not any(c[0] == "write" for c in gemini.calls) and await s.get_text("memo1", "source.txt")
+    s, acc, doc = await _make_memo_pod(_StubGemini(usable=False))
+    saved = await s.get_show("memo1")
+    assert saved["status"] == "failed" and saved["render"]["error"] == "No speech in it."
+    assert (await acc.get("ann")).credits == 30
+
+
 # ---- prompts ---------------------------------------------------------------------------
 
 @check("a chosen persona reaches the planner and survives it")
@@ -559,6 +1158,35 @@ def _():
     for t in TEMPLATES:
         assert 1 <= len(t["hosts"]) <= 2 and all(h["voice"] in VOICES for h in t["hosts"]), t["id"]
         assert t["style"] and t["minutes"] in (5, 10, 15)
+
+
+@check("a template sets up a request the way the Create screen does")
+def _():
+    from app.catalog import TEMPLATES, VOICE_GENDER, template_request
+    for t in TEMPLATES:
+        fields = template_request(t["id"])
+        req = ShowRequest(source="x", **fields)
+        assert (req.style, req.style_label, req.accent, req.vibe) == (t["style"], t["label"], t["accent"], None)
+        assert [h.name for h in req.hosts] == [h["name"] for h in t["hosts"]]
+        assert all(VOICE_GENDER[h.voice] == h.gender for h in req.hosts)
+    fields["hosts"][0]["name"] = "changed"
+    assert TEMPLATES[-1]["hosts"][0]["name"] != "changed" and template_request("nope") is None
+
+
+@check("recorded episodes drop the live-only rules and follow their direction")
+def _():
+    r = _runner()
+    live_w = prompts.writer_system(r.req, r.plan, "SRC", "STYLE", [])
+    live_p = prompts.planner_system(r.req, "SRC")
+    assert live_w.startswith(prompts.WRITER_INTRO["live"]) and "Listener comments:" in live_w
+    assert "EPISODE DIRECTION" not in live_w + live_p and "live audio show" in live_p
+    rec = r.req.model_copy(update={"mode": "recorded", "direction": "Credit Ana's memo."})
+    w = prompts.writer_system(rec, r.plan, "SRC", "STYLE", [])
+    p = prompts.planner_system(rec, "SRC")
+    assert w.startswith(prompts.WRITER_INTRO["recorded"]) and "Listener comments" not in w
+    assert not re.search(r"\blive\b", w, re.IGNORECASE)
+    assert w.index("HOSTS:") < w.index("EPISODE DIRECTION:\nCredit Ana's memo.") < w.index("SOURCE:")
+    assert "pre-recorded" in p and "EPISODE DIRECTION:\nCredit Ana's memo.\n\nSTYLE:" in p
 
 
 @check("every template host and premade persona has a voice of their gender")

@@ -66,6 +66,14 @@ export const api = {
   addContext: (showId, form) => call("POST", `/api/shows/${id(showId)}/context`, { form }),
   audioUrl: (showId, download = false) => `/api/shows/${id(showId)}/audio${download ? "?download=1" : ""}`,
   organize: (showId, body) => call("PATCH", `/api/shows/${id(showId)}/organize`, { json: body }),
+  // voice memos, your music and your show intro
+  createMemo: (form) => call("POST", "/api/memos", { form }),
+  produceMemo: (showId, body = {}) => call("POST", `/api/memos/${id(showId)}/produce`, { json: body }),
+  memoAudioUrl: (showId) => `/api/memos/${id(showId)}/audio`,
+  myMusic: () => call("GET", "/api/me/music"),
+  showIntro: () => call("GET", "/api/me/intro"),
+  saveShowIntro: (body) => call("PUT", "/api/me/intro", { json: body }),
+  deleteShowIntro: () => call("DELETE", "/api/me/intro"),
   showStats: (showId) => call("GET", `/api/shows/${id(showId)}/stats`),
   myStats: () => call("GET", "/api/me/stats"),
   // replay progress; on page exit it goes as a beacon, which survives the unload

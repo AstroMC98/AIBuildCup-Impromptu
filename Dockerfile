@@ -4,10 +4,13 @@
 # voiced) live in this process's memory. See "Scaling" in the README.
 FROM python:3.13-slim
 
+# OPENBLAS_NUM_THREADS=1: numpy (mixing memo pods) needs no BLAS threads, and
+#   OpenBLAS otherwise reserves buffers for every CPU when it loads.
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    OPENBLAS_NUM_THREADS=1
 
 WORKDIR /srv
 COPY requirements.txt .
@@ -15,6 +18,8 @@ RUN pip install -r requirements.txt
 
 COPY app ./app
 COPY static ./static
+# The prepackaged music library every pod's theme comes from (tools/build_music_library.py).
+COPY music ./music
 
 RUN useradd --create-home --uid 10001 podcasts && mkdir -p /srv/data && chown podcasts /srv/data
 USER podcasts

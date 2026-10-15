@@ -136,6 +136,41 @@ def sniff_image(data: bytes) -> str | None:
     return None
 
 
+# Recordings Gemini can listen to, named the way the Interactions API names them,
+# with the extension a stored copy gets.
+AUDIO_EXTENSIONS = {
+    "audio/wav": "wav", "audio/aiff": "aiff", "audio/flac": "flac", "audio/ogg": "ogg",
+    "audio/webm": "webm", "audio/m4a": "m4a", "audio/mpeg": "mp3", "audio/aac": "aac",
+}
+
+
+def sniff_audio(data: bytes) -> str | None:
+    """The recording's type from its first bytes. Browsers record in different
+    containers (Chrome and Android: WebM, Firefox: Ogg, Safari: MP4), and phone
+    voice-memo apps save M4A, so the file name is no guide."""
+    head = data[:64]
+    if head[:4] == b"RIFF" and head[8:12] == b"WAVE":
+        return "audio/wav"
+    if head[:4] == b"FORM" and head[8:12] in {b"AIFF", b"AIFC"}:
+        return "audio/aiff"
+    if head[:4] == b"fLaC":
+        return "audio/flac"
+    if head[:4] == b"OggS":
+        return "audio/ogg"
+    if head[:4] == b"\x1a\x45\xdf\xa3":      # EBML: WebM, or Matroska (which Gemini doesn't take)
+        return "audio/webm" if b"webm" in head else None
+    if head[4:8] == b"ftyp":                 # MP4 family; HEIC photos share the box
+        return None if sniff_image(data) else "audio/m4a"
+    if head[:3] == b"ID3":
+        return "audio/mpeg"
+    if len(head) >= 2 and head[0] == 0xFF:
+        if head[1] & 0xF6 == 0xF0:           # ADTS: AAC with no container
+            return "audio/aac"
+        if head[1] & 0xE0 == 0xE0 and head[1] & 0x06:   # an MPEG audio frame, layer I to III
+            return "audio/mpeg"
+    return None
+
+
 # ---- links ------------------------------------------------------------------
 
 async def _resolve(host: str, port: int) -> list[str]:

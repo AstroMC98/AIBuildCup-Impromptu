@@ -7,6 +7,10 @@ is written a few lines at a time while you listen, so when someone calls in, the
 read it out and answer on air. You can hand them more material mid-show, or switch the
 whole style.
 
+Or record a rough two-minute **voice memo** on a walk: the engine listens to it, looks
+things up live with Google Search, shapes it into a story, and records a finished
+episode with theme music, up to 15 minutes, ready to share.
+
 ## Run it locally
 
 ```bash
@@ -46,9 +50,18 @@ accounts at once in different browsers. Grant yourself credits on the **Admin** 
   or photos. Start from a **template**, pick a vibe or one of **your styles**, or describe
   your own. Cast the hosts from **your personas** (name, who they are, voice), choose a
   length and who can listen. **Go live**, or **Save for later** as a draft.
+- **From a voice memo** (`/memo`): record in the app or upload one from your phone's
+  voice memos app (M4A, MP3, WAV, WebM, Ogg; up to 14 MB and 10 minutes). Pick a length,
+  the music and, if you like, a format; optionally **review the outline first**: see what
+  was heard, what the research found (untick anything), edit the chapters, then Produce.
+  See [How a voice memo becomes a pod](#how-a-voice-memo-becomes-a-pod).
+- **Every pod opens with an intro**: a few seconds of theme music, then the hosts welcome
+  listeners, introduce themselves and say what's coming. Save a **show intro** (`/intro`:
+  your show's name, a line of your own, a theme) and every pod you make opens with it;
+  switch it off for any one pod.
 - **Templates**: Science deep-dive (one expert host, long-form), Married couple chat,
-  Inspirational talk, Girl talk, Masculine talk, Debate night. Each sets the style, the
-  hosts (names, personas, voices) and a length; change anything before going live.
+  Inspirational talk, Girl talk, Masculine talk, Debate night, Idea breakdown. Each sets
+  the style, the hosts (names, personas, voices) and a length; change anything before going live.
   They're named after formats, not real shows or people, so published pods never pass
   themselves off as someone else's podcast.
 - **Personas** and **Styles** pages: keep speakers and styles to reuse. A persona has a
@@ -81,10 +94,11 @@ accounts at once in different browsers. Grant yourself credits on the **Admin** 
 ```
 browsers (creator + listeners)        server: one ShowRoom per live pod               Gemini
 ──────────────────────────────        ─────────────────────────────────               ──────
-POST /api/shows (credits charged) ──▶ plan_show() ───────────────────────────────────▶ gemini-3.8-flash
+POST /api/shows (credits charged) ──▶ the theme streams at once (seq 0) ───────────────  music/ library
+                                       plan_show() ───────────────────────────────────▶ gemini-3.8-flash
 WS join (cookie, access checked) ───▶ snapshot + audio from just behind live            (JSON schema)
-                                       │   the plan carries the cold open (first 2-4 lines),
-                                       │   voiced at once as segment 1
+                                       │   the plan carries the cold open (the spoken intro,
+                                       │   3-5 lines), voiced as segment 1
                                        ┌─▶ write_segment() ─────────────────────────────▶ gemini-3.8-flash
                                        │     the next ~20 s of lines as JSON        ◀────
 player {playing} ───▶ LiveClock        │   wait until live playhead is < 8 s from the end
@@ -101,9 +115,10 @@ ends ─────────────────────────
 What makes it feel live:
 
 - **Audio starts before the show is written.** Nothing waits for the whole episode. The
-  planner writes the cold open along with the plan, so speech starts about 12-15 s after
-  Go live; each later segment (~20 s of audio, sized in words from the measured speaking
-  pace) is written while the one before it plays.
+  theme plays the moment you go live (about 7 s from the music library) while the
+  episode is planned; the planner writes the cold open along with the plan, so the hosts
+  start about 12-15 s after Go live; each later segment (~20 s of audio, sized in words
+  from the measured speaking pace) is written while the one before it plays.
 - **A short buffer.** The server voices the next segment only when the live playhead
   is within `LOW_WATER_SECONDS` of the end of the voiced audio. Anything written but not
   yet voiced can still change.
@@ -125,9 +140,81 @@ written ahead are never shown early; call-in statuses ("On air in about 15 s",
 playhead. The server places each waiting call-in on the show timeline (the next segment
 if a rewrite still fits, else the one after) and moves it when the timeline shifts.
 
+## How a voice memo becomes a pod
+
+```
+POST /api/memos (recording + options) ─▶ MemoJob (app/memo.py)                          Gemini
+                                          transcribing  analyze_memo(): the recording ─▶ gemini-3.8-flash
+                                                        as recorded, back as a brief        (audio in, JSON out)
+                                          researching   research(): Google Search ─────▶ gemini-3.8-flash
+                                                        grounding; findings, cited pages   + google_search
+                                          outlining     plan_show() with the memo's
+                                                        direction and the research
+          review on: status "review" ── the owner checks it, edits, presses Produce ──┐
+                                          queued        one render at a time (MAX_RENDERS)
+                                          voicing       the live show loop with nobody ─▶ write + TTS
+                                                        listening (app/render.py)
+                                          scoring       a library theme, or Lyria ─────▶ lyria-3-clip-preview
+                                          mixing        intro, chapter stings, outro (app/mixer.py)
+                                          saving        MP3, shifted timestamps, credits settled
+```
+
+- **The memo is the spine.** Its transcript and the research go into the episode's source,
+  every finding numbered with the outlet that reported it. A fixed direction shapes the
+  episode: hook and welcome, credit the memo and frame its question, context, what the
+  research found (crediting outlets, saying how solid each finding is), where it's
+  contested, the memo's questions answered, takeaways. The hosts paraphrase the memo;
+  your own voice isn't played.
+- **Format.** The memo suggests one of the templates (and a music mood); a template, vibe
+  or style picked on the memo screen wins. Hosts' voices always match their gender.
+- **Research** uses Gemini's Google Search grounding. What was searched, the pages cited
+  and Google's Search Suggestions are read from the grounded response itself. The owner
+  sees the suggestions (the grounding terms ask for them to be shown with the results);
+  finished pods list the cited sources in their show notes. If research fails the pod is
+  made from the memo alone.
+- **Rendering** reuses the live writer and voices with a playhead that never waits for
+  a listener, so a 15-minute episode takes as long as Gemini needs to write and voice it
+  (`python -m tests.live_test --memo` reports how much faster than real time that is).
+  Renders queue for `MAX_RENDERS` slots, next to the live pods.
+- **Music.** The intro (6 s alone, then under the spoken intro), a short sting opening a
+  chapter (at most one every 45 s) and the outro are inserted around the voice; every
+  segment and chapter start is shifted to match, so replay captions stay in sync. With
+  music on, the hosts talk a minute less so the episode lands near its length.
+- **Credits.** A one-shot memo is charged when it's sent; a reviewed one when you press
+  Produce. When it's made you keep paying only for the minutes it runs, plus
+  `MUSIC_CREDITS` if original music was made and used. If the music fails, the library
+  steps in and those credits come back; if the pod fails, all of them do. Refunds are
+  worked out from the ledger, so nothing is refunded twice.
+- **Privacy.** While it's being made (or waiting for review) only its owner can see it,
+  whatever its visibility. The recording, transcript, research and outline are the
+  owner's only, kept with the pod and deleted with it.
+- **Restarts.** A pod waiting for review survives a restart. One being made is marked
+  failed with its credits back at the next start; **Try again** picks up from the outline.
+
+### Music and intros
+
+Every pod's theme comes from the prepackaged library in `music/` (`manifest.json` plus
+one 30-second theme per pack, by mood), picked to suit the pod's vibe or template, or a
+memo's mood. The library ships empty, so pods are voice only until you build it once:
+
+```bash
+python tools/build_music_library.py --lyria --dry-run      # see the prompts
+python tools/build_music_library.py --lyria                # one theme per mood with Lyria (~$0.04 each)
+python tools/build_music_library.py --from-files DIR --mood warm --license "CC0"   # or bring your own
+```
+
+Listen to the new themes (Lyria can slip in vocals), then commit `music/`. A memo pod can
+instead get **original music** (Lyria, `MUSIC_CREDITS` extra, a few minutes more); it's
+kept in the owner's account to reuse as "Your theme", or as their show intro's theme.
+Live pods stream the theme's opening while the episode is planned; memo pods get the
+full intro, stings and outro. Lyria music carries a SynthID watermark, noted in the
+show notes.
+
 ## Deploy to Google Cloud
 
 You need a Google Cloud project with billing, plus `gcloud` (logged in) and Docker.
+Build the music library first (see [Music and intros](#music-and-intros)): `music/` is
+copied into the image.
 
 **1. Project and Firebase sign-in (once, in the console)**
 
@@ -164,7 +251,7 @@ What the script sets up:
 | Cloud Run `podcasts` | the app, 1 instance, 2 vCPU, 2 GiB, 60-min request timeout | WebSockets + the live pod loop |
 | Firestore (native) | `shows/{id}` (+ segments, comments, context, sessions), `users/{uid}` (+ ledger, personas, styles, connections), `albums/{id}`, `subscriptions/{id}` | accounts, credits, library, transcripts, albums, following, listening stats |
 | Firestore security rules | deny all browser access (`deploy/firestore.rules`, released on every run) | the app only uses Firestore from the server; the Firebase web key is public |
-| Cloud Storage `gs://PROJECT-podcasts` | source text, context text, `episode.mp3` | replays and downloads (served by signed URL) |
+| Cloud Storage `gs://PROJECT-podcasts` | source text, context text, `episode.mp3`, voice memo recordings (`shows/{id}/files/`), music made for a user (`users/{uid}/files/`) | replays and downloads (served by signed URL) |
 | Secret Manager | `gemini-api-key`, `session-secret` | injected as env vars |
 | Firebase Authentication | Google + email sign-in | accounts; the server verifies ID tokens itself |
 | Service account `podcasts-run` | Firestore user, bucket object admin, secret accessor, token creator on itself | least privilege; the last one signs replay URLs |
@@ -191,6 +278,11 @@ own access control.
   events out through Memorystore (Redis) pub/sub; nothing else needs to change.
 - **Deploy between pods.** A new revision ends pods that are live at that moment;
   they're saved as *interrupted* with the audio so far, and unused credits are refunded.
+  Memo pods being made are marked failed with their credits back (Try again resumes them).
+- **Memo renders run in the background.** With `--min-instances 0`, an instance with no
+  open request (the owner closed the page) can be stopped mid-render; the pod then fails
+  safely as above. If that happens often, set `--min-instances 1` in `deploy/deploy.sh`
+  (it keeps one instance, and its cost, running).
 - **WebSockets last up to 60 minutes** on Cloud Run. Clients reconnect on their own and
   resume from the exact sample they had.
 - **Queries** use one indexed field each (owner, visibility, shared-with, album, or a
@@ -226,6 +318,11 @@ own access control.
   language or format, and they skip hateful or private ones. The creator can remove a
   queued call-in; admins can delete any pod.
 - Photos are described once by Gemini; only the description is stored.
+- Voice memos: the recording, its transcript, the research and the outline are visible
+  to the pod's owner only; the pod itself stays owner-only until it's made, whatever its
+  visibility. Uploads are recognized by their bytes, capped in size, and rate limited per
+  user. Research sources are kept only if they're `http(s)` pages, and Google's Search
+  Suggestions are shown in a sandboxed frame without scripts.
 - Looking someone up by email tells you whether they have an account. Fine for a demo;
   for a public launch, send requests by invite link only.
 
@@ -246,6 +343,14 @@ own access control.
 | `MAX_LIVE_SHOWS` | `3` | live pods at once |
 | `MAX_LISTENERS` | `50` | listeners per pod |
 | `IDLE_END_SECONDS` | `300` | nobody connected this long: the hosts sign off and it's saved |
+| `MAX_RENDERS` | `1` | memo pods voiced at once; raise once `live_test --memo` shows the TTS keeps up |
+| `MEMO_MAX_MB` / `MEMO_MAX_SECONDS` | `14` / `600` | voice memo upload limits |
+| `MAX_RESEARCH_QUERIES` | `5` | Google searches per memo |
+| `RENDER_SEGMENT_SECONDS` | `40` | a memo pod's segments (no call-ins to react to, so longer) |
+| `RENDER_MP3_KBPS` | `64` | memo pods' MP3 (music needs more than the live 48) |
+| `MUSIC_DIR` | `music` | the music library every pod's theme comes from |
+| `MUSIC_MODEL` | `lyria-3-clip-preview` | original music for memo pods; empty turns it off |
+| `MUSIC_CREDITS` | `2` | what original music costs on top of the minutes |
 
 If you hit 429s from the TTS model, raise `SEGMENT_SECONDS` (fewer, longer calls) or
 switch to the lite TTS model.
@@ -271,14 +376,23 @@ FIRESTORE_EMULATOR_HOST=127.0.0.1:8681 python -m tests.store_contract
 
 With a real `GEMINI_API_KEY`, `python -m tests.live_test --minutes 5 10 15 --public` runs
 real pods, prints links you can open to listen along, and reports timing, stalls and how
-fast call-ins were heard.
+fast call-ins were heard. `python -m tests.live_test --memo walk.m4a [--memo-minutes 5]
+[--music generate] [--review]` makes a pod from a real recording and reports each stage's
+time, how much faster than real time it was voiced, the research and the music.
+`python tools/probe_memo_apis.py --memo chrome.webm iphone.mp4 voicememo.m4a --music --tts`
+checks, a few cents' worth, that Gemini takes each recording format, that search and a
+JSON answer work in one call, and what the citations, Lyria and the TTS speed look like.
+Add `--gemini-base-url http://127.0.0.1:8765` to `live_test` to try it against the stub.
 
 The smoke test signs in four people (an admin, her connection, a stranger, and a
 signed-out visitor) and runs pods at 20x speed: credits (none, granted, charged,
 refunded), personas and styles, connection requests, every visibility rule, call-ins
 (answered under the account name, declined, rate limited), context and photos, a
 restyle, reactions, a late joiner, a reconnect, saving and replay with Range requests,
-publishing, a public live pod with a visitor, drafts, and a pod that ends itself.
+publishing, a public live pod with a visitor, drafts, and a pod that ends itself. Then
+voice memos: a show intro, refused uploads, a one-shot memo hidden until it's made and
+timed to the sample, a reviewed one made with the owner's edits while Lyria fails, and a
+memo pod deleted mid-way.
 
 To click around the UI offline:
 
@@ -299,12 +413,16 @@ app/
   auth.py      Firebase token checks, session cookies, dev sign-in, origin checks
   room.py      ShowRoom: one live pod, its listeners, audio, snapshots, refunds; Rooms registry
   show.py      ShowRunner: the writing loop (drafts, staleness, commits, voicing)
+  memo.py      MemoJob: a voice memo to a finished pod; Renders queue, credit settling, restart sweep
+  render.py    RenderRoom / RenderClock: the show loop with nobody listening
+  mixer.py     music around a rendered show (intro, stings, outro, ducking), timestamp shifts
+  music.py     the music library, theme picking (theme_for), Lyria prompts
   clock.py     LiveClock: the server-side live playhead
   audio.py     incremental MP3 encoder and the rolling PCM window
-  llm.py       the only module that talks to Gemini
-  prompts.py   planner, writer and image prompts; JSON schemas
+  llm.py       the only module that talks to Gemini (incl. memos, grounded research, Lyria)
+  prompts.py   planner, writer, image, memo and research prompts; JSON schemas
   ingest.py    text / file / link / photo -> text, with per-role caps
-  sources.py   file and link extraction, SSRF guard, image sniffing
+  sources.py   file and link extraction, SSRF guard, image and audio sniffing
   limits.py    rate limits and size caps
   store/       Store interface; local.py (JSON on disk), gcp.py (Firestore + GCS)
   stats.py     listening stats from listening sessions
@@ -313,12 +431,17 @@ app/
 static/        no build step: index.html, css/, js/ (ES modules)
   js/firebase.js   Firebase sign-in (loaded only in firebase mode)
   js/live/         socket, store (selectors by playhead), controller
-  js/audio/        timeline, live player (WebAudio pull scheduler), replay player, listen tracker
+  js/audio/        timeline, live player (WebAudio pull scheduler), replay player, listen tracker,
+                   recorder (voice memos)
   js/personas.js   persona fields (gender-matched voices, traits, private notes)
+  js/pod-options.js  choices every new pod has: who can listen, albums, theme music, show intro
   js/social.js     subscribe button, creator chip, album cards
-  js/views/        login, library (home, Following, header, account menu), create, show (phone:
-                   live-mobile + now-playing; desktop: studio), saved (personas, styles), albums,
-                   creator, stats, connections, admin
+  js/views/        login, library (home, Following, header, account menu), create, memo (record or
+                   upload), memo-status (being made, review, failed), intro (your show intro), show
+                   (phone: live-mobile + now-playing; desktop: studio), saved (personas, styles),
+                   albums, creator, stats, connections, admin
+music/           the music library: manifest.json + themes (built by tools/build_music_library.py)
+tools/           build_music_library.py, probe_memo_apis.py (checks the real API for memo pods)
 deploy/deploy.sh   one-command Cloud Run setup
 deploy/firestore.rules  deny-all browser access, released by deploy.sh
 tests/           fake_gemini.py (Interactions API stub), smoke_test.py, unit_test.py,
