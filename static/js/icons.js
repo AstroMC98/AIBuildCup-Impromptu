@@ -68,4 +68,4 @@ export function icon(name, size = 24, stroke = 2) {
   );
 }
 
-export const KIND_ICON = { text: "note", file: "file", link: "link", photo: "photo", source: "file" };
+export const KIND_ICON = { text: "note", file: "file", link: "link", photo: "photo", source: "file", research: "search" };

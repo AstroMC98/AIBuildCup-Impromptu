@@ -12,6 +12,7 @@ import re
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import AsyncIterator
+from urllib.parse import urlsplit
 
 from google import genai
 from google.genai import types
@@ -70,9 +71,9 @@ class Gemini:
 
     async def plan_show(self, req: ShowRequest, source: str) -> ShowPlan:
         data = await self._json_call(
-            system=prompts.planner_system(req, source),
+            system=prompts.planner_system(req, source, self.settings.research_max_beats),
             user=prompts.PLANNER_INPUT,
-            schema=prompts.plan_schema(len(req.hosts)),
+            schema=prompts.plan_schema(len(req.hosts), research=req.research),
         )
         try:
             plan = ShowPlan.model_validate(data)
@@ -96,7 +97,7 @@ class Gemini:
         names = [h.name for h in plan.hosts]
         system = prompts.writer_system(req, plan, source, style, context)
         user = prompts.writer_input(ctx, plan)
-        schema = prompts.segment_schema(names, max_lines=ctx.lines_wanted + 3)
+        schema = prompts.segment_schema(names, max_lines=ctx.lines_wanted + 3, research=ctx.research_on)
 
         last_error: Exception | None = None
         for attempt in range(2):
@@ -117,6 +118,25 @@ class Gemini:
                 return draft
             last_error = ModelOutputError("segment had no usable lines")
         raise ModelOutputError(f"could not write a segment: {last_error}")
+
+    # ---- research -----------------------------------------------------------
+
+    async def research(self, question: str, *, show: str, asked_by: str = "", language: str = "English"
+                       ) -> "Lookup":
+        """A web lookup grounded with Google Search: a short brief for the hosts, the
+        pages it rests on, and Google's Search Suggestions (shown with the result)."""
+        interaction = await self.client.aio.interactions.create(
+            model=self.settings.script_model,
+            system_instruction=prompts.RESEARCH_SYSTEM.format(language=language),
+            input=prompts.research_input(question, show=show, asked_by=asked_by),
+            tools=GOOGLE_SEARCH,
+            generation_config={"thinking_level": self.settings.script_thinking_level},
+        )
+        text = (interaction.output_text or "").strip()
+        if not text:
+            raise ModelOutputError("the lookup came back empty")
+        queries, sources, suggestions = grounding(interaction.model_dump(mode="json"))
+        return Lookup(text=text[:2000], sources=sources[:8], queries=queries[:6], suggestions=suggestions)
 
     # ---- images -------------------------------------------------------------
 
@@ -311,6 +331,55 @@ def _live_events(message: types.LiveServerMessage) -> list[LiveEvent]:
     if update and update.resumable and update.new_handle:
         out.append(ResumeHandle(update.new_handle))
     return out
+
+
+# ---- research: what a grounded answer searched for and cites ---------------------------
+
+GOOGLE_SEARCH = [{"type": "google_search"}]
+# Grounded answers can cite redirect links on this host; the site is then in the title.
+GROUNDING_REDIRECT_HOST = "vertexaisearch.cloud.google.com"
+
+
+@dataclass
+class Lookup:
+    text: str
+    sources: list[dict]        # {title, url, domain}
+    queries: list[str]
+    suggestions: list[str]     # Google's Search Suggestions (HTML), at most 5
+
+
+def grounding(interaction: dict) -> tuple[list[str], list[dict], list[str]]:
+    """From a grounded interaction (as JSON): what was searched, the web pages the
+    answer cites, and Google's Search Suggestions (at most 5, as the terms allow)."""
+    queries: list[str] = []
+    sources: dict[str, dict] = {}
+    suggestions: list[str] = []
+    for step in interaction.get("steps") or []:
+        kind = step.get("type")
+        if kind == "google_search_call":
+            queries += (step.get("arguments") or {}).get("queries") or []
+        elif kind == "google_search_result":
+            suggestions += [r["search_suggestions"] for r in step.get("result") or [] if r.get("search_suggestions")]
+        elif kind == "model_output":
+            for item in step.get("content") or []:
+                for note in item.get("annotations") or []:
+                    url = note.get("url") or ""
+                    if note.get("type") == "url_citation" and url not in sources and _web_page(url):
+                        sources[url] = _web_source(url, note.get("title") or "")
+    return list(dict.fromkeys(q.strip() for q in queries if q.strip())), list(sources.values()), suggestions[:5]
+
+
+def _web_page(url: str) -> bool:
+    parts = urlsplit(url)
+    return parts.scheme in {"http", "https"} and bool(parts.hostname)
+
+
+def _web_source(url: str, title: str) -> dict:
+    title = title.strip()
+    domain = (urlsplit(url).hostname or "").lower().removeprefix("www.")
+    if domain.endswith(GROUNDING_REDIRECT_HOST) and "." in title and " " not in title:
+        domain = title.lower().removeprefix("www.")
+    return {"title": (title or domain)[:200], "url": url, "domain": domain}
 
 
 def _reconcile_hosts(req: ShowRequest, planned: list[Host]) -> list[Host]:

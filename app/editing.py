@@ -45,6 +45,8 @@ CUT_IN_GAP_S = 0.08           # when you cut in on the co-host
 CUT_IN_PREROLL_S = 0.8        # you started talking a little before it stopped
 MIN_CUT_OFF_TURN_S = 1.5      # a co-host turn cut off sooner than this is dropped
 TRANSCRIPT_LAG_S = 0.4        # the live transcript trails the speech by about this
+MIN_CHARS_PER_S = 1.5         # a phrase is cut only if its words fit its audio (see _fits):
+MAX_CHARS_PER_S = 30.0        # a drawn-out "ummm" is slow, a misplaced transcript impossibly fast
 TARGET_DBFS = -20.0
 MAX_GAIN_DB = 12.0
 FADE_S = 0.01
@@ -462,8 +464,11 @@ def assemble(edit: Edit, plan: EditPlan, you_name: str, host_name: str,
              revs: list[tuple[int, int]] = ()) -> Episode:
     """revs: (call clock, style revision) for every mode switch, so each segment
     carries the mode it was said in and a replay re-tints where the call did."""
-    cut = set(plan.cut_phrases)
-    drop = {t for t in plan.drop_turns if any(x.id == t and not x.you for x in edit.turns)}
+    # Cuts only where a phrase's words could have been said in its audio: the live
+    # transcript can land on the wrong stretch, and then a cut would take the wrong words.
+    cut = {p.id for t in edit.turns if t.you for p in t.phrases if p.id in plan.cut_phrases and _fits(p)}
+    # A co-host turn you cut into stays: your next words are often an answer to it.
+    drop = {t for t in plan.drop_turns if any(x.id == t and not x.you and not x.cut_off for x in edit.turns)}
     parts: list[np.ndarray] = [sting(rising=True), silence(0.35)]
     pos = sum(len(p) for p in parts)
     segments: list[dict] = []
@@ -519,6 +524,13 @@ def assemble(edit: Edit, plan: EditPlan, you_name: str, host_name: str,
         "cut_ins": sum(1 for t in edit.turns if t.cut_off),
     }
     return Episode(pcm=float_to_pcm(audio), segments=segments, beats=beats, stats=stats)
+
+
+def _fits(p: Phrase) -> bool:
+    """Could these words have been said in this phrase's audio? Speech runs about
+    12-18 characters a second; well outside that, the transcript is misplaced."""
+    seconds = max(0.05, (p.end - p.start) / RATE - PAD_BEFORE_S - PAD_AFTER_S)
+    return MIN_CHARS_PER_S <= len(p.text.strip()) / seconds <= MAX_CHARS_PER_S
 
 
 def _turn_audio(edit: Edit, t: Turn, phrases: list[Phrase]) -> np.ndarray:

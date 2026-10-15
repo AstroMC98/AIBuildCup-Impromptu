@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     # ---- credits --------------------------------------------------------------
     # Pods cost credits to create; listening, calling in and connecting are free.
     credits_per_minute: float = 1.0
+    # Extra per minute for a pod with Research on (the hosts look things up live).
+    research_credits_per_minute: float = 0.5
     # Credits every new account starts with. 0 = new accounts are free accounts.
     signup_credits: int = 0
 
@@ -76,6 +78,14 @@ class Settings(BaseSettings):
     max_conns_per_ip: int = 5
     max_show_hours: float = 3.0
     mp3_kbps: int = 48
+
+    # ---- research (pods with Research on; see show.py) ---------------------------
+    # Google Search lookups per pod: for call-ins the source can't answer, and for
+    # chapters the planner found thin. One per call-in.
+    research_max_per_show: int = 6
+    research_max_beats: int = 3          # of those, at most this many for chapters
+    # A lookup taking longer is abandoned; the hosts answer with what they know.
+    research_timeout_seconds: float = 30.0
 
     # ---- co-hosting (you talk live with an AI co-host; see cohost.py) ----------
     # A Gemini Live native-audio model: speech in, speech out, with barge-in.

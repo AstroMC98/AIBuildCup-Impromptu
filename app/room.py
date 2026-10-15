@@ -64,7 +64,8 @@ async def refund_unused(store: Store, settings: Settings, doc: dict, duration_s:
     owner = doc.get("owner_uid")
     if not charged or not owner:
         return 0
-    used = math.ceil(duration_s / 60 * settings.credits_per_minute) if duration_s else 0
+    rate = float(doc.get("credits_per_minute") or settings.credits_per_minute)   # Research costs more
+    used = math.ceil(duration_s / 60 * rate) if duration_s else 0
     refund = max(0, charged - used)
     if refund:
         try:

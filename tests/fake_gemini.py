@@ -3,11 +3,16 @@
 Run:  uvicorn tests.fake_gemini:app --port 8765
 Then: GEMINI_API_KEY=fake GEMINI_BASE_URL=http://127.0.0.1:8765 uvicorn app.main:app
 
-Planner calls get a fixed plan. Writer calls get canned dialogue that answers any
-"[#id]" comments in the prompt, uses any "[Cn]" context it is told to bring in,
-acknowledges a STYLE CHANGED, and declines comments containing DECLINE_ME. Image
-calls get a canned description. TTS calls stream a sine tone as PCM. Editor calls
-(co-hosted calls) cut "can you hear me" phrases and drop "Loud and clear" answers.
+Planner calls get a fixed plan (with Research on, chapter 3 asks for a lookup).
+Writer calls get canned dialogue that answers any "[#id]" comments in the prompt,
+uses any "[Cn]" context it is told to bring in, acknowledges a STYLE CHANGED, and
+declines comments containing DECLINE_ME. Comments containing DEFER_ME are promised
+for later ("we'll get to that in a second", deferred); SNEAKY_DEFER does the same
+but marks it answered (the bug the runner guards against); RESEARCH_ME asks for a
+lookup when the schema allows it. PROMISED call-ins are answered. Google Search
+calls get a grounded answer: search steps, Search Suggestions, url_citation notes.
+Image calls get a canned description. TTS calls stream a sine tone as PCM. Editor
+calls (co-hosted calls) cut "can you hear me" phrases and drop "Loud and clear" answers.
 
 The Live API (co-hosting) is a WebSocket that answers speech: loud mic audio
 followed by 0.4 s of quiet is an utterance, transcribed as "Mic check, can you hear
@@ -66,10 +71,35 @@ def _section(prompt: str, header: str) -> str:
     return prompt[start:end if end > 0 else None]
 
 
+writer_schemas: list[list[str]] = []      # the properties each writer call's schema offered
+research_asked: list[str] = []
+SUGGESTIONS = '<div class="container"><a class="chip" href="https://www.google.com/search?q=zion">zion</a></div>'
+
+
 @app.get("/_seen")
 async def seen() -> dict:
     return {"writer_systems": writer_systems, "count": len(requests_seen),
-            "live_setups": live_setups, "live_texts": live_texts}
+            "live_setups": live_setups, "live_texts": live_texts,
+            "writer_schemas": writer_schemas, "research": research_asked}
+
+
+def _grounded(question: str) -> JSONResponse:
+    research_asked.append(question)
+    return JSONResponse({
+        "id": f"t{next(_calls)}", "status": "completed",
+        "steps": [
+            {"type": "google_search_call", "id": "s1", "arguments": {"queries": [question[:60]]}},
+            {"type": "google_search_result", "call_id": "s1", "result": [{"search_suggestions": SUGGESTIONS}]},
+            {"type": "model_output", "content": [{
+                "type": "text", "text": "RESEARCH FINDINGS: Zion Williamson averaged 24 points per game (ESPN).",
+                "annotations": [
+                    {"type": "url_citation", "url": "https://www.espn.com/nba/player/_/id/zion", "title": "ESPN",
+                     "start_index": 0, "end_index": 20},
+                    {"type": "url_citation", "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/X",
+                     "title": "nbcsports.com", "start_index": 21, "end_index": 40},
+                ]}]},
+        ],
+    })
 
 
 @app.post("/v1beta/interactions")
@@ -106,6 +136,9 @@ async def interactions(req: Request):
 
     props = body.get("response_format", {}).get("schema", {}).get("properties", {})
 
+    if any(t.get("type") == "google_search" for t in body.get("tools") or []):
+        return _grounded(str(body.get("input", "")))
+
     if "cut_phrases" in props:   # the editor of a co-hosted call
         prompt = body.get("input", "")
         cut = [int(p) for p in re.findall(r"\[p(\d+)\][^\n]*can you hear me", prompt, re.I)]
@@ -125,32 +158,50 @@ async def interactions(req: Request):
         n = props["hosts"]["minItems"]
         hosts = [{"name": "Kayla", "gender": "female", "persona": "Lives for drama.", "voice": "Leda"},
                  {"name": "Brit", "gender": "female", "persona": "Fact-checks everything.", "voice": "Kore"}][:n]
+        research = "research" in props["beats"]["items"]["properties"]   # Research on
         return _reply(json.dumps({
             "title": "Genesis, But Make It Messy",
             "tagline": "The first family had the first group chat.",
             "about": "Kayla and Brit spill everything from Genesis 1 to 3.",
             "hosts": hosts,
-            "beats": [{"title": t, "notes": "...", "minutes": m}
+            "beats": [{"title": t, "notes": "...", "minutes": m,
+                       **({"research": "garden of eden location theories"} if research and t == "The fallout" else {})}
                       for t, m in (("Cold open", 0.3), ("The garden", 0.6), ("The fallout", 0.6), ("Sign-off", 0.5))],
             "cold_open": [{"speaker": h["name"], "text": f"COLD OPEN from {h['name']}."} for h in hosts * 2][:3],
         }))
 
     writer_systems.append(body.get("system_instruction", ""))
+    writer_schemas.append(sorted(props))
     names = props["lines"]["items"]["properties"]["speaker"]["enum"]
     prompt = body.get("input", "")
-    comments = re.findall(r"\[#(\d+)\] ([^:]+): \"([^\"]*)\"", prompt)
+    comment_re = r"\[#(\d+)\] ([^:]+): \"([^\"]*)\""
+    comments = re.findall(comment_re, _section(prompt, "LISTENER COMMENTS"))
+    owed = re.findall(comment_re, _section(prompt, "CALL-INS YOU PROMISED"))
     bring = [int(x) for x in re.findall(r"\[C(\d+)\]", _section(prompt, "BRING IN NOW"))]
     chapter = [int(x) for x in re.findall(r"\[C(\d+)\]", _section(prompt, "THIS CHAPTER"))]
     attached = [int(x) for x in re.findall(r"attached \[C(\d+)\]", prompt)]
     final = "FINAL SEGMENT" in prompt
     n = next(_writer_calls)
 
-    lines, addressed, declined = [], [], []
+    lines, addressed, declined, deferred, lookups = [], [], [], [], []
     if "STYLE CHANGED" in prompt:
         lines.append({"speaker": names[0], "text": "Okay, STYLE SWITCH ACKNOWLEDGED, new vibe!", "style": ""})
+    for cid, who, _text in owed:
+        addressed.append(int(cid))
+        found = "with the research" if "research came back" in prompt else "from memory"
+        lines.append({"speaker": names[0], "text": f"As promised, back to {who}'s question {cid}, answered {found}.",
+                      "style": ""})
     for cid, who, text in comments:
         if "DECLINE_ME" in text:
             declined.append(int(cid))
+            continue
+        if "DEFER_ME" in text or "SNEAKY_DEFER" in text:
+            (addressed if "SNEAKY_DEFER" in text else deferred).append(int(cid))
+            lines.append({"speaker": names[0], "text": f"Ooh {who}, we'll get to that in a second!", "style": ""})
+            continue
+        if "RESEARCH_ME" in text and "research_requests" in props:
+            lookups.append({"comment_id": int(cid), "query": "Zion Williamson fantasy outlook"})
+            lines.append({"speaker": names[0], "text": f"{who}, let me pull up those numbers.", "style": ""})
             continue
         addressed.append(int(cid))
         lines.append({"speaker": names[0], "text": f"Okay wait, {who} called in <gasp> with comment number {cid}!",
@@ -165,6 +216,7 @@ async def interactions(req: Request):
         lines.append({"speaker": names[0], "text": "That's the show, bye!", "style": ""})
     return _reply(json.dumps({
         "lines": lines, "addressed_comment_ids": addressed, "declined_comment_ids": declined,
+        "deferred_comment_ids": deferred, "research_requests": lookups,
         "used_context_ids": used, "beat_complete": n % BEAT_EVERY == 0 or final,
     }))
 

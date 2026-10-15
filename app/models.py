@@ -38,6 +38,9 @@ class ShowRequest(BaseModel):
     language: str = Field(default="English", max_length=60)
     # Display names of the files and links the source was built from.
     source_names: list[str] = Field(default_factory=list, max_length=20)
+    # Research: the hosts look things up (Google Search) when a call-in or a chapter
+    # needs facts the source doesn't have. Costs extra credits.
+    research: bool = False
 
     @field_validator("language")
     @classmethod
@@ -111,6 +114,7 @@ class Beat(BaseModel):
     title: str
     notes: str
     minutes: float = 0.0     # planned length; drives pacing and the chapter bar
+    research: str = ""       # with Research on: a search for what the source lacks here
 
 
 class ShowPlan(BaseModel):
@@ -132,17 +136,24 @@ class Line(BaseModel):
     style: str = ""
 
 
+class ResearchRequest(BaseModel):
+    comment_id: int
+    query: str
+
+
 class SegmentDraft(BaseModel):
     lines: list[Line]
-    addressed_comment_ids: list[int] = []
+    addressed_comment_ids: list[int] = []    # call-ins this segment actually answers
+    deferred_comment_ids: list[int] = []     # acknowledged on air, answered later
     used_context_ids: list[int] = []
     declined_comment_ids: list[int] = []
+    research_requests: list[ResearchRequest] = []
     beat_complete: bool = False
 
 
 # ---- Material handed to the hosts mid-show ----------------------------------
 
-ContextKind = Literal["text", "file", "link", "photo"]
+ContextKind = Literal["text", "file", "link", "photo", "research"]
 ContextWhen = Literal["now", "next", "background"]
 
 
@@ -162,6 +173,12 @@ class ContextItem(BaseModel):
     status: Literal["pending", "background", "used", "dropped"] = "pending"
     used_seq: int | None = None
     comment_id: int | None = None
+    # research: the chapter it was looked up for (it waits for that chapter), and
+    # what it rests on. Search suggestions are Google's chips, shown with the result.
+    for_beat: int | None = None
+    sources: list[dict] = []          # {title, url, domain}
+    queries: list[str] = []
+    search_suggestions: list[str] = []
 
     def public(self) -> dict:
         data = self.model_dump(exclude={"text"})
@@ -186,6 +203,8 @@ class ListenerComment(BaseModel):
     name: str
     text: str
     attachment: ContextBrief | None = None
+    research: ContextBrief | None = None     # what the research desk found for it
+    research_failed: bool = False            # it looked, and came back empty
 
 
 class SegmentContext(BaseModel):
@@ -196,6 +215,9 @@ class SegmentContext(BaseModel):
     elapsed_minutes: float
     target_minutes: int
     comments: list[ListenerComment]
+    promised: list[ListenerComment] = []     # call-ins the hosts said they'd come back to
+    research_on: bool = False                # the pod has Research on
+    research_left: int = 0                   # lookups still allowed
     must_end: bool
     lines_wanted: int
     words_wanted: int = 0               # the segment's length budget; 0 = lines only

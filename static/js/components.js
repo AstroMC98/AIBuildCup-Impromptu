@@ -162,6 +162,7 @@ export function callins(store, pos, { limit = 0, onAirCard = true, producer = fa
 export function callinRow(store, c, pos, { status = true, producer = false } = {}) {
   const view = store.commentView(c, pos);
   const att = c.context_id ? store.context.get(c.context_id) : null;
+  const found = c.research_id ? store.context.get(c.research_id) : null;
   return html`
     <div class="callin">
       ${avatar(c.name, callerColor(c.name), 30)}
@@ -171,6 +172,7 @@ export function callinRow(store, c, pos, { status = true, producer = false } = {
           ${c.at !== undefined ? html`<span class="time">${fmtTime(c.at / store.rate)}</span>` : ""}</span>
         <span class="callin-text">${c.text}</span>
         ${att ? html`<span class="attach">${icon(KIND_ICON[att.kind] || "file", 14)}${att.name}, added as context</span>` : ""}
+        ${found ? html`<span class="attach">${icon("search", 14)}Looked up: ${(found.sources || []).slice(0, 3).map((s) => s.domain || s.title).join(", ") || found.name}</span>` : ""}
         ${status && view.label ? html`<span class="pill ${view.tone}">${view.label}</span>` : ""}
       </div>
       ${producer && c.status === "queued" ? html`
@@ -222,15 +224,45 @@ export function contextList(store, pos, { variant = "list", pills = false } = {}
     const view = x.main ? { label: store.ended ? "Main source" : "Main source, in use", pill: store.ended ? "Used" : "In use", tone: "in" }
       : store.contextView(x, pos);
     const meta = x.main ? (pills ? "Main source" : view.label)
-      : pills ? (x.comment_id ? `From ${x.added_by}'s call-in` : x.from_creator ? (x.kind === "text" ? "Note" : `${cap(x.kind)}, from the producer`) : `${cap(x.kind)} from ${x.added_by}`)
+      : pills ? (x.kind === "research" ? researchFor(store, x)
+        : x.comment_id ? `From ${x.added_by}'s call-in` : x.from_creator ? (x.kind === "text" ? "Note" : `${cap(x.kind)}, from the producer`) : `${cap(x.kind)} from ${x.added_by}`)
       : view.label;
     return html`
-      <div class="ctx-item ${variant}">
+      <div class="ctx-item ${variant} ${x.kind === "research" ? "research" : ""}">
         <span class="ctx-icon" aria-hidden="true">${icon(KIND_ICON[x.kind] || "file", 18)}</span>
-        <span class="ctx-text"><span class="ctx-name">${x.name}</span><span class="ctx-meta">${meta}</span></span>
+        <span class="ctx-text"><span class="ctx-name">${x.name}</span><span class="ctx-meta">${meta}</span>
+          ${x.kind === "research" ? researchSources(x) : ""}</span>
         ${pills ? html`<span class="pill ${view.tone}">${view.pill}</span>` : ""}
       </div>`;
   })}`;
+}
+
+/** Changes only when the context list would: research cards hold Google's suggestions
+ *  in frames, which go blank and reload whenever they're re-rendered. */
+export function contextKey(store, pos) {
+  const items = [...store.context.values()].map((x) => {
+    const seg = x.used_seq ? store.segBySeq.get(x.used_seq) : null;
+    return `${x.id}:${x.status}:${seg && pos >= seg.start ? 1 : 0}`;
+  });
+  return `${items.join(",")}|${store.ended ? 1 : 0}|${(store.show.sources || []).join("/")}`;
+}
+
+function researchFor(store, x) {
+  if (x.comment_id) return `Looked up for ${store.comments.get(x.comment_id)?.name || "a"}'s call-in`;
+  const beat = store.beats()[x.for_beat];
+  return beat ? `Looked up for “${beat.title}”` : "Looked up by the research desk";
+}
+
+/** Where a lookup's facts came from, and Google's Search Suggestions for it (the
+ *  grounding terms ask for them with the result; their HTML runs sandboxed). */
+function researchSources(x) {
+  const sources = (x.sources || []).slice(0, 4);
+  return html`
+    ${sources.length ? html`<span class="ctx-sources">${sources.map((s) => html`
+      <a href="${s.url}" target="_blank" rel="noopener noreferrer nofollow">${s.domain || s.title}</a>`)}</span>` : ""}
+    ${(x.search_suggestions || []).slice(0, 1).map((h) => html`
+      <iframe class="search-suggestions" title="Google Search suggestions" sandbox="allow-popups allow-popups-to-escape-sandbox"
+        srcdoc="${h}" loading="lazy"></iframe>`)}`;
 }
 
 function cap(s) {
@@ -245,8 +277,10 @@ export function chapters(store, pos, { rows = false } = {}) {
     const state = i < now ? "done" : i === now ? "now" : i === now + 1 ? "next" : "later";
     const meta = state === "now" ? "Now" : start !== undefined && state === "done" ? fmtTime(start / store.rate)
       : state === "next" ? "Next" : start !== undefined ? fmtTime(start / store.rate) : "Later";
+    const jump = start !== undefined && start !== null;   // chapters that have happened can be jumped to
     return html`
-      <li class="chapter ${state} ${rows ? "row" : ""}">
+      <li class="chapter ${state} ${rows ? "row" : ""} ${jump ? "jump" : ""}" ${jump
+        ? html`data-action="seek-chapter" data-start="${start}" role="button" tabindex="0" aria-label="Jump to ${b.title}"` : ""}>
         <span class="chapter-meta">${meta}</span>
         <span class="chapter-title">${b.title}</span>
       </li>`;

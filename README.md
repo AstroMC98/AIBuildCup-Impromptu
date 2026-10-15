@@ -69,6 +69,16 @@ accounts at once in different browsers. Grant yourself credits on the **Admin** 
   playing view with the live transcript.
 - **Call in**: type a message; the hosts read it out with your name and react in
   character. Rude call-ins are skipped. Attach a file, link or photo and they use it too.
+  If the hosts say they'll come back to a call-in, they do: it's kept as *promised* and
+  handed back to every segment until they answer it (the sign-off answers whatever's
+  left), even when the writers marked it answered while saying "we'll get to that".
+- **Research** (optional when creating, +`RESEARCH_CREDITS_PER_MINUTE`): when a call-in
+  or a chapter needs facts the source doesn't have (latest stats, recent news), the hosts
+  look them up with Google Search while they keep talking ("let me pull up his numbers"),
+  then answer and name the outlet. Lookups show in the context list with their sources
+  and Google's Search Suggestions. Without Research, the hosts answer from what they know.
+- **Seek**: click or drag the progress bar, or tap a chapter, to jump there (a live
+  pod: back as far as your browser holds, about 5 minutes); arrow keys move 10 s.
 - **Add context**: text, a file, a link or a photo, used **right now**, at the **next
   chapter**, or as **background only**, credited on air or not.
 - **Restyle** (creator): switch the vibe mid-show; the hosts switch within a couple of
@@ -298,6 +308,10 @@ own access control.
 | Env var | Default | Effect |
 |---|---|---|
 | `CREDITS_PER_MINUTE` | `1` | what a pod costs per minute of requested length |
+| `RESEARCH_CREDITS_PER_MINUTE` | `0.5` | extra per minute for a pod with Research on |
+| `RESEARCH_MAX_PER_SHOW` | `6` | Google lookups per Research pod (one per call-in) |
+| `RESEARCH_MAX_BEATS` | `3` | of those, at most this many for chapters the planner found thin |
+| `RESEARCH_TIMEOUT_SECONDS` | `30` | a slower lookup is dropped; the hosts answer with what they know |
 | `SIGNUP_CREDITS` | `0` | credits new accounts start with |
 | `ADMIN_EMAILS` | | who can grant credits and delete any pod |
 | `TTS_MODEL` | `gemini-3.8-flash-tts` | `gemini-3.8-flash-lite-tts` is faster and cheaper |

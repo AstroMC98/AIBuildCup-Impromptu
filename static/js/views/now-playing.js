@@ -2,7 +2,7 @@
 // live transcript, call-ins, context and chapters. An overlay over the phone
 // live view, or the whole page for a replay.
 import {
-  callins, callinsKey, chapterBar, chapterBarKey, chapters, chaptersKey, contextList, statusText, talking,
+  callins, callinsKey, chapterBar, chapterBarKey, chapters, chaptersKey, contextKey, contextList, statusText, talking,
 } from "../components.js";
 import { html, renderSpoken, setHtml } from "../html.js";
 import { icon } from "../icons.js";
@@ -11,7 +11,7 @@ import { loginPath } from "../session.js";
 import { bindSubscribe, creatorBar, creatorBarKey } from "../social.js";
 import { Regions, bindActions } from "../ui.js";
 import { fmtTime } from "../util.js";
-import { bindCallin, callinForm, focusCallin, showActions } from "./shared.js";
+import { bindCallin, bindSeekBar, callinForm, focusCallin, showActions } from "./shared.js";
 
 export function mountNowPlaying(host, ctl, { page = false, onClose } = {}) {
   const s = ctl.store;
@@ -79,6 +79,7 @@ export function mountNowPlaying(host, ctl, { page = false, onClose } = {}) {
     callin: () => (ctl.canTalk ? focusCallin(el) : navigate(loginPath())),
   }));
   bindCallin(el, ctl);
+  const offSeek = bindSeekBar(r.el("chapters"), ctl);
   const onKey = (e) => { if (e.key === "Escape" && onClose && !document.body.classList.contains("sheet-open")) onClose(); };
   document.addEventListener("keydown", onKey);
 
@@ -118,7 +119,7 @@ export function mountNowPlaying(host, ctl, { page = false, onClose } = {}) {
       const status = statusText(s, ctl, pos);
       r.set("transcript", `${s.version}|${at ? at.seg.seq + ":" + at.idx : "-"}|${status}`, () => transcript(s, pos, status));
       r.set("callins", callinsKey(s, pos), () => callins(s, pos, { limit: 6, producer: s.producer && ctl.live }));
-      r.set("context", `${callinsKey(s, pos)}`, () => contextList(s, pos));
+      r.set("context", contextKey(s, pos), () => contextList(s, pos));
       r.set("chaptercards", chaptersKey(s, pos), () => chapters(s, pos));
     },
     onEvent() {
@@ -128,6 +129,7 @@ export function mountNowPlaying(host, ctl, { page = false, onClose } = {}) {
     destroy() {
       offActions();
       offSub();
+      offSeek();
       document.removeEventListener("keydown", onKey);
       el.remove();
     },

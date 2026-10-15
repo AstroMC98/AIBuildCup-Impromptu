@@ -253,6 +253,23 @@ export class ShowStore {
     });
   }
 
+  /** The sample under a point on the chapter bar (0..1 across it), with the same
+   *  widths chapterBar() draws. Infinity: a chapter that hasn't happened yet. */
+  sampleAtBar(fraction) {
+    const parts = this.chapterBar(0);
+    if (!parts.length) return fraction * (this.clock.audio_end || 0);
+    const total = parts.reduce((a, p) => a + p.flex, 0) || 1;
+    let target = Math.min(1, Math.max(0, fraction)) * total;
+    for (const p of parts) {
+      if (target <= p.flex || p === parts[parts.length - 1]) {
+        if (p.start === undefined) return Infinity;
+        return p.start + Math.min(target, p.flex);
+      }
+      target -= p.flex;
+    }
+    return Infinity;
+  }
+
   accentAt(pos) {
     const at = this.lineAt(pos);
     const rev = at ? at.seg.style_rev || 0 : 0;
@@ -267,9 +284,10 @@ export class ShowStore {
 
   /** The call-in a line is reading out, if any. */
   callinFor(seg, idx) {
-    if (!seg?.addressed?.length) return null;
+    const ids = [...(seg?.addressed || []), ...(seg?.promised || [])];
+    if (!ids.length) return null;
     const text = (seg.lines[idx]?.text || "").toLowerCase();
-    for (const id of seg.addressed) {
+    for (const id of ids) {
       const c = this.comments.get(id);
       if (!c) continue;
       const first = (c.name || "").split(/\s+/)[0].toLowerCase();
@@ -297,6 +315,14 @@ export class ShowStore {
       case "declined": return { label: "Not aired", tone: "done" };
       case "removed": return { label: "Removed", tone: "done" };
       case "too_late": return { label: "Came in after the sign-off", tone: "done" };
+      case "missed": return { label: "The hosts didn't get back to it", tone: "done" };
+      case "promised": {
+        // Read out at promised_seq, answered later. Before that segment plays, it's up next.
+        const said = c.promised_seq ? this.segBySeq.get(c.promised_seq) : null;
+        if (said && pos < said.start) return { label: `Up next · ${onAirIn((said.start - pos) / this.rate)}`, tone: "next" };
+        if (c.research === "pending") return { label: "Read out · looking it up…", tone: "wait" };
+        return { label: "Read out · they're coming back to it", tone: "wait" };
+      }
       case "on_deck":
         if (!seg) return { label: "Up next", tone: "next" };
         if (pos < seg.start) {
@@ -310,6 +336,10 @@ export class ShowStore {
 
   contextView(x, pos) {
     if (x.status === "background") return { label: "Background, always on", pill: "Background", tone: "bg" };
+    if (x.kind === "research" && x.status === "pending" && x.for_beat !== null && x.for_beat !== undefined) {
+      const beat = this.beats()[x.for_beat];
+      return { label: `Looked up for “${beat?.title || `chapter ${x.for_beat + 1}`}”`, pill: "For later", tone: "wait" };
+    }
     if (x.status === "dropped") return { label: "Not used", pill: "Not used", tone: "done" };
     if (x.status === "used") {
       const seg = this.segBySeq.get(x.used_seq);

@@ -180,8 +180,13 @@ def _ip(request: Request) -> str:
     return client_ip(request.headers, request.client.host if request.client else None)
 
 
-def _cost(minutes: int) -> int:
-    return max(1, math.ceil(minutes * settings.credits_per_minute))
+def _rate(research: bool = False) -> float:
+    """Credits per minute: Research on (the hosts look things up live) costs more."""
+    return settings.credits_per_minute + (settings.research_credits_per_minute if research else 0.0)
+
+
+def _cost(minutes: int, research: bool = False) -> int:
+    return max(1, math.ceil(minutes * _rate(research)))
 
 
 async def _show_doc(show_id: str) -> tuple[dict, ShowRoom | None]:
@@ -469,6 +474,8 @@ async def options(request: Request) -> dict:
         "api_key_set": bool(settings.gemini_api_key),
         "models": {"script": settings.script_model, "tts": settings.tts_model},
         "credits_per_minute": settings.credits_per_minute,
+        "research_credits_per_minute": settings.research_credits_per_minute,
+        "research_max_per_show": settings.research_max_per_show,
         "auth": {
             "mode": auth.mode,
             "firebase": {
@@ -767,7 +774,7 @@ async def create_show(body: NewShow, request: Request) -> dict:
     _require_origin(request)
     user = await require_user(request)
     req = body.request
-    cost = _cost(req.minutes)
+    cost = _cost(req.minutes, req.research)
     if user.credits < cost:
         raise HTTPException(status_code=402, detail=(
             f"Creating pods uses credits: this one needs {cost} and you have {user.credits}. "
@@ -781,6 +788,7 @@ async def create_show(body: NewShow, request: Request) -> dict:
         "id": show_id,
         "owner_uid": user.uid,
         "owner_name": user.name,
+        "credits_per_minute": _rate(req.research),   # what unused minutes are refunded at
         "visibility": body.visibility,
         "shared_with": await _clean_share_list(user, body.shared_with),
         "template": body.template if body.template in TEMPLATES_BY_ID else None,
@@ -1288,10 +1296,11 @@ async def start_draft(show_id: str, request: Request) -> dict:
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail="This draft can't be started: its source is missing.") from exc
     model = _check_capacity()
-    cost = _cost(req.minutes)
+    cost = _cost(req.minutes, req.research)
     await _charge(user, cost, show_id)
     now = time.time()
-    fields = {"status": "live", "started_at": now, "created_at": now, "credits_charged": cost}
+    fields = {"status": "live", "started_at": now, "created_at": now, "credits_charged": cost,
+              "credits_per_minute": _rate(req.research)}
     doc.update(fields)
     await store.update_show(show_id, fields)
     _start_room(doc, req, source, model)

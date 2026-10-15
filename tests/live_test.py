@@ -435,11 +435,18 @@ async def run_cohost(producer: httpx.AsyncClient, cookie: str, opts: dict, out: 
     print(f"[co-host] on a call: {show_id}", flush=True)
     phone = await CallPhone(show_id, cookie).open()
     t_join = time.monotonic()
-    marks: dict = {"answers": []}
+    marks: dict = {"answers": [], "jump_ins": 0}
 
     async def answer_after(stopped: float, after_turn: int) -> float | None:
-        ok = await phone.until(lambda: phone.last_turn > after_turn, 15)
-        return round(phone.turn_first[phone.last_turn] - stopped, 2) if ok else None
+        """Seconds from when you stopped to the co-host's answer. A turn it started
+        while you were still talking (it took a pause for the end of your turn, then
+        stopped when you carried on) is a jump-in, not the answer."""
+        def answer() -> int | None:
+            return next((t for t, at in sorted(phone.turn_first.items())
+                         if t > after_turn and at >= stopped - 0.3), None)
+        ok = await phone.until(lambda: answer() is not None, 15)
+        marks["jump_ins"] += sum(1 for t, at in phone.turn_first.items() if t > after_turn and at < stopped - 0.3)
+        return round(phone.turn_first[answer()] - stopped, 2) if ok else None
 
     async def let_it_finish() -> None:
         turn = phone.last_turn
@@ -505,6 +512,7 @@ async def run_cohost(producer: httpx.AsyncClient, cookie: str, opts: dict, out: 
         "answer_median_s": sorted(answers)[len(answers) // 2] if answers else None,
         "answer_max_s": max(answers) if answers else None,
         "cut_in": marks.get("cut_in"),
+        "jump_ins": marks["jump_ins"],
         "mode_switch_answer_s": marks.get("mode_switch_answer_s"),
         "hangup_to_saved_s": round(saved_at - t_hang, 1) if saved_at else None,
         "call_s": show.get("call_s"), "episode_s": show.get("duration_s"), "edit": show.get("edit"),
@@ -522,6 +530,7 @@ def cohost_report(result: dict, out: Path) -> None:
         ("Answered after you stopped (s), each line", result.get("answers_s")),
         ("Answer latency median / max (s)", f"{result.get('answer_median_s')} / {result.get('answer_max_s')}"),
         ("Cut in: stopped by / after (s)", result.get("cut_in")),
+        ("Co-host jumped in while you were still talking", result.get("jump_ins")),
         ("Answered a mode switch after (s)", result.get("mode_switch_answer_s")),
         ("Hang up to saved episode (s)", result.get("hangup_to_saved_s")),
         ("Call / episode length (s)", f"{result.get('call_s')} / {result.get('episode_s')}"),

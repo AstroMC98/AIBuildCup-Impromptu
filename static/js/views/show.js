@@ -116,7 +116,7 @@ function errorScreen(root, message) {
 
 function draftScreen(root, data) {
   const s = data.show;
-  const cost = session.cost(s.minutes);
+  const cost = session.cost(s.minutes, Boolean(s.request?.research));
   applyAccent(document.documentElement, s.accent);
   setHtml(root, html`
     <div class="page narrow">

@@ -170,6 +170,26 @@ export class ShowController {
     this.player.seek(this.liveEdge() - 0.25 * this.store.rate);
   }
 
+  /** Jump to a sample: anywhere in a replay; live, anywhere in the audio this browser
+   *  still holds (about 5 minutes back), and past the live edge means live. */
+  seekTo(sample) {
+    const rate = this.store.rate;
+    if (!this.live) {
+      const end = this.store.clock.audio_end || Infinity;
+      const pos = Math.max(0, Math.min(sample, end - 0.5 * rate));
+      return this.player.started ? this.player.seek(pos) : this.player.start(pos);
+    }
+    if (!this.player.started) return this.tuneIn();
+    if (sample >= this.liveEdge() - 0.5 * rate) return this.jumpLive();
+    if (this.player.paused) this.player.resume();
+    this.player.seek(Math.max(this.timeline.start, sample));
+  }
+
+  /** The earliest point a live listener can seek back to (what's still held). */
+  heldFrom() {
+    return this.live ? (this.timeline.empty ? 0 : this.timeline.start) : 0;
+  }
+
   behindLive(pos) {
     if (!this.live || !this.player.started || this.store.ended) return false;
     return this.liveEdge() - pos > BEHIND_LIVE_SECONDS * this.store.rate;

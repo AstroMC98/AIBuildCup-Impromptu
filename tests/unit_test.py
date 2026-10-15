@@ -26,9 +26,11 @@ from app.store import InsufficientCredits  # noqa: E402
 from app.clock import LiveClock  # noqa: E402
 from app.config import Settings  # noqa: E402
 from app.limits import TokenBucket  # noqa: E402
+from app.llm import Lookup  # noqa: E402
 from app.models import (  # noqa: E402
-    Beat, CohostRequest, ContextItem, Host, HostRequest, Line, SegmentDraft, ShowPlan, ShowRequest,
+    Beat, CohostRequest, ContextItem, Host, HostRequest, Line, ResearchRequest, SegmentDraft, ShowPlan, ShowRequest,
 )
+from app.room import refund_unused  # noqa: E402
 from app.show import Draft, ShowRunner  # noqa: E402
 from app.sources import SourceError, sniff_image  # noqa: E402
 from app.store.local import LocalStore  # noqa: E402
@@ -362,8 +364,8 @@ class StubRoom:
         pass
 
 
-def _runner() -> ShowRunner:
-    req = ShowRequest(source="x", style="calm", hosts=[{"name": "A"}], minutes=4)
+def _runner(research: bool = False) -> ShowRunner:
+    req = ShowRequest(source="x", style="calm", hosts=[{"name": "A"}], minutes=4, research=research)
     runner = ShowRunner(req, "x", gemini=None, settings=Settings(), room=StubRoom())
     runner.plan = ShowPlan(
         title="T", tagline="t", hosts=[Host(name="A", persona="", voice="Kore")],
@@ -400,6 +402,165 @@ async def _():
     r.request_end()
     assert r._is_stale(d)
     assert _draft(r).must_end
+
+
+# ---- call-ins the hosts promise to come back to, and research -------------------------
+
+def _seg(text: str, **kw) -> SegmentDraft:
+    return SegmentDraft(lines=[Line(speaker="A", text=text)], **kw)
+
+
+class ResearchDesk:
+    """Stands in for Gemini.research: answers, fails, or hangs."""
+
+    def __init__(self, mode: str = "ok"):
+        self.mode, self.asked = mode, []
+
+    async def research(self, question, *, show, asked_by="", language="English"):
+        self.asked.append(question)
+        if self.mode == "fail":
+            raise RuntimeError("search is down")
+        if self.mode == "hang":
+            await asyncio.sleep(3600)
+        return Lookup(text="Zion Williamson averaged 24 points.", queries=[question],
+                      sources=[{"title": "ESPN", "url": "https://espn.com/z", "domain": "espn.com"}],
+                      suggestions=['<div class="chips">zion</div>'])
+
+
+@check("call-ins: one the hosts promise to come back to stays owed until they answer it")
+def _():
+    r = _runner()
+    c, _ = r.add_comment("Marc Castro", "How about Zion Williams?", "producer")
+    d = _draft(r, segment=_seg("Ooh, Marc asks about Zion. Hold that thought!", deferred_comment_ids=[c.id]))
+    r._commit(d)
+    assert c.status == "promised" and c.promised_seq == d.seq and d.promised == [c.id]
+    ctx, offered, _, _ = r._context()
+    assert [p.id for p in ctx.promised] == [c.id] and c.id in offered and not ctx.comments
+    assert "CALL-INS YOU PROMISED TO COME BACK TO" in prompts.writer_input(ctx, r.plan)
+    d2 = _draft(r, segment=_seg("Back to Marc: Zion is a top-30 pick.", addressed_comment_ids=[c.id]))
+    r._commit(d2)
+    assert c.status == "on_deck" and c.seq == d2.seq and c.promised_seq == d.seq
+    assert not r._context()[0].promised
+
+
+@check("call-ins: marked answered while the hosts say they'll get to it later, it stays owed")
+def _():
+    r = _runner()
+    c, _ = r.add_comment("Marc Castro", "How about Zion Williams?", "producer")
+    said = _draft(r, segment=SegmentDraft(lines=[
+        Line(speaker="A", text="Oh wait, Marc Castro commented: How about Zion Williams?"),
+        Line(speaker="A", text="Marc, darling, we'll get to his frontcourt mess in a second!"),
+    ], addressed_comment_ids=[c.id]))
+    r._commit(said)                                   # the Fantasy Hoops pod, segment 6
+    assert c.status == "promised" and said.addressed == []
+    c2, _ = r.add_comment("Jo", "Is Maxey overrated?", "guest")
+    r._commit(_draft(r, segment=_seg("Jo, Maxey is overrated at his ADP, period.", addressed_comment_ids=[c2.id])))
+    assert c2.status == "on_deck"                     # a real answer is just answered
+
+
+@check("call-ins: whatever's still owed is offered to the sign-off, then marked missed if skipped")
+async def _():
+    r = _runner(research=True)
+    r.gemini = ResearchDesk("hang")
+    c, _ = r.add_comment("Jo", "Stats on Zion?", "guest")
+    r._commit(_draft(r, segment=_seg("Looking it up!", research_requests=[ResearchRequest(comment_id=c.id, query="zion")])))
+    assert c.research == "pending" and not r._context()[0].promised      # waits for its lookup
+    r.request_end()
+    ctx = r._context()[0]
+    assert ctx.must_end and [p.id for p in ctx.promised] == [c.id] and ctx.promised[0].research_failed
+    assert "Answer the promised call-ins below before signing off" in prompts.writer_input(ctx, r.plan)
+    for t in r._research_tasks:
+        t.cancel()
+
+
+@check("research: a call-in's lookup runs in the background and comes back as cited context")
+async def _():
+    r = _runner(research=True)
+    r.gemini = desk = ResearchDesk()
+    c, _ = r.add_comment("Marc Castro", "How about Zion Williams?", "producer")
+    assert r._context()[0].research_left == Settings().research_max_per_show
+    d = _draft(r, segment=_seg("Marc! Let me pull up Zion's numbers.",
+                               research_requests=[ResearchRequest(comment_id=c.id, query="Zion Williamson 2026-27 fantasy")]))
+    r._commit(d)
+    assert c.status == "promised" and c.research == "pending"
+    meanwhile = _draft(r)                              # written while the lookup runs
+    await asyncio.gather(*list(r._research_tasks))
+    x = r.context[c.research_id]
+    assert c.research == "ready" and x.kind == "research" and x.comment_id == c.id and x.cite
+    assert x.sources[0]["domain"] == "espn.com" and x.search_suggestions and desk.asked == ["Zion Williamson 2026-27 fantasy"]
+    assert r._is_stale(meanwhile)                      # the answer goes in now, not a segment later
+    ctx = r._context()[0]
+    assert ctx.promised[0].research.id == x.id and ctx.research_left == Settings().research_max_per_show - 1
+    assert "research came back" in prompts.writer_input(ctx, r.plan)
+    assert "research the show looked up; sources: espn.com" in prompts.format_context([x])
+    answer = _draft(r, segment=_seg("Marc, ESPN has Zion at 24 a night.", addressed_comment_ids=[c.id]))
+    r._commit(answer)
+    assert c.status == "on_deck" and x.status == "used" and x.used_seq == answer.seq
+
+
+@check("research: a lookup that fails lets the hosts answer from what they know")
+async def _():
+    r = _runner(research=True)
+    r.gemini = ResearchDesk("fail")
+    c, _ = r.add_comment("Jo", "Latest injury news?", "guest")
+    r._commit(_draft(r, segment=_seg("Checking!", research_requests=[ResearchRequest(comment_id=c.id, query="injury")])))
+    await asyncio.gather(*list(r._research_tasks))
+    assert c.research == "failed" and r._context()[0].promised[0].research_failed
+    assert "came back empty" in prompts.writer_input(r._context()[0], r.plan)
+
+
+@check("research: off, nothing is looked up, and the schemas don't offer it")
+def _():
+    r = _runner(research=False)
+    c, _ = r.add_comment("Jo", "Stats?", "guest")
+    r._commit(_draft(r, segment=_seg("Let me check!", research_requests=[ResearchRequest(comment_id=c.id, query="stats")])))
+    assert c.status == "promised" and c.research == "failed" and not r._research_tasks
+    assert r._context()[0].research_left == 0 and not r._context()[0].research_on
+    assert "research_requests" not in prompts.segment_schema(["A"], 5)["properties"]
+    assert "research_requests" in prompts.segment_schema(["A"], 5, research=True)["properties"]
+    assert "deferred_comment_ids" in prompts.segment_schema(["A"], 5)["properties"]
+    assert "research" not in prompts.plan_schema(1)["properties"]["beats"]["items"]["properties"]
+    assert "research" in prompts.plan_schema(1, research=True)["properties"]["beats"]["items"]["properties"]
+    on = ShowRequest(source="x", style="s", hosts=[{"name": "A"}], research=True)
+    assert "RESEARCH IS ON" in prompts.planner_system(on, "x", 3) and "RESEARCH IS ON" not in prompts.planner_system(r.req, "x", 3)
+
+
+@check("research: thin chapters are looked up ahead (not the first), capped, and wait for their chapter")
+async def _():
+    r = _runner(research=True)
+    r.gemini = ResearchDesk()
+    for i, b in enumerate(r.plan.beats):
+        b.research = f"query {i}"
+    r._research_thin_beats()
+    await asyncio.gather(*list(r._research_tasks))
+    found = sorted(r.context.values(), key=lambda x: x.for_beat)
+    assert [x.for_beat for x in found] == [1, 2, 3][:Settings().research_max_beats]
+    one = found[0]
+    assert r._due_context() == ([], [])              # beat 0: nothing for chapter 2 yet
+    r.beat = 1
+    assert one in r._due_context()[1]               # its chapter: work it in
+    r.beat = 2
+    assert one in r._due_context()[0]               # past it: bring it in now
+    r2 = _runner(research=True)
+    r2.gemini = ResearchDesk("hang")
+    r2._lookups = Settings().research_max_per_show
+    c, _ = r2.add_comment("Jo", "Q", "guest")
+    r2._commit(_draft(r2, segment=_seg("Hmm!", research_requests=[ResearchRequest(comment_id=c.id, query="q")])))
+    assert c.research == "failed" and not r2._research_tasks    # over the cap: no lookup
+
+
+@check("credits: a pod with Research on is refunded at the rate it paid")
+async def _():
+    calls = []
+
+    class Store:
+        async def adjust_credits(self, uid, amount, **kw):
+            calls.append(amount)
+
+    doc = {"id": "p", "owner_uid": "u", "credits_charged": 8, "credits_per_minute": 1.5}
+    assert await refund_unused(Store(), Settings(), doc, 120.0) == 8 - 3   # 2 minutes at 1.5
+    assert await refund_unused(Store(), Settings(), {**doc, "credits_per_minute": None}, 120.0) == 8 - 2
+    assert calls == [5, 6]
 
 
 @check("cold open follows renamed hosts; an unknown speaker drops it")
@@ -768,6 +929,30 @@ def _():
     assert len(ep.segments) == 2 and ep.segments[0]["lines"][0]["text"] == "So, sourdough."
     assert [b["title"] for b in ep.beats] == ["Intro", "More"]
     assert ep.beats[1]["start"] == ep.segments[1]["start"] and ep.segments[1]["beat"] == 1
+
+
+@check("co-host: an answer you cut into stays in the episode, even if the editor drops it")
+def _():
+    take = ed.Take()
+    take.add_mic(_quiet(1, M))
+    take.add_ai_audio(_tone(3, R, f=330))
+    take.add_ai_text("Well, the thing about starters is")
+    take.add_mic(_quiet(1.6, M) + _tone(0.4, M))
+    take.interrupt()                                  # you cut in 2 s into its answer
+    take.add_mic(_tone(1, M) + _quiet(1, M))
+    edit = ed.build_edit(take)
+    ai = next(t for t in edit.turns if not t.you)
+    assert ai.cut_off
+    ep = ed.assemble(edit, ed.EditPlan(title="T", drop_turns=[ai.id]), "Marc", "Nova")
+    assert any(ln["speaker"] == "Nova" for s in ep.segments for ln in s["lines"]) and ep.stats["turns_dropped"] == 0
+
+
+@check("co-host: a cut only lands where the phrase's words fit its audio")
+def _():
+    assert not ed._fits(ed.Phrase(0, 0, int(0.4 * R), "All right, that's fair. Last"))  # a blip: misplaced text
+    assert ed._fits(ed.Phrase(0, 0, int(2.3 * R), "So, sourdough is great."))
+    assert ed._fits(ed.Phrase(0, 0, int(1.3 * R), "Um"))                                 # a drawn-out filler
+    assert not ed._fits(ed.Phrase(0, 0, int(8 * R), "Um"))                               # 8 s of speech isn't "um"
 
 
 @check("co-host: each turn is levelled to the same loudness")

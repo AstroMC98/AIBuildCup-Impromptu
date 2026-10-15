@@ -381,11 +381,15 @@ async def scenario(checks: dict) -> None:
         for lst in (prod, guest, late):
             await lst.close()
 
-        segs = prod.of("segment")
+        # Segments committed before the producer's socket joined (the cold open can be)
+        # came in its snapshot rather than as events.
+        early = prod.of("snapshot")[0]["segments"]
+        segs = sorted({s["seq"]: s for s in early + prod.of("segment")}.values(), key=lambda s: s["seq"])
         comments = {c["id"]: c for c in prod.of("comment")}
         by_client = {c["client_id"]: c for c in comments.values()}
         contexts = {x["id"]: x for x in prod.of("context")}
-        ends = {e["seq"]: e["samples"] for e in prod.of("segment_end")}
+        ends = {s["seq"]: s["samples"] for s in early if s.get("samples") is not None}
+        ends.update({e["seq"]: e["samples"] for e in prod.of("segment_end")})
         first_comment_seq = min((s["seq"] for s in segs if by_client.get("c1", {}).get("id") in s["addressed"]), default=0)
 
         checks["call-in answered in a later segment"] = first_comment_seq >= 2
@@ -499,6 +503,58 @@ async def scenario(checks: dict) -> None:
     finally:
         for c in clients:
             await c.aclose()
+
+
+async def callins_scenario(checks: dict) -> None:
+    """Call-ins the hosts promise to come back to are answered; with Research on,
+    they look things up (the stub's Google Search) and cite it."""
+    async with httpx.AsyncClient(base_url=BASE, timeout=30) as alice_c:
+        alice = await sign_in(alice_c, "alice@example.com", "Alice")
+        req = {"source": "Fantasy basketball fades", "style": "girl gossip", "vibe": "gossip",
+               "hosts": [{"name": "Kayla", "voice": "Leda"}, {"name": "Nia", "voice": "Kore"}],
+               "minutes": 2, "language": "English", "research": True}
+        r = await alice_c.post("/api/shows", json={"request": req, "live": True})
+        show_id = r.json()["id"]
+        checks["research: a pod with Research on costs more (1.5 a minute)"] = (
+            r.status_code == 200 and r.json()["credits"] == alice["credits"] - 3)
+        prod = await Listener("alice-r", f"{WS}/ws/show/{show_id}", alice_c.cookies.get("gp_session")).connect()
+        await prod.until(lambda: prod.of("segment"), what="first segment")
+        for i, text in enumerate(["DEFER_ME how about Zion Williams?", "SNEAKY_DEFER what about Maxey?",
+                                  "RESEARCH_ME Zion's numbers this season?"]):
+            await prod.send({"type": "comment", "text": text, "client_id": f"r{i}"})
+        await prod.until(lambda: prod.of("saved"), timeout=120, what="the research pod saved")
+        await prod.close()
+
+        latest = {c["client_id"]: c for c in prod.of("comment")}       # each call-in's last state
+        contexts = {x["id"]: x for x in prod.of("context")}
+        lines = [ln["text"] for s in prod.of("segment") for ln in s["lines"]]
+
+        def kept(c: dict) -> bool:
+            return c.get("status") == "on_deck" and c.get("promised_seq") and c["seq"] > c["promised_seq"]
+        checks["call-ins: one the hosts promised to come back to is answered later"] = kept(latest["r0"])
+        checks["call-ins: one marked answered while promising to come back is still answered later"] = kept(latest["r1"])
+        looked = latest["r2"]
+        found = contexts.get(looked.get("research_id"), {})
+        checks["research: a call-in's lookup comes back cited, then it's answered"] = (
+            kept(looked) and looked.get("research") == "ready" and found.get("kind") == "research"
+            and found.get("status") == "used" and [s["domain"] for s in found.get("sources", [])] == ["espn.com", "nbcsports.com"]
+            and bool(found.get("search_suggestions")) and any("answered with the research" in t for t in lines))
+        checks["research: a thin chapter is looked up ahead of time"] = any(
+            x.get("kind") == "research" and x.get("for_beat") == 2 for x in contexts.values())
+        seen = httpx.get(f"http://127.0.0.1:{FAKE_PORT}/_seen").json()
+        checks["research: only Research pods can ask for lookups"] = (
+            any("research_requests" in s for s in seen["writer_schemas"])
+            and any("research_requests" not in s and "deferred_comment_ids" in s for s in seen["writer_schemas"]))
+
+        data = (await alice_c.get(f"/api/shows/{show_id}")).json()
+        saved = {c["client_id"]: c for c in data["comments"]}
+        checks["call-ins: promises and research are saved for the replay"] = (
+            kept(saved["r0"]) and saved["r2"]["research"] == "ready"
+            and any(x["kind"] == "research" and x["sources"] for x in data["context"]))
+        entries = (await alice_c.get("/api/me/ledger")).json()["entries"]
+        refund = sum(e["amount"] for e in entries if e["reason"] == "refund" and e["show_id"] == show_id)
+        checks["research: unused minutes come back at the Research rate"] = (
+            refund == max(0, 3 - math.ceil(data["show"]["duration_s"] / 60 * 1.5)))
 
 
 async def cohost_scenario(checks: dict) -> None:
@@ -668,6 +724,7 @@ def main() -> int:
         _wait_up(f"http://127.0.0.1:{FAKE_PORT}/docs")
         _wait_up(f"{BASE}/healthz")
         asyncio.run(scenario(checks))
+        asyncio.run(callins_scenario(checks))
         asyncio.run(cohost_scenario(checks))
     except Exception as exc:  # report what passed so far, then the failure
         error = exc
