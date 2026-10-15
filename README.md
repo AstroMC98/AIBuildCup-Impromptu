@@ -51,8 +51,20 @@ accounts at once in different browsers. Grant yourself credits on the **Admin** 
   hosts (names, personas, voices) and a length; change anything before going live.
   They're named after formats, not real shows or people, so published pods never pass
   themselves off as someone else's podcast.
-- **Personas** and **Styles** pages: keep speakers and styles to reuse. Copy any template
-  host into your personas as a starting point.
+- **Personas** and **Styles** pages: keep speakers and styles to reuse. A persona has a
+  name, gender and a voice of that gender, a personality, likes, specialties and skills,
+  and **private notes** (typed, or pulled from a file or link) that only that host draws
+  on: listeners never see them. Cast one of 13 **premade personas** as is, or customize it.
+  Every host's voice matches their gender, whoever picks it.
+- **Albums and tags**: group pods into albums, like playlists (a pod can be in several).
+  An album is private, for connections, or public with its own page; people only see the
+  pods in it they could hear anyway. Tags filter your pods.
+- **Subscribe** to a creator or an album. **Following** lists their new pods, with a
+  "New" badge and a "Live now" banner. Every creator has a page with their pods and albums.
+- **Stats** (creator only): listeners now and at peak, unique listeners, average listen,
+  who stayed to the end, a chart of listening over the show, when people left, replays and
+  how far they got, and the names of signed-in listeners. Anonymous listeners are counted
+  (by a random id their browser keeps), never named.
 - **Listen**: big live captions, a chapter bar, Back 15s, Jump to live, and a Now
   playing view with the live transcript.
 - **Call in**: type a message; the hosts read it out with your name and react in
@@ -130,7 +142,9 @@ You need a Google Cloud project with billing, plus `gcloud` (logged in) and Dock
    hosting needed) and copy its `apiKey`. That's `FIREBASE_API_KEY`. It's public by
    design: it identifies the project, it doesn't grant access.
 
-**2. Deploy** (from Git Bash on Windows, or any shell; safe to re-run, each run ships a new image)
+**2. Deploy** (from Git Bash on Windows, Cloud Shell, or any shell; safe to re-run, each
+run ships a new image. `.gitattributes` keeps the script's line endings Unix-style even on
+Windows checkouts.)
 
 ```bash
 FIREBASE_API_KEY=AIza... ADMIN_EMAILS=you@example.com \
@@ -148,7 +162,8 @@ What the script sets up:
 | Piece | What | Why |
 |---|---|---|
 | Cloud Run `podcasts` | the app, 1 instance, 2 vCPU, 2 GiB, 60-min request timeout | WebSockets + the live pod loop |
-| Firestore (native) | `shows/{id}` (+ segments, comments, context), `users/{uid}` (+ ledger, personas, styles, connections) | accounts, credits, library, transcripts |
+| Firestore (native) | `shows/{id}` (+ segments, comments, context, sessions), `users/{uid}` (+ ledger, personas, styles, connections), `albums/{id}`, `subscriptions/{id}` | accounts, credits, library, transcripts, albums, following, listening stats |
+| Firestore security rules | deny all browser access (`deploy/firestore.rules`, released on every run) | the app only uses Firestore from the server; the Firebase web key is public |
 | Cloud Storage `gs://PROJECT-podcasts` | source text, context text, `episode.mp3` | replays and downloads (served by signed URL) |
 | Secret Manager | `gemini-api-key`, `session-secret` | injected as env vars |
 | Firebase Authentication | Google + email sign-in | accounts; the server verifies ID tokens itself |
@@ -178,9 +193,10 @@ own access control.
   they're saved as *interrupted* with the audio so far, and unused credits are refunded.
 - **WebSockets last up to 60 minutes** on Cloud Run. Clients reconnect on their own and
   resume from the exact sample they had.
-- **Queries** use one indexed field each (owner, visibility, or shared-with) and sort in
-  the app, so Firestore needs no composite indexes. Past a few thousand pods per list,
-  add an index on (visibility, created_at) and page the queries.
+- **Queries** use one indexed field each (owner, visibility, shared-with, album, or a
+  subscription's subscriber or target, counted with Firestore's count aggregation) and
+  sort in the app, so Firestore needs no composite indexes. Past a few thousand pods per
+  list, add an index on (visibility, created_at) and page the queries.
 - Gemini TTS voices at most two speakers per request, so pods have one or two hosts.
 
 ## Security notes
@@ -188,8 +204,14 @@ own access control.
 - Sign-in: the browser signs in with Firebase and hands the server the ID token once;
   the server verifies it (signature, audience, expiry) with google-auth and sets its own
   HMAC-signed session cookie: `HttpOnly`, `SameSite=Lax`, `Secure` on Cloud Run, 30 days.
-  Email + password accounts must verify their address first, so nobody can claim an
-  admin's email. `AUTH_MODE=dev` can't be enabled with the Google Cloud backend.
+  An unverified email address is refused whatever the sign-in provider (Google addresses
+  are always verified; email + password accounts verify from their inbox), so nobody can
+  claim an admin's email. `AUTH_MODE=dev` can't be enabled with the Google Cloud backend.
+- Firestore is reached only by the server's service account. Its security rules deny all
+  browser access, so the public Firebase web key can't be used to read data directly.
+- A persona's private notes go to the writers only: they're stripped from every pod,
+  snapshot and replay that listeners load. Listening stats are for the pod's creator;
+  anonymous listeners are counted by a random id, never identified.
 - Access to a pod is checked on every API call and when the WebSocket opens; drafts are
   visible only to their creator; sharing by name is limited to your connections.
 - Credits change in a Firestore transaction together with their ledger entry, so a
@@ -234,7 +256,22 @@ switch to the lite TTS model.
 python -m tests.unit_test      # clock, limits, sessions, Firebase checks, credits, connections,
                                # access rules, SSRF guard, audio, store, show loop, prompts
 python -m tests.smoke_test     # full pods over real sockets against a Gemini stub
+python -m tests.store_contract # LocalStore; with FIRESTORE_EMULATOR_HOST set, GcpStore too
 ```
+
+`tests/store_contract.py` runs every Firestore query and transaction the app uses
+against both backends. To check the Google Cloud one locally (Docker, no Java needed):
+
+```bash
+docker run -d --name podcasts-firestore -p 8681:8681 \
+  gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators \
+  gcloud emulators firestore start --host-port=0.0.0.0:8681
+FIRESTORE_EMULATOR_HOST=127.0.0.1:8681 python -m tests.store_contract
+```
+
+With a real `GEMINI_API_KEY`, `python -m tests.live_test --minutes 5 10 15 --public` runs
+real pods, prints links you can open to listen along, and reports timing, stalls and how
+fast call-ins were heard.
 
 The smoke test signs in four people (an admin, her connection, a stranger, and a
 signed-out visitor) and runs pods at 20x speed: credits (none, granted, charged,
@@ -270,14 +307,20 @@ app/
   sources.py   file and link extraction, SSRF guard, image sniffing
   limits.py    rate limits and size caps
   store/       Store interface; local.py (JSON on disk), gcp.py (Firestore + GCS)
-  catalog.py   voices, vocal tags, style presets, templates
+  stats.py     listening stats from listening sessions
+  catalog.py   voices (with gender), vocal tags, style presets, templates, premade personas
   config.py    settings from env / .env
 static/        no build step: index.html, css/, js/ (ES modules)
   js/firebase.js   Firebase sign-in (loaded only in firebase mode)
   js/live/         socket, store (selectors by playhead), controller
-  js/audio/        timeline, live player (WebAudio pull scheduler), replay player
-  js/views/        login, library (home, header, account menu), create, show (phone: live-mobile +
-                   now-playing; desktop: studio), saved (personas, styles), connections, admin
+  js/audio/        timeline, live player (WebAudio pull scheduler), replay player, listen tracker
+  js/personas.js   persona fields (gender-matched voices, traits, private notes)
+  js/social.js     subscribe button, creator chip, album cards
+  js/views/        login, library (home, Following, header, account menu), create, show (phone:
+                   live-mobile + now-playing; desktop: studio), saved (personas, styles), albums,
+                   creator, stats, connections, admin
 deploy/deploy.sh   one-command Cloud Run setup
-tests/           fake_gemini.py (Interactions API stub), smoke_test.py, unit_test.py
+deploy/firestore.rules  deny-all browser access, released by deploy.sh
+tests/           fake_gemini.py (Interactions API stub), smoke_test.py, unit_test.py,
+                 store_contract.py (LocalStore vs Firestore emulator), live_test.py (real Gemini)
 ```

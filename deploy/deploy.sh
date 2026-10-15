@@ -53,7 +53,7 @@ say "Enabling APIs (a minute or two the first time)"
 g services enable \
   run.googleapis.com artifactregistry.googleapis.com firestore.googleapis.com \
   storage.googleapis.com secretmanager.googleapis.com iamcredentials.googleapis.com \
-  identitytoolkit.googleapis.com
+  identitytoolkit.googleapis.com firebaserules.googleapis.com
 
 say "Artifact Registry repository: $REPO"
 g artifacts repositories describe "$REPO" --location "$REGION" >/dev/null 2>&1 || \
@@ -63,6 +63,33 @@ g artifacts repositories describe "$REPO" --location "$REGION" >/dev/null 2>&1 |
 say "Firestore database (native mode, $FIRESTORE_LOCATION)"
 g firestore databases describe --database='(default)' >/dev/null 2>&1 || \
   g firestore databases create --database='(default)' --location "$FIRESTORE_LOCATION" --type firestore-native
+
+say "Firestore security rules: no direct access from browsers"
+# The app only touches Firestore from the server, which these rules don't affect.
+# Released on every run, so the database is never left open by a console default.
+RULES_API="https://firebaserules.googleapis.com/v1/projects/$PROJECT_ID"
+rules_call() {  # METHOD PATH [JSON body]
+  local args=(-fsS -X "$1" "$RULES_API$2"
+    -H "Authorization: Bearer $(gcloud auth print-access-token)"
+    -H "X-Goog-User-Project: $PROJECT_ID" -H "Content-Type: application/json")
+  if [[ $# -ge 3 ]]; then args+=(--data "$3"); fi
+  curl "${args[@]}"
+}
+# The rules file as one JSON string: escape \ and ", then turn line ends into \n.
+rules_json="$(sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' deploy/firestore.rules | awk '{printf "%s\\n", $0}')"
+ruleset="$(rules_call POST /rulesets "{\"source\":{\"files\":[{\"name\":\"firestore.rules\",\"content\":\"$rules_json\"}]}}" \
+  | grep -o '"name": *"projects/[^"]*/rulesets/[^"]*"' | head -1 | cut -d'"' -f4)"
+if [[ -z "$ruleset" ]]; then
+  echo "Couldn't create the Firestore ruleset. Is Firebase added to $PROJECT_ID? (see the README)"
+  exit 1
+fi
+release="projects/$PROJECT_ID/releases/cloud.firestore"
+if rules_call GET /releases/cloud.firestore >/dev/null 2>&1; then
+  rules_call PATCH /releases/cloud.firestore "{\"release\":{\"name\":\"$release\",\"rulesetName\":\"$ruleset\"}}" >/dev/null
+else
+  rules_call POST /releases "{\"name\":\"$release\",\"rulesetName\":\"$ruleset\"}" >/dev/null
+fi
+echo "  released $ruleset (deny all client access)"
 
 say "Cloud Storage bucket: gs://$BUCKET"
 gcloud storage buckets describe "gs://$BUCKET" --project "$PROJECT_ID" >/dev/null 2>&1 || \

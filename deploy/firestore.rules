@@ -1,0 +1,14 @@
+rules_version = '2';
+
+// Gemini Podcasts reads and writes Firestore only from the server (Cloud Run, as
+// its service account), and server credentials bypass these rules. Browsers get
+// nothing directly: the Firebase web API key is public by design, and this data
+// includes private persona notes, listener names and subscriptions.
+// deploy/deploy.sh releases this file on every run.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,0 +1,5 @@
+# Shell scripts, the Dockerfile and the Firestore rules keep LF line endings on every
+# checkout, including Windows with core.autocrlf (bash can't run a script with CRLF).
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.rules text eol=lf
