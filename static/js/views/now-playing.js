@@ -59,7 +59,7 @@ export function mountNowPlaying(host, ctl, { page = false, onClose } = {}) {
     <section class="card accent np-transcript" aria-labelledby="np-t">
       <div class="card-head"><h2 id="np-t">${ctl.live ? "Live transcript" : "Transcript"}</h2>
         <button class="icon-btn round dark" type="button" data-action="download-transcript" aria-label="Download the full transcript">${icon("download", 16, 2.4)}</button></div>
-      <div class="np-lines" data-r="transcript" aria-live="polite"></div>
+      <div class="np-lines" data-r="transcript" aria-live="${page ? "polite" : "off"}"></div>
     </section>
     <section class="card" id="np-callins" aria-labelledby="np-c" ${s.show.kind === "cohost" ? "hidden" : ""}>
       <div class="card-head"><h2 id="np-c">Call-ins</h2></div>

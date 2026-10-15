@@ -4,7 +4,7 @@
 // producer, interrupt. Replays go straight to Now playing.
 import {
   callinLines, callinsKey, captions, captionsKey, captionTick, chapterBar, chapterBarKey, chapterLabel, detourCue, hostChips,
-  hostChipsKey, liveBadge, liveBadgeKey, myCallinNews,
+  hostChipsKey, lineNews, liveBadge, liveBadgeKey, myCallinNews,
 } from "../components.js";
 import { html, setHtml } from "../html.js";
 import { icon } from "../icons.js";
@@ -45,7 +45,8 @@ export function mountMobile(root, ctl) {
       <span class="lm-ep-text"><span class="lm-ep-title" data-r="title"></span><span class="lm-ep-sub" data-r="sub"></span></span>
       <span class="lm-ep-up" aria-hidden="true">${icon("chevronUp", 18, 2.2)}</span>
     </button>
-    <section class="lm-captions" data-r="captions" aria-live="polite"></section>
+    <section class="lm-captions" data-r="captions" aria-label="Captions"></section>
+    <p class="sr-only" data-r="said" aria-live="polite"></p>
     <div class="lm-lines" data-r="lines" aria-label="Call-ins"></div>
     <p class="sr-only" data-r="news" aria-live="polite"></p>
     <div class="lm-behind" data-r="behind"></div>
@@ -132,6 +133,8 @@ export function mountMobile(root, ctl) {
       r.set("sub", sub, () => sub);
       r.set("captions", captionsKey(s, ctl, pos), () => captions(s, ctl, pos, { big: 30 }));
       captionTick(r.el("captions"), s, pos, { calm });
+      const said = lineNews(s, pos);
+      r.set("said", said.key, () => said.text);
       detourCue(s, pos, el);
       r.set("chapters", chapterBarKey(s, pos), () => chapterBar(s, pos));
       r.set("lines", callinsKey(s, pos), () => callinLines(s, pos));

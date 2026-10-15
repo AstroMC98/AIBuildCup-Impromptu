@@ -114,6 +114,7 @@ export function captions(store, ctl, pos, { big = 30 } = {}) {
   const status = statusText(store, ctl, pos);
   if (!at) {
     if (!store.segments.length && ctl.live && !store.ended) return greenRoom(store, pos, status);
+    if (store.inIntro(pos)) return introCard(store);
     return html`<p class="cap-status">${status || "Starting…"}</p>`;
   }
   const lines = store.heardLines(pos, 2);
@@ -186,6 +187,23 @@ export function detourCue(store, pos, el) {
 // Chapter cards drop in once; later re-renders (the status line changing) don't replay them.
 const rundownShown = new WeakMap();
 
+const themeBars = () => html`<span class="gr-theme" aria-hidden="true">${Array.from({ length: 24 }, (_, i) => html`<i style="--i:${i}"></i>`)}</span>`;
+
+/** The show intro on air: while the theme plays, the show's name owns the stage; the
+ *  captions take over as the welcome begins. */
+const introShown = new WeakSet();
+function introCard(store) {
+  const name = store.show.show_name;
+  const arrive = !introShown.has(store);   // the name lands once, not on every re-render
+  introShown.add(store);
+  return html`
+    <div class="intro-card">
+      ${themeBars()}
+      <h2 class="ic-title ${arrive ? "arrive" : ""}">${name || store.plan?.title || store.show.title || "Theme music"}</h2>
+      <p class="ic-sub">${name ? (store.plan?.title || store.show.title || "") : "Theme music"}</p>
+    </div>`;
+}
+
 function greenRoom(store, pos, status) {
   const beats = store.beats();
   const seen = rundownShown.get(store) || 0;
@@ -193,8 +211,9 @@ function greenRoom(store, pos, status) {
   const theme = store.inIntro?.(pos);
   return html`
     <div class="green-room">
+      ${theme && store.show.show_name ? html`<p class="gr-show">${store.show.show_name}</p>` : ""}
       <span class="gr-clock">${ring({ chase: true, cls: "gr-ring" })}<span class="gr-step">${status || "Getting the studio ready"}</span></span>
-      ${theme ? html`<span class="gr-theme" aria-hidden="true">${Array.from({ length: 24 }, (_, i) => html`<i style="--i:${i}"></i>`)}</span>` : ""}
+      ${theme ? themeBars() : ""}
       ${store.plan?.title ? html`<h2 class="gr-title ${seen ? "" : "arrive"}">${store.plan.title}</h2>` : ""}
       ${beats.length ? html`<ol class="gr-rundown">${beats.map((b, i) => html`
         <li class="${i >= seen ? "drop" : ""}" style="--i:${Math.max(0, i - seen)}"><span>${i + 1}</span>${b.title}</li>`)}</ol>` : ""}
@@ -289,6 +308,16 @@ export function captionTick(region, store, pos, { calm = false } = {}) {
     const start = now ? p._ends[now - 1] : 0;
     p._words[now].style.setProperty("--wp", ((spoken - start) / (p._ends[now] - start)).toFixed(3));
   }
+}
+
+/** The line being said, for screen readers, keyed so it's announced once per line. (The
+ *  captions themselves aren't a live region: they re-render per chunk, and their words are
+ *  rewritten as they're said.) */
+export function lineNews(store, pos) {
+  const at = store.lineAt(pos);
+  if (!at) return { key: "", text: "" };
+  const line = at.seg.lines[at.idx];
+  return { key: `${at.seg.seq}:${at.idx}`, text: `${line.speaker}: ${spokenText(line.text)}` };
 }
 
 export function captionsKey(store, ctl, pos) {
