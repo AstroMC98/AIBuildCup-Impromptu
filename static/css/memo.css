@@ -54,6 +54,12 @@
   .make-stage.done .make-mark { background: #6FA0FF; box-shadow: none; }
   .make-stage.now { color: var(--fg); font-weight: 800; }
   .make-stage.now .make-mark { background: var(--amber); box-shadow: 0 0 12px var(--amber); animation: lamp-blink .8s steps(1) infinite; }
+  .make-stage.failed { color: var(--fg); font-weight: 800; }
+  .make-stage.failed .make-mark { background: var(--tally); box-shadow: 0 0 12px var(--tally); color: #fff; font-weight: 900; font-size: 13px; }
+
+  /* being made and failing happen on the stage (under /show/:id) */
+  .memo-stage { min-height: 100dvh; }
+  .memo-stage .back-link { color: var(--fg-2); }
 
   /* ---- review ------------------------------------------------------------------------- */
   .memo-review { padding-bottom: 170px; }

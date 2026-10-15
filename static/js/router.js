@@ -18,10 +18,11 @@ let popping = false;
 const STAGE = [/^\/show\/[\w-]+$/, /^\/cohost\/[\w-]+$/];
 const isStage = (path) => STAGE.some((re) => re.test(path || ""));
 
-export function navigate(path, { replace = false } = {}) {
+/** vt: force a transition kind (e.g. "to-stage" when a draft goes live on its own path). */
+export function navigate(path, { replace = false, vt = null } = {}) {
   if (replace) history.replaceState({}, "", path);
   else history.pushState({}, "", path);
-  dispatch();
+  dispatch(vt);
 }
 
 export function start(table) {
@@ -48,7 +49,7 @@ function kindOf(from, to, back) {
   return back ? "back" : "forward";
 }
 
-async function dispatch() {
+async function dispatch(forced = null) {
   const mine = ++token;
   const url = new URL(location.href);
   const root = document.getElementById("app");
@@ -73,8 +74,8 @@ async function dispatch() {
   const from = lastPath;
   lastPath = url.pathname;
   const html = document.documentElement;
-  if (from !== null && from !== url.pathname && document.startViewTransition && !reduced()) {
-    html.dataset.vt = kindOf(from, url.pathname, back);
+  if (from !== null && (from !== url.pathname || forced) && document.startViewTransition && !reduced()) {
+    html.dataset.vt = forced || kindOf(from, url.pathname, back);
     const vt = document.startViewTransition(swap);
     vt.finished.finally(() => { if (mine === token) delete html.dataset.vt; });
     await vt.updateCallbackDone.catch(() => {});

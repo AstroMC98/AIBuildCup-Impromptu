@@ -9,7 +9,7 @@ import { lengthChip, musicCards } from "../pod-options.js";
 import { fillRing, ring } from "../ring.js";
 import { navigate } from "../router.js";
 import { session } from "../session.js";
-import { applyAccent } from "../theme.js";
+import { applyAccent, setWorld } from "../theme.js";
 import { confirmSheet } from "../ui.js";
 import { fmtTime, toast } from "../util.js";
 
@@ -34,7 +34,12 @@ export function memoScreen(root, data) {
   const el = document.createElement("div");   // listeners go here, not on the router's root
   root.replaceChildren(el);
   const status = data.show.status;
-  if (status === "review") return reviewScreen(el, data);
+  // Reviewing is paperwork (the house); being made and failing happen on the stage.
+  if (status === "review") {
+    setWorld("house");
+    return reviewScreen(el, data);
+  }
+  el.className = "memo-stage stage";
   if (status === "failed") return failedScreen(el, data);
   return makingScreen(el, data);
 }
@@ -53,15 +58,16 @@ async function deletePod(id) {
 
 // ---- being made ------------------------------------------------------------------------
 
-function stageList(show) {
+/** One lamp per step. failed: the step it stopped at is lit red. */
+function stageList(show, { failed = false } = {}) {
   const r = show.render || {};
   let at = STAGES.findIndex(([id]) => id === r.stage);
   if (r.stage === "queued" && !(show.beats || []).length) at = 0;   // just sent: nothing's queued for long
   return html`${STAGES.map(([id, label], i) => {
     if (id === "queued" && r.stage !== "queued") return "";
-    const state = i < at ? "done" : i === at ? "now" : "later";
+    const state = i < at ? "done" : i === at ? (failed ? "failed" : "now") : "later";
     return html`<li class="make-stage ${state}">
-      <span class="make-mark" aria-hidden="true">${state === "done" ? icon("check", 14, 3) : ""}</span>
+      <span class="make-mark" aria-hidden="true">${state === "done" ? icon("check", 14, 3) : state === "failed" ? "!" : ""}</span>
       <span>${label}</span></li>`;
   })}`;
 }
@@ -129,10 +135,11 @@ function failedScreen(root, data) {
   setHtml(root, html`
     <div class="page narrow">
       <a class="back-link" href="/" data-link>${icon("chevronLeft", 20)}Your pods</a>
-      <div class="draft-card">
-        <span class="badge ended">Didn't get made</span>
+      <div class="draft-card making">
+        <span class="badge live small">Didn't get made</span>
         <h1>${s.title || "Voice memo"}</h1>
-        <p class="muted">${s.render?.error || "Something went wrong while making this pod."}</p>
+        ${STAGES.some(([id]) => id === s.render?.stage) ? html`<ol class="make-stages">${stageList(s, { failed: true })}</ol>` : ""}
+        <p class="muted">${s.render?.error || "Something went wrong while making this pod."} Any credits it used came back.</p>
         <p class="cost ${session.credits < cost ? "short" : ""}">Trying again uses ${cost} credits · you have ${session.credits}</p>
         <p class="error" role="alert" data-error></p>
         <button class="btn white big block go" type="button" data-again ${session.credits < cost ? "disabled" : ""}>${icon("sparkle", 20)}Try again</button>

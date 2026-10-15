@@ -2,16 +2,19 @@
 // with, or anyone if it's public. Loads over HTTP first, then picks the phone
 // or desktop layout.
 import { api } from "../api.js";
+import { unlockAudio } from "../audio/context.js";
 import { loader } from "../components.js";
+import { countIn, goStage } from "../golive.js";
 import { html, setHtml } from "../html.js";
 import { ring } from "../ring.js";
-import { icon } from "../icons.js";
+import { icon, VISIBILITY_LABEL } from "../icons.js";
 import { ShowController } from "../live/controller.js";
 import { navigate } from "../router.js";
 import { loginPath, session } from "../session.js";
 import { applyAccent } from "../theme.js";
 import { confirmSheet } from "../ui.js";
 import { toast } from "../util.js";
+import { sleeve } from "./library.js";
 import { mountMobile } from "./live-mobile.js";
 import { memoScreen } from "./memo-status.js";
 import { mountStudio } from "./studio.js";
@@ -122,33 +125,44 @@ function errorScreen(root, message) {
   return null;
 }
 
+/** A pod saved for later, on the stage: its sleeve is the page, and Go live counts in. */
 function draftScreen(root, data) {
   const s = data.show;
   const cost = session.cost(s.minutes, Boolean(s.request?.research));
+  const hosts = (s.hosts || []).map((h) => h.name).filter(Boolean);
   applyAccent(document.documentElement, s.accent);
   setHtml(root, html`
-    <div class="page narrow">
-      <a class="back-link" href="/" data-link>${icon("chevronLeft", 20)}Your pods</a>
-      <div class="draft-card">
+    <div class="draft stage">
+      <header class="draft-top">
+        <a class="icon-btn" href="/" data-link aria-label="Your pods">${icon("chevronLeft", 24, 2.2)}</a>
         <span class="badge ended">Draft</span>
+      </header>
+      <div class="draft-body">
+        ${sleeve(s, "lg")}
         <h1>${s.title || "Untitled pod"}</h1>
-        <p class="muted">${s.style_label}, about ${s.minutes} minutes${s.language && s.language !== "English" ? `, in ${s.language}` : ""}</p>
-        <p class="faint">${s.style}</p>
+        <p class="muted">${[s.style_label, hosts.join(" and ")].filter(Boolean).join(", ")}</p>
+        <dl class="draft-rows">
+          <div><dt>Length</dt><dd>About ${s.minutes} minutes</dd></div>
+          <div><dt>Who can listen</dt><dd>${VISIBILITY_LABEL[s.visibility] || "Only you"}</dd></div>
+          ${s.language && s.language !== "English" ? html`<div><dt>Language</dt><dd>${s.language}</dd></div>` : ""}
+          ${s.request?.research ? html`<div><dt>Research</dt><dd>On</dd></div>` : ""}
+        </dl>
+      </div>
+      <div class="draft-foot">
         <p class="cost ${session.credits < cost ? "short" : ""}">Uses ${cost} credits when it goes live · you have ${session.credits}</p>
         <p class="error" role="alert" data-error></p>
-        <button class="btn white big block go" type="button" data-go ${session.credits < cost ? "disabled" : ""}><span class="rec-dot"></span>Go live</button>
-        <button class="btn link danger-text" type="button" data-delete>${icon("trash", 18)}Delete draft</button>
+        <button class="btn white big block go" type="button" data-go ${session.credits < cost ? "disabled" : ""}><span class="rec-dot" aria-hidden="true"></span>Go live</button>
+        <button class="btn link" type="button" data-delete>Delete draft</button>
       </div>
     </div>`);
   root.querySelector("[data-go]").addEventListener("click", async (e) => {
     const btn = e.currentTarget;
     btn.disabled = true;
-    const { unlockAudio } = await import("../audio/context.js");
-    await unlockAudio();
+    await unlockAudio();   // inside the click, so the pod can start playing on its own
     try {
-      await api.startDraft(s.id);
+      await countIn(btn, () => api.startDraft(s.id));
       session.refresh();
-      navigate(`/show/${s.id}`, { replace: true });
+      goStage(`/show/${s.id}`, { replace: true });
     } catch (err) {
       root.querySelector("[data-error]").textContent = err.message;
       btn.disabled = false;

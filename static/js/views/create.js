@@ -2,6 +2,7 @@
 // who can listen. Creating needs credits; going live spends them.
 import { api } from "../api.js";
 import { unlockAudio } from "../audio/context.js";
+import { countIn, goStage } from "../golive.js";
 import { html, setHtml } from "../html.js";
 import { icon, KIND_ICON } from "../icons.js";
 import { bindPersonaForm, fillPersona, GENDER_LABEL, personaFields, readPersona } from "../personas.js";
@@ -9,7 +10,7 @@ import { albumChips, introRow, lengthChip, newAlbumSheet, shareWith, visibilityC
 import { navigate } from "../router.js";
 import { loginPath, session } from "../session.js";
 import { vibeTile } from "../sheets.js";
-import { applyAccent, initial } from "../theme.js";
+import { applyAccent, gelFor, initial } from "../theme.js";
 import { openSheet } from "../ui.js";
 import { store as local, toast } from "../util.js";
 import { appHeader, bindHeader, templateCard } from "./library.js";
@@ -435,11 +436,11 @@ export async function createView(root, { query }) {
     });
     btn.disabled = true;
     if (live) await unlockAudio();  // inside the click, so the pod can start playing on its own
-    try {
+    const start = async () => {
       if (state.pick.kind === "own" && el.querySelector("input[name=save_style]").checked) {
         await api.create("styles", { name: state.own.slice(0, 40), prompt: state.own, accent: "#2F6BD0" }).catch(() => {});
       }
-      const res = await api.createShow({
+      return api.createShow({
         request, live, visibility: state.visibility,
         shared_with: state.visibility === "private" ? state.sharedWith : [],
         template: state.pick.kind === "template" ? state.pick.id : null,
@@ -447,8 +448,13 @@ export async function createView(root, { query }) {
         tags: $("#tags").value.split(",").map((t) => t.trim()).filter(Boolean),
         use_show_intro: state.useIntro,
       });
+    };
+    try {
+      // Going live: the button becomes the studio and counts in while the show starts.
+      const res = live ? await countIn(btn, start, { gel: gelFor(pick.accent) }) : await start();
       session.refresh();
-      navigate(live ? `/show/${res.id}` : "/");
+      if (live) goStage(`/show/${res.id}`);
+      else navigate("/");
     } catch (err) {
       if (err.status === 401) return navigate(loginPath("/new"));
       setError(err.message);

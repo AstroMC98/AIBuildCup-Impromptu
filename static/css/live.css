@@ -323,6 +323,42 @@
   .int-actions { display: flex; flex-wrap: wrap; gap: 8px; }
   .int-actions .btn { flex: 1 1 auto; }
 
+  /* ---- going live: the button becomes the studio ------------------------------------------------- */
+  .golive { position: fixed !important; inset: 0; z-index: 70; display: grid; place-items: center; }
+  .gl-clock { position: relative; width: 240px; height: 240px; display: grid; place-items: center; }
+  .gl-ring { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .gl-ring circle.lit { fill: var(--gel-text); }
+  .gl-num { position: relative; z-index: 1; font: 800 96px/1 var(--f-display); font-variant-numeric: tabular-nums; }
+  .gl-lamp {
+    position: absolute; left: 50%; top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%;
+    background: #3A1512; display: grid; place-items: center; overflow: hidden;
+    font: 800 22px/1 var(--f-display); font-stretch: 118%; letter-spacing: .08em; text-transform: uppercase; color: #fff;
+    transition: width .46s var(--spring-snappy), height .46s var(--spring-snappy), margin .46s var(--spring-snappy),
+      border-radius .46s ease, background .2s, box-shadow .46s;
+  }
+  .gl-lamp span { opacity: 0; white-space: nowrap; }
+  .gl-lamp.open {
+    width: 156px; height: 54px; margin: -27px 0 0 -78px; border-radius: 8px; background: var(--tally);
+    box-shadow: 0 0 44px 6px color-mix(in oklch, var(--tally) 55%, transparent);
+  }
+  .gl-lamp.open span { animation: gl-flicker .5s .26s steps(1, end) both; }
+  @keyframes gl-flicker { 0% { opacity: 0; } 15% { opacity: 1; } 30% { opacity: .3; } 45% { opacity: 1; } 60% { opacity: .6; } 100% { opacity: 1; } }
+  .gl-cap { position: absolute; left: 0; right: 0; bottom: calc(92px + env(safe-area-inset-bottom)); text-align: center; color: var(--fg-2); font-size: 14px; font-weight: 700; padding: 0 24px; }
+  .gl-ghost { position: fixed; z-index: 2; border-radius: 50%; background: var(--tally); }
+
+  /* ---- a draft: the sleeve is the page ----------------------------------------------------------- */
+  .draft { min-height: 100dvh; display: flex; flex-direction: column; max-width: 520px; margin: 0 auto; }
+  .draft-top { display: flex; align-items: center; gap: 8px; padding: calc(8px + env(safe-area-inset-top)) 12px 0 4px; }
+  .draft-body { padding: 14px 22px 0; display: flex; flex-direction: column; gap: 8px; }
+  .draft-body .sleeve.lg { max-width: 300px; align-self: center; width: 100%; box-shadow: 0 24px 50px -18px rgba(0, 0, 0, .6); margin-bottom: 10px; }
+  .draft-body h1 { font: 800 30px/1.02 var(--f-display); font-stretch: 84%; letter-spacing: -0.015em; }
+  .draft-rows { display: grid; margin-top: 8px; }
+  .draft-rows div { display: flex; justify-content: space-between; gap: 12px; padding: 11px 2px; box-shadow: 0 1px 0 var(--line); font-size: 14.5px; }
+  .draft-rows dt { color: var(--fg-2); }
+  .draft-rows dd { margin: 0; font-weight: 750; text-align: right; }
+  .draft-foot { margin-top: auto; padding: 18px 16px calc(18px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .draft-foot .btn.link { color: var(--fg-2); }
+
   /* reduced motion: arrivals fade in place; nothing travels, breathes or bounces */
   @media (prefers-reduced-motion: reduce) {
     .cap.now, .gr-rundown li.drop, .callin-line.arrive, .np-overlay, .np-cover, .behind-pill, .cb-detour { animation: fade-in .2s ease both; }
