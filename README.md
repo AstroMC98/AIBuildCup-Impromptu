@@ -539,6 +539,21 @@ and by the phone), a mode switch, a recycled Live connection, hanging up, the ed
 dropped answers, chapters), downloads, refunds, and a call nobody joined.
 `SMOKE_PORT=18765` moves it off the default ports.
 
+### Visual tests
+
+```bash
+pip install -r requirements-dev.txt && python -m playwright install chromium
+python -m tests.visual            # every key screen, phone and desktop, light and dark, vs baselines
+python -m tests.visual --update   # re-record the baselines after a change you meant
+```
+
+It runs the app against the stub with one seeded account (a finished pod, a live one
+nobody has tuned in to, personas, an album, connections) and compares each screen with
+`tests/visual/baseline/`; failures land in `tests/visual/out/` and `diff/` (in red). It
+also checks the design contract: gel contrast on the stage, no "Loading…" or spinner left
+on a settled screen, no sideways scroll at 390 px. `-k stage` runs a subset;
+`VISUAL_PORT=18880` moves it off the default ports.
+
 With a real API key (spends credits):
 
 ```bash
@@ -606,5 +621,6 @@ deploy/deploy.sh   one-command Cloud Run setup
 deploy/firestore.rules  deny-all browser access, released by deploy.sh
 tests/           fake_gemini.py (Interactions + Live API stub), smoke_test.py, unit_test.py,
                  store_contract.py (LocalStore vs Firestore emulator), live_test.py (real Gemini;
-                 --cohost for a co-host call), briefing_test.py, briefing_smoke.py
+                 --cohost for a co-host call), briefing_test.py, briefing_smoke.py, visual.py
+                 (screens in a real browser, Playwright; baselines in visual/baseline/)
 ```

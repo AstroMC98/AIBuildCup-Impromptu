@@ -1,0 +1,4 @@
+# Only for tests/visual.py (the browser suite); the app and the other tests don't need these.
+# After installing: python -m playwright install chromium
+playwright>=1.45   # clock.set_fixed_time
+pillow>=10.0

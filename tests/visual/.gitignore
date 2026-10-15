@@ -1,0 +1,3 @@
+# Written by each run of tests/visual.py (failed captures and their diffs); baselines live in baseline/.
+out/
+diff/
