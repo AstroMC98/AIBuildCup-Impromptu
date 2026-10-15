@@ -116,20 +116,25 @@ def _():
     assert a.session_uid(".".join(forged)) is None
 
 
-@check("firebase tokens: verified accounts in, unverified password accounts out")
+@check("firebase tokens: verified accounts in, unverified emails out from any provider")
 async def _():
     a = Auth(Settings(session_secret="s1", auth_mode="firebase", firebase_project_id="p1"))
     a._verify = lambda token: {"sub": "u1", "email": "Ann@Example.com", "email_verified": True,
                                "name": "Ann", "firebase": {"sign_in_provider": "google.com"}}
     profile = await a.verify_firebase("x" * 30)
     assert profile == {"uid": "u1", "email": "ann@example.com", "name": "Ann", "photo": ""}
-    a._verify = lambda token: {"sub": "u2", "email": "boss@example.com", "email_verified": False,
-                               "firebase": {"sign_in_provider": "password"}}
-    try:
-        await a.verify_firebase("x" * 30)
-        raise AssertionError("an unverified email could have claimed an admin address")
-    except AuthError:
-        pass
+    # An unverified address must never be trusted (it decides admin rights), whatever
+    # the provider, including a missing email_verified claim.
+    for provider, claim in (("password", False), ("github.com", False), ("oidc.custom", None)):
+        token = {"sub": "u2", "email": "boss@example.com", "firebase": {"sign_in_provider": provider}}
+        if claim is not None:
+            token["email_verified"] = claim
+        a._verify = lambda _t, token=token: token
+        try:
+            await a.verify_firebase("x" * 30)
+            raise AssertionError(f"an unverified {provider} email could have claimed an admin address")
+        except AuthError:
+            pass
 
     def bad(token):
         raise ValueError("expired")

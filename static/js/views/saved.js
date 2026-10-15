@@ -83,7 +83,7 @@ export async function savedView(root, { url }) {
   if (kind === "personas") {
     const presets = session.options.persona_presets || [];
     setHtml(el.querySelector("[data-presets]"), html`${presets.map((p) => html`
-      <div class="saved-card">${personaCard(p)}
+      <div class="saved-card preset">${personaCard(p)}
         <span class="row saved-actions"><button class="btn chip-btn small-btn" type="button" data-copy="${p.id}">Customize</button></span></div>`)}`);
     el.querySelector("[data-presets]").addEventListener("click", (e) => {
       const b = e.target.closest("[data-copy]");

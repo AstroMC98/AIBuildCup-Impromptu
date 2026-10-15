@@ -105,9 +105,10 @@ class Auth:
         except Exception as exc:
             log.info("rejected a Firebase token: %s", exc)
             raise AuthError("That sign-in didn't check out. Try again.") from exc
-        if claims.get("email") and not claims.get("email_verified", False) and \
-                claims.get("firebase", {}).get("sign_in_provider") == "password":
-            # Email + password accounts must verify their address first.
+        if claims.get("email") and claims.get("email_verified") is not True:
+            # An unverified address is never trusted, whatever the provider: admin
+            # rights and connect-by-email both key off it. (Google addresses are
+            # always verified; email + password accounts verify from their inbox.)
             raise AuthError("Check your inbox and verify your email address, then sign in again.")
         picture = claims.get("picture") or ""
         return {

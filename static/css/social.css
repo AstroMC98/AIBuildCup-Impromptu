@@ -50,13 +50,13 @@
 .album-card .vis-ic { position: absolute; top: 10px; right: 10px; }
 .album-chips { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--faint); }
 .album-chip {
-  text-decoration: none; background: color-mix(in srgb, var(--tile) 35%, var(--chip)); color: var(--text);
+  display: inline-flex; align-items: center; text-decoration: none; background: color-mix(in srgb, var(--tile) 35%, var(--chip)); color: var(--text);
 }
 .album-pods { margin-top: 8px; }
 
 /* hero: album and creator pages */
 .hero { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 18px 22px; margin: 12px 0 24px; }
-.hero-text { gap: 6px; min-width: 220px; }
+.hero-text { gap: 6px; flex: 1 1 340px; min-width: 0; }
 .hero-text h1 { font-size: 34px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.05; }
 .hero-text .muted { max-width: 60ch; }
 .hero-actions { align-items: center; }
@@ -75,7 +75,8 @@
 /* ---- library: following, tags --------------------------------------------------------- */
 .seg-tab { position: relative; }
 .tab-badge {
-  display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; margin-left: 4px;
+  position: absolute; top: -6px; right: -4px;
+  display: grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px;
   border-radius: var(--pill); background: var(--live); color: var(--white); font-size: 11px; font-weight: 800; vertical-align: 1px;
 }
 .chip.tag { font-size: 12px; }
@@ -121,4 +122,14 @@ a.st-row:hover { background: var(--chip); }
 @media (max-width: 560px) {
   .st-row { grid-template-columns: minmax(0, 1fr) 54px 54px; }
   .st-row > :nth-child(4), .st-row > :nth-child(5) { display: none; }
+}
+
+/* premade persona cards: the Customize button sits under the text, never over the name */
+.saved-card.preset { padding-right: 14px; }
+.saved-card.preset .saved-actions { position: static; flex-basis: 100%; justify-content: flex-end; margin-top: -2px; }
+
+/* narrow library panes (the studio's sidebar): tabs in two rows instead of overflowing */
+.lib-pane { container-type: inline-size; }
+@container (max-width: 300px) {
+  .seg-tabs { grid-auto-flow: row; grid-template-columns: 1fr 1fr; }
 }
