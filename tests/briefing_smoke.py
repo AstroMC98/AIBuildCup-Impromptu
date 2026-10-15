@@ -12,6 +12,7 @@ time, so any scheduled briefing is due at once. It checks:
     refunds unused 5-minute blocks
   - a scheduled briefing is made with nobody listening, is saved ready to play, and
     the schedule moves on to the next day
+  - both open on a theme from the music library, before the hosts
 """
 import asyncio
 import os
@@ -24,7 +25,10 @@ from pathlib import Path
 import httpx
 
 os.environ.setdefault("SMOKE_PORT", "8875")   # the stub on it, the app on the next port
-from tests.smoke_test import APP_PORT, BASE, FAKE_PORT, WS, Listener, _start, _wait_up, sign_in  # noqa: E402
+from app.mixer import LIVE_INTRO_S  # noqa: E402
+from tests.smoke_test import (  # noqa: E402
+    APP_PORT, BASE, FAKE_PORT, RATE, WS, Listener, _start, _wait_up, music_library, sign_in,
+)
 
 
 async def scenario(checks: dict) -> None:
@@ -97,6 +101,10 @@ async def scenario(checks: dict) -> None:
         heard = (await dave_c.get(f"/api/shows/{bid}")).json()["show"]["duration_s"]
         checks["stopped early: charged 2, the unused 5-minute block refunded"] = (
             0 < heard < 300 and await net_credits(bid) == -1)
+        replay = (await dave_c.get(f"/api/shows/{bid}")).json()
+        checks["a briefing opens on its theme, then the hosts"] = (
+            lst.frames[0][:2] == (0, 0) and replay["segments"][0]["start"] == int(LIVE_INTRO_S * RATE)
+            and replay["show"]["music"]["source"] == "library")
 
         # a search to follow: words, not a link
         s = await dave_c.post("/api/watches", json={"url": "climate tech funding"})
@@ -125,6 +133,10 @@ async def scenario(checks: dict) -> None:
             audio.status_code == 200 and audio.headers["content-type"] == "audio/mpeg" and not ready["rendering"]
             and data["last"]["show_id"] == ready["id"] and ready["briefing"]["template"] == "Five-minute focus")
         checks["...and the schedule moves on to the next day"] = abs(data["next_ready_by"] - first_ready - 86400) < 5
+        made_ahead = (await dave_c.get(f"/api/shows/{ready['id']}")).json()
+        checks["...it opens on its theme too"] = (
+            made_ahead["segments"][0]["start"] == int(LIVE_INTRO_S * RATE)
+            and made_ahead["show"]["music"]["source"] == "library")
         used = ready["briefing"]["updates"]
         checks["...it covered the search's stories, and keeps Google's suggestions to show"] = (
             len(used) == 3 and all(u["via"] == "search" for u in used)
@@ -149,6 +161,7 @@ def main() -> int:
         "ADMIN_EMAILS": "alice@example.com", "SIGNUP_CREDITS": "0",
         "CLOCK_SPEED": "20", "LOW_WATER_SECONDS": "3", "LINES_PER_SEGMENT": "4", "IDLE_END_SECONDS": "5",
         "STINGER_DELAY_SECONDS": "0", "BRIEFING_POLL_SECONDS": "1", "BRIEFING_LEAD_MINUTES": "1440",
+        "MUSIC_DIR": str(music_library(Path(data_dir, "music"))),
     }
     py = sys.executable
     app_log = Path(data_dir, "app.log")

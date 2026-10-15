@@ -1048,7 +1048,11 @@ async def _make_briefing(user: User, template: dict, minutes: int, tz: str, *,
             "updates": [{k: u.get(k) for k in ("kind", "via", "label", "site", "title", "url")} for u in updates],
             "search_suggestions": briefing.search_suggestions(watches, updates),
         },
+        # A briefing is the listener's own, not their show: it opens on a theme of its
+        # own and the hosts' welcome, never the creator's saved show intro.
+        "intro": dict(AUTO_INTRO),
     }
+    theme, doc["music"] = await _live_theme(user.uid, AUTO_INTRO, briefing.music_mood(template), show_id)
     try:
         await accounts.adjust_credits(user.uid, -cost, reason="briefing", show_id=show_id)
     except InsufficientCredits as exc:
@@ -1061,7 +1065,7 @@ async def _make_briefing(user: User, template: dict, minutes: int, tz: str, *,
         await accounts.adjust_credits(user.uid, cost, reason="refund", show_id=show_id, note="Couldn't start")
         raise
     rooms.add(ShowRoom(doc=doc, request=req, source=source, gemini=model, settings=settings, store=store,
-                       on_closed=rooms.remove, headless=headless))
+                       on_closed=rooms.remove, headless=headless, intro=theme))
     # What this briefing covers isn't waiting any more.
     used = {(u.get("watch_id"), u.get("found_at"), u.get("url")) for u in updates}
     for w in watches:
@@ -1445,6 +1449,7 @@ async def create_cohost(body: NewCohost, request: Request) -> dict:
     if cohosts.active_for(user.uid):
         raise HTTPException(status_code=409, detail="You're already on a call. Hang that one up first.")
     model = _check_capacity()
+    intro = await _intro_for(user, body.use_show_intro)
     host = cast_cohost(req.host)
     you = (req.your_name.strip() or user.name or "You")[:40]
     if host.name.casefold() == you.casefold():
@@ -1496,6 +1501,9 @@ async def create_cohost(body: NewCohost, request: Request) -> dict:
         "duration_s": 0,
         "audio": None,
         "counts": {},
+        # The co-host welcomes listeners to the show by name; the theme is mixed into
+        # the edited episode when it's saved (cohost.py).
+        "intro": intro,
     }
     await _charge(user, cost, show_id)
     doc["credits_charged"] = cost
@@ -1506,7 +1514,7 @@ async def create_cohost(body: NewCohost, request: Request) -> dict:
         await accounts.adjust_credits(user.uid, cost, reason="refund", show_id=show_id, note="Couldn't start")
         raise
     call = CohostSession(doc=doc, request=req, host=host, you=you, notes=notes, gemini=model,
-                         settings=settings, store=store, on_closed=cohosts.remove)
+                         settings=settings, store=store, on_closed=cohosts.remove, music=library)
     cohosts.add(call)
     return {"id": show_id, "trimmed": len(req.notes) > settings.cohost_source_chars,
             "credits": (await accounts.get(user.uid)).credits}  # type: ignore[union-attr]

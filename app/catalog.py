@@ -334,6 +334,7 @@ PERSONA_PRESETS_BY_ID = {p["id"]: p for p in PERSONA_PRESETS}
 COHOST_MODES = [
     {
         "id": "banter",
+        "music_mood": "playful",          # the theme that opens the episode
         "label": "Banter",
         "blurb": "Riff, joke and trade stories with you.",
         "accent": "#B8336A",
@@ -343,6 +344,7 @@ COHOST_MODES = [
     },
     {
         "id": "interview",
+        "music_mood": "warm",
         "label": "Interview me",
         "blurb": "Asks you sharp questions and digs into your answers.",
         "accent": "#2F6BD0",
@@ -353,6 +355,7 @@ COHOST_MODES = [
     },
     {
         "id": "debate",
+        "music_mood": "newsy",
         "label": "Debate me",
         "blurb": "Takes the other side and pushes back.",
         "accent": "#B5521C",

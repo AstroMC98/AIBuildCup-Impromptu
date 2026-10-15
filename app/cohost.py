@@ -40,12 +40,14 @@ from . import prompts
 from .audio import Mp3Writer
 from .catalog import COHOST_MODES_BY_ID, VOICE_GENDER, VOICES, pick_voice
 from .config import Settings
-from .editing import RATE, Take, assemble, build_edit, fallback_plan, raw_mix
+from .editing import RATE, Take, assemble, build_edit, fallback_plan, raw_mix, scored
 from .limits import TokenBucket
 from .llm import (
     AudioOut, CohostLink, Gemini, GoAway, InputText, Interrupted, OutputText, ResumeHandle, TurnDone,
 )
+from .mixer import Cues
 from .models import CohostRequest, Host, HostRequest
+from .music import Library, theme_for
 from .room import Conn, refund_unused
 from .store import Store
 
@@ -103,7 +105,9 @@ class CohostSession:
         settings: Settings,
         store: Store,
         on_closed: Callable[[str], None],
+        music: Library | None = None,
     ):
+        """music: the library the episode's theme comes from (none: open and close on a chime)."""
         self.id: str = doc["id"]
         self.doc = doc
         self.request = request
@@ -113,6 +117,7 @@ class CohostSession:
         self.gemini = gemini
         self.settings = settings
         self.store = store
+        self.music = music
         self._on_closed = on_closed
 
         self.take = Take()
@@ -223,7 +228,9 @@ class CohostSession:
                     retries = 0
                     if self.started is None:
                         self.started = time.monotonic()
-                        await self._send_text(prompts.cohost_opening(self.you, self.request.minutes))
+                        intro = self.doc.get("intro") or {}
+                        await self._send_text(prompts.cohost_opening(
+                            self.you, self.request.minutes, intro.get("show_name", ""), intro.get("intro_line", "")))
                     elif fresh:
                         await self._send_text(prompts.cohost_resume(self.you, self._recap()))
                     self._set_state("live")
@@ -395,13 +402,22 @@ class CohostSession:
         plan = plan or fallback_plan(self.doc.get("title") or "Co-hosted episode")
 
         self._step("cutting")
-        episode = await asyncio.to_thread(assemble, edit, plan, self.you, self.host.name, self.revs)
+        cues, music = await self._theme()
+        episode = await asyncio.to_thread(assemble, edit, plan, self.you, self.host.name, self.revs, cues is None)
         if not episode.segments:
             await self._discard_empty(reason)
             return
 
         self._step("mastering")
-        mp3, raw = await asyncio.to_thread(self._encode, episode.pcm)
+        if cues is not None:
+            try:
+                episode, regions = await asyncio.to_thread(scored, episode, cues)
+                music = {**music, "regions": regions}
+            except Exception:
+                log.exception("call %s: couldn't mix the theme in; chimes instead", self.id)
+                cues, music = None, {"source": "none"}
+                episode = await asyncio.to_thread(assemble, edit, plan, self.you, self.host.name, self.revs)
+        mp3, raw = await asyncio.to_thread(self._encode, episode.pcm, cues is not None)
         audio = await self.store.put_audio(self.id, mp3)
         raw_audio = await self.store.put_audio(self.id, raw, name="raw.mp3")
         writes = asyncio.Semaphore(8)
@@ -428,6 +444,7 @@ class CohostSession:
             "raw_audio": raw_audio,
             "credits_refunded": refund,
             "edit": episode.stats,
+            "music": music,
             "counts": {"segments": len(episode.segments), "comments": 0, "context": 0, "hearts": 0,
                        "peak_listeners": 0},
             "style_history": self.doc.get("style_history", []),
@@ -456,8 +473,22 @@ class CohostSession:
                    else "Nothing was recorded, so there's no episode. Your credits are back.")
         self._send({"type": "ended", "reason": reason, "empty": True, "message": message})
 
-    def _encode(self, episode_pcm: bytes) -> tuple[bytes, bytes]:
-        mp3 = Mp3Writer(RATE, self.settings.mp3_kbps)
+    async def _theme(self) -> tuple[Cues | None, dict]:
+        """The episode's theme: the saved show intro's music, or the library's pick for
+        the mode the call started in. None to be had: it opens and closes on a chime."""
+        if self.music is None:
+            return None, {"source": "none"}
+        try:
+            return await theme_for((self.doc.get("intro") or {}).get("music") or "auto", library=self.music,
+                                   store=self.store, uid=self.doc["owner_uid"],
+                                   mood=COHOST_MODES_BY_ID[self.request.mode]["music_mood"], seed=self.id, rate=RATE)
+        except Exception:
+            log.exception("call %s: no theme music", self.id)
+            return None, {"source": "none"}
+
+    def _encode(self, episode_pcm: bytes, music: bool = False) -> tuple[bytes, bytes]:
+        """The episode (at the memo pods' bitrate when it has music in it) and the raw call."""
+        mp3 = Mp3Writer(RATE, self.settings.render_mp3_kbps if music else self.settings.mp3_kbps)
         mp3.feed(episode_pcm)
         raw = Mp3Writer(RATE, self.settings.mp3_kbps)
         raw.feed(raw_mix(self.take))

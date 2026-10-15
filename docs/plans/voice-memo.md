@@ -273,7 +273,17 @@ Renders slot (FIFO, max_renders) ─► MemoJob.produce:
     - Audio asked for a memo brief (`thesis` in the schema) gets the brief. Other audio is a producer's question to transcribe.
     - Memo research is told apart from live lookups by its schema or system prompt. Its counters are `memo_briefs`/`memo_research`.
   - **Smoke tests:** they use main's `SMOKE_PORT` (the app on the next port).
-  - **Not done:** briefings and co-host calls don't open on a library theme. Their spoken intro comes from the shared planner, and calls aren't planned.
+- **Intros for briefings and co-hosted calls** (finished after the merge):
+  - **Briefings:**
+    - On demand or made ahead, they stream a library theme at seq 0, like a live pod.
+    - The mood comes from the template: premade ones carry `music_mood`, your own follow their vibe, else newsy.
+    - They never use the saved show intro. A briefing is the listener's own, not their show.
+  - **Co-hosted calls:**
+    - The co-host's opening welcomes listeners to the saved show by name and works in its intro line (`use_show_intro`, an Intro row on /cohost).
+    - On saving, `assemble(chimes=False)` and `editing.scored()` run `mixer.mix()`: intro lead, stings, outro. Segment and chapter starts shift to match.
+    - The theme is the show intro's music, else the library's pick for the starting mode's `music_mood`. With no music (or if mixing fails), main's chimes stay.
+    - An episode with music is encoded at `RENDER_MP3_KBPS`.
+  - **Fix (Firestore):** `MixResult.regions` were `[start, end, kind]` lists. Firestore rejects arrays of arrays, so saving a memo pod would have failed on GCP. They're `{start, end, kind}` dicts now.
 - **Phase 6, code and docs done; the real-API runs are yours:**
   - `tests/live_test.py --memo FILE [--memo-minutes] [--music] [--review] [--gemini-base-url]`. It reports per-stage times, how much faster than real time the show was voiced, the research and the music, and writes the MP3, transcript, outline and show notes to `data/live-tests/<ts>/`. Checked against the fake Gemini.
   - Pressing Produce kept the stage timings from before the review, so the report adds the two halves.

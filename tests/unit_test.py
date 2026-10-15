@@ -1606,6 +1606,49 @@ def _():
     assert ep.stats["call_s"] == 6.0 and ep.stats["tightened_s"] > 0
 
 
+@check("co-host: with a theme, the music opens and closes the episode and every start moves with it")
+def _():
+    from app.mixer import INTRO_LEAD_S, OUTRO_PLAYOUT_S, Cues
+    edit = ed.build_edit(_conversation())
+    plan = ed.EditPlan(title="T", chapters=[ed.EditChapter(title="A", start_turn=0),
+                                            ed.EditChapter(title="B", start_turn=edit.turns[2].id)])
+    plain = ed.assemble(edit, plan, "Marc", "Nova", chimes=False)
+    segs = plain.segments
+    assert segs[0]["start"] == 0 and plain.samples == segs[-1]["start"] + segs[-1]["samples"]   # no chimes
+    assert plain.stats["tightened_s"] == round(6.0 - plain.samples / R, 1)
+    theme = (0.2 * np.sin(2 * np.pi * 440 * np.arange(30 * R) / R)).astype(np.float32)
+    ep, regions = ed.scored(plain, Cues(intro=theme, sting=theme[: 3 * R], outro=theme))
+    lead = int(INTRO_LEAD_S * R)
+    assert [s["start"] for s in ep.segments] == [s["start"] + lead for s in segs]
+    assert [s["samples"] for s in ep.segments] == [s["samples"] for s in segs]
+    assert ep.samples == plain.samples + lead + int(OUTRO_PLAYOUT_S * R)
+    # chapter 1 opens on the intro; chapter 2 starts with its first turn (too soon after the intro for a sting)
+    assert [b["start"] for b in ep.beats] == [0, ep.segments[2]["start"]] and ep.beats[-1]["end"] == ep.samples
+    assert [r["kind"] for r in regions] == ["intro", "outro"] and regions[-1]["end"] == ep.samples
+    assert all(isinstance(r, dict) for r in regions)                 # Firestore rejects arrays of arrays
+    assert ep.stats["episode_s"] == round(ep.samples / R, 1)
+
+
+@check("co-host: the opening welcomes listeners to your show by name, and only then")
+def _():
+    assert prompts.cohost_opening("Marc", 10) == (
+        "(Producer: you're live and recording, about 10 minutes. Open the show: welcome the listeners, "
+        "introduce yourself and Marc in a sentence, set up the topic with a hook, then hand it to Marc with "
+        "a question. Keep it under 20 seconds.)")
+    named = prompts.cohost_opening("Marc", 10, "Bread Talk", "Crumbs and all.")
+    assert 'welcome the listeners to "Bread Talk",' in named and 'keeping its words: "Crumbs and all."' in named
+
+
+@check("co-host: each mode has a theme mood, and so does each premade briefing")
+def _():
+    from app import briefing
+    from app.catalog import COHOST_MODES, MUSIC_MOODS
+    assert all(m["music_mood"] in MUSIC_MOODS for m in COHOST_MODES)
+    assert all(briefing.music_mood(t) in MUSIC_MOODS for t in briefing.TEMPLATES)
+    assert briefing.music_mood(briefing.TEMPLATES_BY_ID["morning"]) == "upbeat"
+    assert briefing.music_mood({"vibe": "late-night"}) == "calm" and briefing.music_mood({}) == "newsy"
+
+
 @check("co-host: dead air is trimmed and long pauses inside a turn tightened")
 def _():
     take = ed.Take()

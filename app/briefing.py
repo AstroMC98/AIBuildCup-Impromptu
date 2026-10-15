@@ -29,7 +29,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from .catalog import PERSONA_PRESETS_BY_ID, VOICE_GENDER, VOICES
+from .catalog import MUSIC_MOOD_FOR, PERSONA_PRESETS_BY_ID, VOICE_GENDER, VOICES
 from .models import HostRequest, OutlineBeat, ShowRequest
 
 LENGTHS = (5, 10, 15)
@@ -62,7 +62,7 @@ def _preset_host(preset_id: str) -> dict:
 
 TEMPLATES: list[dict] = [
     {
-        "id": "morning", "name": "Morning roundup", "minutes": 10, "accent": "#2E6F9E",
+        "id": "morning", "name": "Morning roundup", "minutes": 10, "accent": "#2E6F9E", "music_mood": "upbeat",
         "blurb": "Two hosts at a bright news desk: your watchlist, quick hits, one thing to try.",
         "style": "A bright, friendly morning news desk. Brisk and upbeat without shouting, plain words, "
                  "a little banter between items, and a clear handoff to each new segment.",
@@ -71,7 +71,7 @@ TEMPLATES: list[dict] = [
         "topics": "", "sections": ["watchlist", "quick_hits", "try_today"],
     },
     {
-        "id": "focus", "name": "Five-minute focus", "minutes": 5, "accent": "#1F7F6A",
+        "id": "focus", "name": "Five-minute focus", "minutes": 5, "accent": "#1F7F6A", "music_mood": "calm",
         "blurb": "One calm host: what changed on your watchlist, then one idea worth your time.",
         "style": "One calm, clear host talking straight to the listener. Short sentences, no filler, "
                  "a steady pace that's easy to follow on a commute.",
@@ -80,7 +80,7 @@ TEMPLATES: list[dict] = [
         "topics": "", "sections": ["watchlist", "deep_dive"],
     },
     {
-        "id": "deep", "name": "Weekend deep-dive", "minutes": 15, "accent": "#80620F",
+        "id": "deep", "name": "Weekend deep-dive", "minutes": 15, "accent": "#80620F", "music_mood": "reflective",
         "blurb": "A historian and a comic take one of your topics apart, after a quick watchlist check.",
         "style": "Two curious friends on a slow weekend morning: one erudite, one a lovable skeptic. Funny, "
                  "unhurried, full of tangents that pay off.",
@@ -89,7 +89,7 @@ TEMPLATES: list[dict] = [
         "topics": "", "sections": ["deep_dive", "watchlist", "quick_hits"],
     },
     {
-        "id": "watch", "name": "Industry watch", "minutes": 10, "accent": "#3A4250",
+        "id": "watch", "name": "Industry watch", "minutes": 10, "accent": "#3A4250", "music_mood": "newsy",
         "blurb": "Two sharp analysts read what changed on the pages you watch, and what it might mean.",
         "style": "Two sharp analysts reading the signals. Precise, a little dry, skeptical of spin; they "
                  "separate what changed from what it might mean, and say which is which.",
@@ -291,6 +291,11 @@ def pick_updates(watches: list[dict]) -> list[dict]:
     pending = [u for w in watches if not w.get("paused") for u in w.get("pending") or []]
     pending.sort(key=lambda u: u.get("found_at", 0), reverse=True)
     return pending[:MAX_UPDATES]
+
+
+def music_mood(template: dict) -> str:
+    """The theme a briefing opens on: a premade template's own, else its vibe's, else news."""
+    return template.get("music_mood") or MUSIC_MOOD_FOR.get(template.get("vibe") or "") or "newsy"
 
 
 def request_for(template: dict, minutes: int, source: str, updates: int) -> ShowRequest:

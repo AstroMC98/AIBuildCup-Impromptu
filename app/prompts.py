@@ -950,10 +950,14 @@ def cohost_system(req: CohostRequest, host: Host, user_name: str, notes: str) ->
     )
 
 
-def cohost_opening(user_name: str, minutes: int) -> str:
+def cohost_opening(user_name: str, minutes: int, show_name: str = "", intro_line: str = "") -> str:
+    """show_name / intro_line: from the creator's saved show intro, if the call uses it."""
+    show = f' to "{show_name.strip()}"' if show_name.strip() else ""
+    line = (f' Work in the show\'s own intro line, keeping its words: "{intro_line.strip()}".'
+            if intro_line.strip() else "")
     return (f"(Producer: you're live and recording, about {minutes} minutes. Open the show: welcome "
-            f"the listeners, introduce yourself and {user_name} in a sentence, set up the topic with a "
-            f"hook, then hand it to {user_name} with a question. Keep it under 20 seconds.)")
+            f"the listeners{show}, introduce yourself and {user_name} in a sentence, set up the topic with a "
+            f"hook, then hand it to {user_name} with a question.{line} Keep it under 20 seconds.)")
 
 
 def cohost_mode_switch(mode: str) -> str:

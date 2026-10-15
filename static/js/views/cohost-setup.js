@@ -1,11 +1,13 @@
 // /cohost — set up a live call with an AI co-host: what you'll talk about, who
-// your co-host is (a persona), how they play it, how long, and who can hear the
-// episode. "Start the call" opens the mic (inside the click) and spends the credits.
+// your co-host is (a persona), how they play it, how long, whether it opens with
+// your saved show intro, and who can hear the episode. "Start the call" opens the
+// mic (inside the click) and spends the credits.
 import { api } from "../api.js";
 import { micSupported, startCallAudio, takeHandoff } from "../cohost/audio.js";
 import { html, setHtml } from "../html.js";
 import { icon, KIND_ICON } from "../icons.js";
 import { bindPersonaForm, fillPersona, personaCard, personaFields, readPersona } from "../personas.js";
+import { introRow } from "../pod-options.js";
 import { navigate } from "../router.js";
 import { loginPath, session } from "../session.js";
 import { applyAccent } from "../theme.js";
@@ -37,10 +39,11 @@ export async function cohostSetupView(root) {
     minutes: LENGTHS.includes(saved.minutes) ? saved.minutes : 10,
     visibility: saved.visibility || "private",
     sharedWith: [],
+    useIntro: true,      // open with your saved show intro, if you have one
     attachments: [],     // { name, kind, text }
     busy: "",
   };
-  const data = { personas: [], connections: [] };
+  const data = { personas: [], connections: [], intro: null };
 
   const el = document.createElement("div");
   el.className = "create-page cohost-setup";
@@ -85,6 +88,9 @@ export async function cohostSetupView(root) {
 
       <h2 class="create-h2">How long?</h2>
       <div class="len-chips" role="group" aria-label="Length" data-lengths></div>
+
+      <h2 class="create-h2">Intro</h2>
+      <div data-intro></div>
 
       <h2 class="create-h2">Who can hear the episode?</h2>
       <div class="radio-cards" role="radiogroup" aria-label="Who can hear the episode" data-visibility></div>
@@ -148,6 +154,7 @@ export async function cohostSetupView(root) {
       <div class="chips">${data.connections.map((c) => html`
         <button type="button" class="chip" data-share="${c.uid}" aria-pressed="${state.sharedWith.includes(c.uid)}">${c.name}</button>`)}</div>`);
   };
+  const renderIntro = () => setHtml($("[data-intro]"), introRow(data.intro, state.useIntro, { cohost: true }));
   const renderCost = () => {
     const cost = session.cost(state.minutes);
     const enough = session.credits >= cost;
@@ -192,6 +199,9 @@ export async function cohostSetupView(root) {
       const uid = t.closest("[data-share]").dataset.share;
       state.sharedWith = state.sharedWith.includes(uid) ? state.sharedWith.filter((u) => u !== uid) : [...state.sharedWith, uid];
       renderVisibility();
+    } else if (t.closest("[data-use-intro]")) {
+      state.useIntro = !state.useIntro;
+      renderIntro();
     } else if (t.closest("[data-pick]")) {
       $("[data-file]").click();
     } else if (t.closest("[data-link-toggle]")) {
@@ -302,6 +312,7 @@ export async function cohostSetupView(root) {
         },
         visibility: state.visibility,
         shared_with: state.visibility === "private" ? state.sharedWith : [],
+        use_show_intro: state.useIntro,
       });
       if (res.trimmed) toast("Your notes were long, so your co-host reads the first part.");
       session.refresh();
@@ -326,15 +337,19 @@ export async function cohostSetupView(root) {
   renderModes();
   renderLengths();
   renderVisibility();
+  renderIntro();
   renderChips();
   tint();
-  const [personas, conns] = await Promise.all([
+  const [personas, conns, intro] = await Promise.all([
     api.list("personas").catch(() => ({ items: [] })),
     api.connections().catch(() => ({ connected: [] })),
+    api.showIntro().catch(() => ({ intro: null })),
   ]);
   data.personas = personas.items;
   data.connections = conns.connected;
+  data.intro = intro.intro;
   renderVisibility();
+  renderIntro();
   $("#topic").focus();
   return { unmount() { offHead(); } };
 }

@@ -15,6 +15,7 @@ assemble() applies it:
   flubs      the phrases the editor marked are cut at the pauses around them
   polish     every turn is levelled to the same loudness, peaks are softly
              limited, every cut gets a short fade, and a chime opens and closes it
+             (or, with a theme, cohost.py mixes the music in: mixer.mix)
 
 Pure functions on numpy arrays, so all of it is tested without a server or a
 model. Positions are samples at 24 kHz on the call clock unless they say otherwise.
@@ -27,6 +28,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from .mixer import Cues, mix
 from .models import EditChapter, EditPlan
 
 RATE = 24_000                 # the episode, and the co-host's voice
@@ -461,15 +463,17 @@ def fallback_plan(title: str) -> EditPlan:
 
 
 def assemble(edit: Edit, plan: EditPlan, you_name: str, host_name: str,
-             revs: list[tuple[int, int]] = ()) -> Episode:
+             revs: list[tuple[int, int]] = (), chimes: bool = True) -> Episode:
     """revs: (call clock, style revision) for every mode switch, so each segment
-    carries the mode it was said in and a replay re-tints where the call did."""
+    carries the mode it was said in and a replay re-tints where the call did.
+    chimes: open and close on a chime. Off when theme music is mixed in afterwards
+    (mixer.mix), which then opens and closes the episode instead."""
     # Cuts only where a phrase's words could have been said in its audio: the live
     # transcript can land on the wrong stretch, and then a cut would take the wrong words.
     cut = {p.id for t in edit.turns if t.you for p in t.phrases if p.id in plan.cut_phrases and _fits(p)}
     # A co-host turn you cut into stays: your next words are often an answer to it.
     drop = {t for t in plan.drop_turns if any(x.id == t and not x.you and not x.cut_off for x in edit.turns)}
-    parts: list[np.ndarray] = [sting(rising=True), silence(0.35)]
+    parts: list[np.ndarray] = [sting(rising=True), silence(0.35)] if chimes else []
     pos = sum(len(p) for p in parts)
     segments: list[dict] = []
     seg_turns: list[int] = []
@@ -508,22 +512,40 @@ def assemble(edit: Edit, plan: EditPlan, you_name: str, host_name: str,
     if not segments:
         return Episode(pcm=b"", segments=[], beats=[], stats={"call_s": round(edit.length / RATE, 1)})
     segments[-1]["final"] = True
-    parts += [silence(0.5), sting(rising=False)]
+    if chimes:
+        parts += [silence(0.5), sting(rising=False)]
     audio = soft_limit(np.concatenate(parts))
     beats = _beats(plan.chapters, segments, seg_turns, len(audio))
     for seg in segments:
         seg["beat"] = max(i for i, b in enumerate(beats) if b["start"] <= seg["start"])
     call_s = edit.length / RATE
     episode_s = len(audio) / RATE
+    framing_s = 2 * STING_S + 0.85 if chimes else 0.0
     stats = {
         "call_s": round(call_s, 1),
         "episode_s": round(episode_s, 1),
-        "tightened_s": round(max(0.0, call_s - (episode_s - 2 * STING_S - 0.85)), 1),
+        "tightened_s": round(max(0.0, call_s - (episode_s - framing_s)), 1),
         "flubs_cut": flubs,
         "turns_dropped": len(drop) + edit.dropped_cut_offs,
         "cut_ins": sum(1 for t in edit.turns if t.cut_off),
     }
     return Episode(pcm=float_to_pcm(audio), segments=segments, beats=beats, stats=stats)
+
+
+def scored(episode: Episode, cues: Cues) -> tuple[Episode, list[dict]]:
+    """The episode (assembled without chimes) with its theme: the intro ahead of the
+    co-host's opening, a sting at a new chapter, the outro under the sign-off. Every
+    segment and chapter start moves to match, so the replay's captions stay in sync.
+    Also returns where the music plays ({start, end, kind})."""
+    mixed = mix(episode.pcm, {i: b["start"] for i, b in enumerate(episode.beats)}, cues, RATE)
+    segments = [{**s, "start": mixed.shift(s["start"])} for s in episode.segments]
+    starts = [mixed.chapter_start(i, b["start"]) for i, b in enumerate(episode.beats)]
+    beats = []
+    for i, b in enumerate(episode.beats):
+        end = starts[i + 1] if i + 1 < len(starts) else mixed.samples
+        beats.append({**b, "start": starts[i], "end": end, "minutes": round((end - starts[i]) / RATE / 60, 2)})
+    stats = {**episode.stats, "episode_s": round(mixed.samples / RATE, 1)}
+    return Episode(pcm=bytes(mixed.pcm), segments=segments, beats=beats, stats=stats), mixed.regions
 
 
 def _fits(p: Phrase) -> bool:

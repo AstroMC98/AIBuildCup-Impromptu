@@ -398,6 +398,8 @@ class NewCohost(BaseModel):
     request: CohostRequest
     visibility: Visibility = "private"
     shared_with: list[str] = Field(default_factory=list, max_length=200)
+    # Open with the creator's saved show intro (name, intro line, theme) if they have one.
+    use_show_intro: bool = True
 
 
 class EditChapter(BaseModel):

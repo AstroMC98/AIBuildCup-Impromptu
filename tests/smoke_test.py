@@ -29,12 +29,14 @@ It checks:
     back; deleting a memo pod mid-way refunds it
 Then alice co-hosts a call live with an AI co-host (the stub's Live API), streaming
 mic audio in real time:
+  - the co-host opens with alice's saved show intro (her show by name, her intro line)
   - starting needs credits, one call at a time; others can't see or join it while it's on
   - a newer connection takes the call over; the co-host opens the show itself
   - your words are transcribed; cutting in stops it; mode switches reach it; a recycled
     Live connection resumes the session
   - hanging up edits it (flubs cut, the answer to them dropped, cut-off answers handled)
-    and saves a finished pod with both voices, chapters, an MP3 and the unedited call
+    and saves a finished pod with both voices, chapters, an MP3 and the unedited call,
+    opening and closing on the theme
   - unused minutes come back; a call nobody joined leaves no pod and refunds everything
 """
 import asyncio
@@ -735,6 +737,9 @@ async def cohost_scenario(checks: dict) -> None:
         setups = seen["live_setups"]
         checks["co-host: a mode switch reaches the co-host"] = any(
             "switch it up" in t and "opposite side" in t for t in seen["live_texts"])
+        checks["co-host: it opens with your show intro: the show by name, your intro line"] = any(
+            'welcome the listeners to "Walk & Talk"' in t and '"ideas from the sidewalk"' in t
+            for t in seen["live_texts"])
         checks["co-host: a recycled Live connection resumes the session"] = (
             len(setups) >= 2 and setups[1]["setup"].get("sessionResumption", {}).get("handle") == "handle-1")
         first_setup = json.dumps(setups[0])
@@ -769,6 +774,11 @@ async def cohost_scenario(checks: dict) -> None:
         checks["co-host: segments sit back to back with chapters"] = (
             all(b["start"] > a["start"] + a["samples"] for a, b in zip(segs, segs[1:]))
             and [b["title"] for b in show["beats"]] == ["Opening", "The middle"] and show["beats"][0]["start"] == 0)
+        regions = show["music"]["regions"]
+        checks["co-host: the episode opens and closes on the theme, captions moved to match"] = (
+            show["music"]["source"] == "library" and segs[0]["start"] == int(INTRO_LEAD_S * R)
+            and regions[0]["kind"] == "intro" and regions[-1]["kind"] == "outro"
+            and regions[-1]["end"] == show["samples"] and show["beats"][-1]["end"] == show["samples"])
         checks["co-host: the replay re-tints where the mode switched"] = (
             [s["style_rev"] for s in segs][-1] == 1 and len(show["styles"]) == 2
             and show["styles"][1]["label"] == "Co-host · Debate me")

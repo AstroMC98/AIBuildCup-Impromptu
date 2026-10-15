@@ -87,11 +87,15 @@ export function musicCards(choice, { mine = [], generate = false, intro = null }
   return html`${cards}`;
 }
 
-/** Whether the pod opens with your saved show intro, or where to make one. */
-export function introRow(intro, use) {
+/** Whether the pod opens with your saved show intro, or where to make one.
+ *  cohost: worded for a co-hosted call (the co-host welcomes; the theme is added on saving). */
+export function introRow(intro, use, { cohost = false } = {}) {
   if (!intro || intro.enabled === false) {
-    return html`<p class="faint small intro-hint">Every pod opens with a few seconds of theme music and the hosts' welcome.
-      <a href="/intro" data-link>Name your show</a> and they'll welcome listeners to it by name.</p>`;
+    return cohost
+      ? html`<p class="faint small intro-hint">The episode opens with theme music and your co-host's welcome.
+        <a href="/intro" data-link>Name your show</a> and they'll welcome listeners to it by name.</p>`
+      : html`<p class="faint small intro-hint">Every pod opens with a few seconds of theme music and the hosts' welcome.
+        <a href="/intro" data-link>Name your show</a> and they'll welcome listeners to it by name.</p>`;
   }
   return html`
     <div class="switch-row">

@@ -56,9 +56,10 @@ accounts at once in different browsers. Grant yourself credits on the **Admin** 
   was heard, what the research found (untick anything), edit the chapters, then Produce.
   See [How a voice memo becomes a pod](#how-a-voice-memo-becomes-a-pod).
 - **Every pod opens with an intro**: a few seconds of theme music, then the hosts welcome
-  listeners, introduce themselves and say what's coming (briefings get the spoken intro
-  without the music). Save a **show intro** (`/intro`: your show's name, a line of your
-  own, a theme) and every pod you make opens with it; switch it off for any one pod.
+  listeners, introduce themselves and say what's coming. Save a **show intro** (`/intro`:
+  your show's name, a line of your own, a theme) and every pod and co-hosted call you make
+  opens with it; switch it off for any one. Briefings are yours, not your show's: they
+  open on a theme of their own.
 - **Templates**: Science deep-dive (one expert host, long-form), Married couple chat,
   Inspirational talk, Girl talk, Masculine talk, Debate night, Idea breakdown. Each sets
   the style, the hosts (names, personas, voices) and a length; change anything before going live.
@@ -225,8 +226,9 @@ POST /api/memos (recording + options) ─▶ MemoJob (app/memo.py)              
 ### Music and intros
 
 Every pod's theme comes from the prepackaged library in `music/` (`manifest.json` plus
-one 30-second theme per pack, by mood), picked to suit the pod's vibe or template, or a
-memo's mood. The library ships empty, so pods are voice only until you build it once:
+one 30-second theme per pack, by mood), picked to suit the pod's vibe or template, a
+memo's mood, a briefing's template or a co-hosted call's mode. The library ships empty,
+so pods are voice only (co-hosted calls keep their chime) until you build it once:
 
 ```bash
 python tools/build_music_library.py --lyria --dry-run      # see the prompts
@@ -237,9 +239,11 @@ python tools/build_music_library.py --from-files DIR --mood warm --license "CC0"
 Listen to the new themes (Lyria can slip in vocals), then commit `music/`. A memo pod can
 instead get **original music** (Lyria, `MUSIC_CREDITS` extra, a few minutes more); it's
 kept in the owner's account to reuse as "Your theme", or as their show intro's theme.
-Live pods stream the theme's opening while the episode is planned; memo pods get the
-full intro, stings and outro. Lyria music carries a SynthID watermark, noted in the
+Live pods and briefings (on demand or made ahead) stream the theme's opening while the
+episode is planned; memo pods and co-hosted calls get the full intro, stings and outro,
+mixed in when they're saved. Lyria music carries a SynthID watermark, noted in the
 show notes.
+
 ## Co-host live
 
 A call is you and one AI co-host, solo (no live audience); the finished episode gets
@@ -263,7 +267,9 @@ What keeps it quick:
 - **Nothing waits on the way through.** Mic frames go straight to the Live session and
   its voice straight to the phone; recording is in memory. The phone plays the
   co-host as each chunk lands (a ~60 ms cushion), on an `interactive` AudioContext.
-- **The co-host opens the show** the moment you join, so there's no dead air at the start.
+- **The co-host opens the show** the moment you join, so there's no dead air at the start:
+  a welcome (to your show by name, with your intro line, if you saved a show intro),
+  who's on, and a hook.
 - **Cutting in.** Gemini stops an answer when it hears you over it. Its audio arrives
   faster than it plays, though, so the phone listens too: talk over the co-host and it
   ducks at once; keep talking (0.4 s) and the phone stops it and tells the server.
@@ -286,7 +292,10 @@ What hanging up does (`app/editing.py`, then `app/cohost.py`):
    transcript; the editor (a Gemini call) marks false starts, mic checks and hang-up
    chatter, plus answers to them, and those are cut at the pauses around them.
 5. **Polish**: every turn is levelled to the same loudness, peaks are softly limited,
-   every cut gets a short fade, and a chime opens and closes the episode.
+   and every cut gets a short fade. The theme (your show intro's, or the library's pick
+   for the mode) opens the episode ahead of the co-host's welcome, marks a new chapter
+   and plays it out, with every caption moved to match; with no music, a chime opens
+   and closes it.
 6. Saved as an ordinary pod: one segment per turn (so replay captions are exact), the
    editor's title, show notes and chapters, `episode.mp3`, and `raw.mp3`, the call
    before editing, which its owner can download from the More menu.
