@@ -24,6 +24,7 @@ Direction **Live Wire** was chosen by the owner on 2026-10-15 over Recital and S
 | 5 Sheets | Spring sheets with recede and drag; stage-tinted sheets; cue-card toasts that queue; hearts on arcs with an odometer count; sliding segmented indicator; Restyle previews the gel behind the sheet |
 | 5b Round 2 | Call-in lines with lamp states (waiting, up next, looking it up, coming back, on air, not answered); research cards; one labelled frame for Google's Search Suggestions; interrupt (hold-to-talk inside the clock, words dissolve, amber gel flash on the stinger, "You asked" / "Answering you"); briefings with per-watch lamps while one is made (`check_all(on_checked=…)`) and "Only you" on the stage; memo recorder as a tungsten stage |
 | 6 Account | You page, account pages, login on stage (buttons chase while signing in) |
+| Tests (§8) | `tests/visual.py`: 80 baseline screens (16 routes; phone and desktop; light, dark, reduced motion) plus the design contract (gel contrast worst 13.9 / 11.9 / 8.0 to 1, no stray loaders, no sideways scroll at 390 px). Re-record with `--update` after a visual change you meant |
 
 Gotcha found while porting: `color-mix(in oklch, <near-grey>, transparent)` loses its hue in Chrome (powerless hue becomes `none`, rendered as 0°), which tints dark greys red. Neutral mixes use `in srgb`; gel mixes stay in `oklch`.
 
