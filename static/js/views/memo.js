@@ -6,6 +6,7 @@ import { MemoRecorder, extensionFor, recordingSupported } from "../audio/recorde
 import { html, setHtml } from "../html.js";
 import { icon } from "../icons.js";
 import { albumChips, introRow, lengthChip, musicCards, newAlbumSheet, shareWith, visibilityCards } from "../pod-options.js";
+import { fillRing, ring } from "../ring.js";
 import { navigate } from "../router.js";
 import { loginPath, session } from "../session.js";
 import { applyAccent } from "../theme.js";
@@ -50,7 +51,7 @@ export async function memoView(root) {
         <p class="muted">Talk it through, rough is fine. The hosts look things up, shape it into a story and record a finished episode, music and all.</p>
       </div>
       <div data-free></div>
-      <section class="card recorder" aria-label="Your memo" data-recorder></section>
+      <section class="card recorder" style="--gel:#FFB257" aria-label="Your memo" data-recorder></section>
       <input type="file" accept="audio/*,.m4a,.mp3,.wav,.webm,.ogg,.flac,.aac" data-file hidden>
 
       <h2 class="create-h2">How long?</h2>
@@ -101,27 +102,39 @@ export async function memoView(root) {
 
   // ---- the recording -------------------------------------------------------------------
 
+  // The recorder is a small stage, lit tungsten: the record button sits inside the studio
+  // clock, which fills one dot per tenth of the time you have (10 s a dot for 10 minutes),
+  // and the level bars follow your voice. Once there's a memo, it's back to the house.
+  const BARS = 28;
+  const levels = new Array(BARS).fill(0);
+  let lastBars = 0;
+  const dotsFor = (sec) => Math.min(60, Math.floor((sec / limits.max_seconds) * 60) + 1);   // the first dot lights at once
   const renderRecorder = () => {
+    const box = $("[data-recorder]");
     const rec = recorder && ["recording", "paused", "stopping"].includes(recorder.state) ? recorder : null;
+    box.classList.toggle("stage", !state.memo);
     if (rec) {
       const paused = rec.state === "paused";
-      setHtml($("[data-recorder]"), html`
+      setHtml(box, html`
         <div class="rec-live ${paused ? "paused" : ""}">
-          <span class="rec-dot" aria-hidden="true"></span>
-          <span class="rec-time" data-rec-time aria-live="off">${fmtTime(rec.seconds)}</span>
-          <span class="rec-level" aria-hidden="true"><span data-rec-level></span></span>
-          <span class="faint small">${paused ? "Paused" : `up to ${fmtTime(limits.max_seconds)}`}</span>
+          <div class="rec-clock">${ring({ cls: "rec-ring", r: 46, dot: 2 })}
+            <span class="rec-core"><span class="rec-dot" aria-hidden="true"></span>
+              <span class="rec-time" data-rec-time aria-live="off">${fmtTime(rec.seconds)}</span></span></div>
+          <span class="rec-bars" aria-hidden="true">${levels.map(() => html`<i></i>`)}</span>
+          <span class="faint small">${paused ? "Paused" : `Up to ${fmtTime(limits.max_seconds)}`}</span>
         </div>
         <div class="row gap">
           <button class="btn outline grow" type="button" data-rec-pause>${paused ? "Resume" : "Pause"}</button>
           <button class="btn white grow" type="button" data-rec-stop>${icon("stop", 16, 2.4)}Done</button>
         </div>
         <button class="btn link" type="button" data-rec-cancel>Start over</button>`);
+      fillRing(box.querySelector(".rec-ring"), dotsFor(rec.seconds));
+      paintBars();
       return;
     }
     if (state.memo) {
       const m = state.memo;
-      setHtml($("[data-recorder]"), html`
+      setHtml(box, html`
         <p class="card-label">Your memo</p>
         <audio class="memo-audio" controls preload="metadata" src="${m.url}"></audio>
         <p class="muted small">${m.name}${m.seconds ? ` · ${fmtTime(m.seconds)}` : ""} · ${(m.blob.size / 1e6).toFixed(1)} MB</p>
@@ -131,18 +144,24 @@ export async function memoView(root) {
         </div>`);
       return;
     }
-    setHtml($("[data-recorder]"), html`
+    setHtml(box, html`
       <p class="card-label">Your memo</p>
       <p class="muted small">Say what's on your mind: the idea, why it matters to you, what you wonder about. A couple of minutes is plenty.</p>
       <div class="rec-start">
         ${recordingSupported() ? html`
-          <button class="rec-btn" type="button" data-rec-start aria-label="Start recording">${icon("mic", 32, 2)}</button>
+          <div class="rec-clock">${ring({ cls: "rec-ring", r: 46, dot: 2, lit: (i) => i % 15 === 0 })}
+            <button class="rec-btn" type="button" data-rec-start aria-label="Start recording">${icon("mic", 32, 2)}</button></div>
           <span class="strong">Tap to record</span>` : html`
           <p class="faint small">Recording needs the app on a secure (https) address. You can still upload a recording.</p>`}
       </div>
       <button class="btn outline block" type="button" data-upload>${icon("addFile", 16)}Upload a recording</button>
       <p class="faint small">On a walk with your phone locked? Record in your phone's voice memos app, then upload it here.
         Up to ${limits.max_mb} MB and ${Math.round(limits.max_seconds / 60)} minutes.</p>`);
+  };
+
+  const paintBars = () => {
+    const bars = el.querySelectorAll(".rec-bars i");
+    bars.forEach((b, i) => b.style.setProperty("--v", levels[i].toFixed(3)));
   };
 
   const keepMemo = (blob, seconds, name) => {
@@ -159,10 +178,16 @@ export async function memoView(root) {
       onTick: (sec) => {
         const t = el.querySelector("[data-rec-time]");
         if (t) t.textContent = fmtTime(sec);
+        fillRing(el.querySelector(".rec-live .rec-ring"), dotsFor(sec));
       },
       onLevel: (v) => {
-        const bar = el.querySelector("[data-rec-level]");
-        if (bar) bar.style.transform = `scaleX(${v.toFixed(3)})`;
+        // A rolling history of how loud you've been, about a dozen steps a second.
+        const now = performance.now();
+        if (now - lastBars < 80) return;
+        lastBars = now;
+        levels.push(v);
+        levels.shift();
+        paintBars();
       },
       onStop: ({ blob, seconds }) => {
         recorder = null;
@@ -205,7 +230,7 @@ export async function memoView(root) {
     const recording = Boolean(recorder);
     const go = $("[data-go]");
     go.disabled = !enough || !state.memo || recording || state.sending;
-    setHtml(go, state.sending ? html`<span class="spinner small" aria-hidden="true"></span>Sending your memo…`
+    setHtml(go, state.sending ? html`<span class="lamp chase" aria-hidden="true"></span>Sending your memo…`
       : html`${icon("sparkle", 20)}${state.review ? "Make the outline" : "Make my pod"}`);
     setHtml($("[data-free]"), enough ? "" : html`
       <div class="free-note">${icon("coin", 18)}<span>
