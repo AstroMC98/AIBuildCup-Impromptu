@@ -50,6 +50,7 @@ export async function showView(root, { params }) {
   const ctl = new ShowController({
     id, data,
     onTerminal: (code) => {
+      if (ctl.deleted) return;   // its creator just deleted it: no need to say it's gone
       if (code === 4409) navigate(location.pathname + location.search, { replace: true });
       else if (code === 4401) navigate(loginPath(), { replace: true });
       else toast(code === 4403 ? "This pod isn't shared with you any more." : "This pod isn't available.", 8000);

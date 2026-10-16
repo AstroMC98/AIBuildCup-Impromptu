@@ -8,6 +8,7 @@ import { flipById, slideIndicator, stagger } from "../motion.js";
 import { ring } from "../ring.js";
 import { navigate } from "../router.js";
 import { loginPath, session } from "../session.js";
+import { openPodMenu } from "../sheets.js";
 import { applyAccent, gelFor, initial } from "../theme.js";
 import { bindActions } from "../ui.js";
 import { fmtAgo, fmtTime, store as local } from "../util.js";
@@ -143,10 +144,17 @@ function metaOf(s, scope) {
                 : `${by}${s.style_label}${s.duration_s ? `, ${fmtTime(s.duration_s)}` : ""}, ${fmtAgo(s.created_at)}`;
 }
 
+/** Your own pods get a ⋯ beside them (Open, Delete): a sibling of the link, not inside it. */
+function podMenu(s, scope) {
+  if (scope !== "mine") return "";
+  return html`<button type="button" class="pod-menu" data-pod-menu="${s.id}" data-title="${s.title || ""}"
+    data-status="${s.status}" data-href="${hrefOf(s)}" aria-label="More for ${s.title || "this pod"}">${icon("more", 18)}</button>`;
+}
+
 export function row(s, active, scope) {
   const hot = s.status === "live" || s.status === "review";
   return html`
-    <li data-id="${s.id}">
+    <li data-id="${s.id}" class="${scope === "mine" ? "has-menu" : ""}">
       <a class="lib-row ${active ? "active" : ""}" href="${hrefOf(s)}" data-link>
         ${sleeve(s, "sm")}
         <span class="lib-text"><span class="lib-title">${s.title || "Untitled pod"}</span>
@@ -155,19 +163,33 @@ export function row(s, active, scope) {
         ${scope === "mine" && !["draft", "rendering", "review"].includes(s.status) ? html`
           <span class="vis-ic" title="${VISIBILITY_LABEL[s.visibility]}" aria-label="${VISIBILITY_LABEL[s.visibility]}">${icon(VISIBILITY_ICON[s.visibility] || "lock", 16)}</span>` : ""}
       </a>
+      ${podMenu(s, scope)}
     </li>`;
 }
 
 function card(s, scope) {
   return html`
-    <li data-id="${s.id}">
+    <li data-id="${s.id}" class="${scope === "mine" ? "has-menu" : ""}">
       <a class="pod-card" href="${hrefOf(s)}" data-link>
         ${sleeve(s, "lg")}
         <span class="pod-title">${s.title || "Untitled pod"}</span>
         <span class="pod-meta ${s.status === "live" || s.status === "review" ? "live" : ""}">${metaOf(s, scope)}</span>
       </a>
+      ${podMenu(s, scope)}
     </li>`;
 }
+
+// One handler for every pod menu, wherever its list is (Library, Home's recent pods).
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-pod-menu]");
+  if (!b) return;
+  e.preventDefault();
+  openPodMenu({ id: b.dataset.podMenu, title: b.dataset.title, status: b.dataset.status }, b.dataset.href);
+});
+// Home's recent pods aren't a managed list: a deleted one just leaves.
+document.addEventListener("pod-deleted", (e) => {
+  for (const li of document.querySelectorAll(`[data-recent] [data-id="${CSS.escape(e.detail.id)}"]`)) li.remove();
+});
 
 /**
  * A filtered, searchable pod list, refreshed while open.
@@ -278,13 +300,23 @@ export function mountLibraryList(container, {
     }
   });
 
+  // A pod deleted from its menu leaves every list it was in; the rest slide up (flipById).
+  const onDeleted = (e) => {
+    for (const k of Object.keys(lists)) if (lists[k]) lists[k] = lists[k].filter((x) => x.id !== e.detail.id);
+    render();
+  };
+  document.addEventListener("pod-deleted", onDeleted);
+
   render();
   load();
   timer = setInterval(load, REFRESH_MS);
   return {
     search(q) { query = q; render(); },
     refresh: load,
-    destroy() { clearInterval(timer); },
+    destroy() {
+      clearInterval(timer);
+      document.removeEventListener("pod-deleted", onDeleted);
+    },
   };
 }
 

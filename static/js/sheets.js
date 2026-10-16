@@ -3,6 +3,7 @@ import { api } from "./api.js";
 import { avatar, contextList, waiting } from "./components.js";
 import { html, setHtml } from "./html.js";
 import { icon, VISIBILITY_ICON } from "./icons.js";
+import { navigate } from "./router.js";
 import { session } from "./session.js";
 import { applyAccent } from "./theme.js";
 import { confirmSheet, openSheet } from "./ui.js";
@@ -351,7 +352,8 @@ export function openMoreSheet(ctl) {
       ${briefing ? "" : html`
       <a class="menu-item" href="/show/${ctl.id}/stats" data-link>${icon("people", 20)}Stats <span class="faint">who listened, when they left</span></a>
       <button type="button" class="menu-item" data-organize>${icon("bars", 20)}Albums and tags</button>`}
-      <a class="menu-item" href="/new" data-link>${icon("plus", 20)}Start a new pod</a>` : ""}
+      <a class="menu-item" href="/new" data-link>${icon("plus", 20)}Start a new pod</a>
+      <button type="button" class="menu-item danger" data-delete-pod>${icon("trash", 20)}Delete pod${live ? html` <span class="faint">stops it now</span>` : ""}</button>` : ""}
     ${!s.producer && s.creator ? html`
       <a class="menu-item" href="/creator/${s.creator.uid}" data-link>${icon("user", 20)}More from ${s.creator.name}</a>` : ""}`);
   const sheet = openSheet({ title: s.show.title || "This show", body: div });
@@ -389,11 +391,65 @@ export function openMoreSheet(ctl) {
       });
       if (ok) ctl.end("now");
       return;
+    } else if (e.target.closest("[data-delete-pod]")) {
+      sheet.close();
+      const gone = await confirmDeletePod({ id: ctl.id, title: s.show.title, status: live ? "live" : s.show.status },
+        { onConfirm: () => { ctl.deleted = true; } });   // its socket closing isn't news
+      if (gone) navigate("/library", { replace: true });
+      else ctl.deleted = false;
+      return;
     } else if (e.target.closest("a[data-link]")) {
       sheet.close();
       return;
     }
     sheet.close();
+  });
+}
+
+// ---- Deleting a pod (its creator) --------------------------------------------------------
+
+/** Ask, then delete. show: { id, title, status }. onConfirm runs once they've said yes, before
+ *  the request (a live pod's screen uses it to expect its socket closing). Lists showing the
+ *  pod hear "pod-deleted" and let it go. Resolves true once it's gone. */
+export async function confirmDeletePod(show, { onConfirm } = {}) {
+  const title = show.title || "this pod";
+  const live = show.status === "live";
+  const ok = await confirmSheet({
+    title: `Delete “${title}”?`,
+    message: live
+      ? "It stops now for everyone listening and is gone for good. The minutes it didn't use come back as credits."
+      : "It's gone for good: the episode, its transcript, call-ins and stats. Anyone you shared it with loses it too.",
+    confirm: "Delete pod", danger: true,
+  });
+  if (!ok) return false;
+  onConfirm?.();
+  try {
+    await api.deleteShow(show.id);
+  } catch (err) {
+    toast(err.message);
+    return false;
+  }
+  session.refresh();   // a live pod's unused minutes come back
+  document.dispatchEvent(new CustomEvent("pod-deleted", { detail: { id: show.id } }));
+  toast(`Deleted “${title}”.`);
+  return true;
+}
+
+/** A pod's own menu in your library (the ⋯ on its card or row). */
+export function openPodMenu(show, href) {
+  const div = document.createElement("div");
+  div.className = "menu";
+  setHtml(div, html`
+    <a class="menu-item" href="${href}" data-link>${icon("play", 20)}Open</a>
+    <button type="button" class="menu-item danger" data-delete-pod>${icon("trash", 20)}Delete pod</button>`);
+  const sheet = openSheet({ title: show.title || "Untitled pod", body: div });
+  div.addEventListener("click", async (e) => {
+    if (e.target.closest("[data-delete-pod]")) {
+      sheet.close();
+      await confirmDeletePod(show);
+    } else if (e.target.closest("a[data-link]")) {
+      sheet.close();
+    }
   });
 }
 

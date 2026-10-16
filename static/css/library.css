@@ -140,6 +140,26 @@
   .pod-meta { font-size: 12.5px; color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pod-meta.live { color: var(--live-text); font-weight: 700; }
 
+  /* your own pods' ⋯ (Open, Delete): beside a row; on a card, over the sleeve's corner */
+  .lib-list > li.has-menu { display: flex; align-items: center; gap: 2px; }
+  .lib-list > li.has-menu > .lib-row { flex: 1; min-width: 0; }
+  .pod-grid > li.has-menu { position: relative; }
+  .pod-menu {
+    flex: none; width: 36px; height: 36px; border: 0; border-radius: 50%; display: grid; place-items: center;
+    background: transparent; color: var(--fg-2); cursor: pointer; transition: background .2s, color .2s, opacity .2s;
+  }
+  .pod-menu:hover, .pod-menu:focus-visible { background: var(--bg-2); color: var(--fg); }
+  .pod-grid .pod-menu {
+    position: absolute; top: 8px; right: 8px; color: #fff;
+    background: rgba(8, 9, 14, .45); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  }
+  .pod-grid .pod-menu:hover, .pod-grid .pod-menu:focus-visible { background: rgba(8, 9, 14, .7); color: #fff; }
+  /* with a mouse it waits until you're on the card; on touch it's always there */
+  @media (hover: hover) {
+    .pod-grid > li.has-menu .pod-menu { opacity: 0; }
+    .pod-grid > li.has-menu:hover .pod-menu, .pod-grid > li.has-menu:focus-within .pod-menu { opacity: 1; }
+  }
+
   /* skeletons: shaped like what's coming, shown only if loading takes more than 300 ms */
   .skeleton { display: flex; flex-direction: column; gap: 4px; opacity: 0; animation: sk-show .2s .3s forwards; }
   .skeleton.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 18px 14px; }
