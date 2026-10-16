@@ -97,6 +97,10 @@ live_setups: list[dict] = []
 live_texts: list[str] = []
 live_tool_responses: list[dict] = []
 _live_sessions = itertools.count(1)
+# POST /_crash_live: the open Live sessions die of an internal error (1011), and the
+# sessions they were can't be resumed (1008) until a fresh one (no handle) connects.
+live_open: set = set()
+live_crash = {"reject_resume": False}
 _utterances = itertools.count(1)
 
 
@@ -166,6 +170,17 @@ async def seen() -> dict:
     return {"writer_systems": writer_systems, "count": len(requests_seen),
             "live_setups": live_setups, "live_texts": live_texts, "live_tool_responses": live_tool_responses,
             "writer_schemas": writer_schemas, "research": research_asked, **counts}
+
+
+@app.post("/_crash_live")
+async def crash_live() -> dict:
+    live_crash["reject_resume"] = True
+    for ws in list(live_open):
+        try:
+            await ws.close(code=1011, reason="Internal error encountered.")
+        except Exception:
+            pass
+    return {"crashed": len(live_open)}
 
 
 @app.post("/_config")
@@ -401,7 +416,13 @@ async def live(ws: WebSocket) -> None:
     await ws.accept()
     setup = json.loads(await ws.receive_text())
     live_setups.append(setup)
+    if live_crash["reject_resume"]:
+        if (setup.get("setup", {}).get("sessionResumption") or {}).get("handle"):
+            await ws.close(code=1008, reason="BidiGenerateContent session not found or expired")
+            return
+        live_crash["reject_resume"] = False
     session = next(_live_sessions)
+    live_open.add(ws)
     lock = asyncio.Lock()
     lookup = {"tool": "check_notes" in json.dumps(setup.get("setup", {}).get("tools") or []),
               "asked": False, "waiting": 0}
@@ -497,4 +518,5 @@ async def live(ws: WebSocket) -> None:
     except Exception:
         traceback.print_exc()
     finally:
+        live_open.discard(ws)
         stop["now"] = True

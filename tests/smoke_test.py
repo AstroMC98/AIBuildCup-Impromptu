@@ -762,6 +762,22 @@ async def cohost_scenario(checks: dict) -> None:
         await phone.until(lambda: phone.done(6), timeout=15, what="an answer after the reconnect")
         await asyncio.sleep(1.6)
 
+        # Gemini drops the session with an internal error and won't resume it: the call
+        # carries on in a fresh session, and the co-host gets a recap of where it was.
+        stub = f"http://127.0.0.1:{FAKE_PORT}"
+        before = len(httpx.get(f"{stub}/_seen").json()["live_setups"])
+        httpx.post(f"{stub}/_crash_live")
+
+        def recovered() -> bool:
+            seen = httpx.get(f"{stub}/_seen").json()
+            fresh = [s for s in seen["live_setups"][before:]
+                     if not (s.get("setup", {}).get("sessionResumption") or {}).get("handle")]
+            return bool(fresh) and any("line dropped" in t for t in seen["live_texts"])
+        await phone.until(recovered, timeout=15, what="a fresh session after the crash")
+        checks["co-host: a session that dies and can't be resumed restarts fresh, with a recap"] = (
+            recovered() and not phone.of("ended"))
+        await asyncio.sleep(1.6)
+
         await phone.send({"type": "hangup"})
         await phone.until(lambda: phone.of("saved") or phone.of("ended"), timeout=60, what="saved")
         saved = (phone.of("saved") or [{}])[0]

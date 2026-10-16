@@ -93,6 +93,13 @@ def cast_cohost(wanted: HostRequest) -> Host:
     )
 
 
+def _session_gone(exc: Exception) -> bool:
+    """Gemini refused to resume: the session died (1011, internal error) or the handle
+    expired (1008, "session not found or expired")."""
+    text = str(exc).lower()
+    return "not found or expired" in text or "internal error" in text
+
+
 def mic_bucket() -> TokenBucket:
     """Mic bytes: real time is 32 KB/s; allow twice that, plus a catch-up burst."""
     return TokenBucket(2 * MIC_BYTES_PER_SECOND, 8 * MIC_BYTES_PER_SECOND)
@@ -267,6 +274,11 @@ class CohostSession:
                         self._error("The co-host couldn't come on the line. Try again in a minute.")
                         return "error"
                     return "link_lost"
+                if self.resume_handle is not None and _session_gone(exc):
+                    # A session that died of an internal error can't be resumed: start a
+                    # new one, and the co-host gets a recap of the call so far instead.
+                    log.info("call %s: the Live session can't be resumed; starting afresh with a recap", self.id)
+                    self.resume_handle = None
                 fresh = self.resume_handle is None
                 self._set_state("reconnecting")
                 await asyncio.sleep(0.5 * retries)
