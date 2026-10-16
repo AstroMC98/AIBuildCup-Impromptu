@@ -100,7 +100,7 @@ gcloud storage buckets describe "gs://$BUCKET" --project "$PROJECT_ID" >/dev/nul
     --uniform-bucket-level-access --public-access-prevention
 
 say "Cloud Tasks queue: $WAKE_QUEUE_NAME (wakes the service for scheduled briefings)"
-# Cloud Run scales to zero; a scheduled briefing books one task that calls /healthz at
+# Cloud Run scales to zero; a scheduled briefing books one task that calls /health at
 # its start time, so nothing has to stay warm in between (see app/wake.py).
 g tasks queues describe "$WAKE_QUEUE_NAME" --location "$REGION" >/dev/null 2>&1 || \
   g tasks queues create "$WAKE_QUEUE_NAME" --location "$REGION" --max-attempts 3
@@ -170,8 +170,9 @@ g run deploy "$SERVICE" \
   --set-secrets "GEMINI_API_KEY=gemini-api-key:latest,SESSION_SECRET=session-secret:latest"
 
 URL="$(g run services describe "$SERVICE" --region "$REGION" --format 'value(status.url)')"
-say "Checking $URL/healthz"
-curl -fsS "$URL/healthz"
+# /health, not /healthz: Cloud Run's front end answers /healthz itself with a 404.
+say "Checking $URL/health"
+curl -fsS "$URL/health"
 echo
 echo
 echo "Gemini Podcasts is live at $URL"

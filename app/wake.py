@@ -2,8 +2,9 @@
 
 Cloud Run scales to zero, and the briefing loop (main._briefing_loop) only runs while
 an instance is up. So whenever a schedule's next start time is set, a Cloud Task is
-booked to call /healthz at that minute: the request starts an instance, and its
-loop makes the briefing. Booking is cheap and nothing stays warm in between, unlike
+booked to call /health at that minute: the request starts an instance, and its
+loop makes the briefing. (Not /healthz: Cloud Run's front end answers that path
+itself, so the request would never start an instance.) Booking is cheap and nothing stays warm in between, unlike
 pinging every few minutes, which with always-on CPU bills the idle instance.
 
 Off unless WAKE_QUEUE is set (deploy.sh creates the queue): locally the process is
@@ -50,7 +51,7 @@ class Waker:
             if self._client is None:
                 from google.cloud import tasks_v2
                 self._client = tasks_v2.CloudTasksAsyncClient()
-            await self._client.create_task(parent=self.queue, task=self._build(name, f"{self.url}/healthz", minute * 60))
+            await self._client.create_task(parent=self.queue, task=self._build(name, f"{self.url}/health", minute * 60))
         except Exception as exc:  # AlreadyExists: someone else's schedule booked this minute
             if type(exc).__name__ != "AlreadyExists":
                 log.warning("couldn't book a wake-up for %s: %s", minute * 60, exc)

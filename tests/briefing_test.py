@@ -429,14 +429,14 @@ async def _():
     w = Waker(q, "https://podcasts-123.us-central1.run.app/", client=tasks, build=lambda n, u, t: {"name": n, "url": u, "at": t})
     assert await w.at(1_800_000_030) and not await w.at(1_800_000_050)   # same minute: booked once
     assert tasks.made == [(q, {"name": f"{q}/tasks/briefing-wake-30000000",
-                               "url": "https://podcasts-123.us-central1.run.app/healthz", "at": 1_800_000_000})]
+                               "url": "https://podcasts-123.us-central1.run.app/health", "at": 1_800_000_000})]
     tasks.fail = AlreadyExists("someone else booked it")
     assert await w.at(1_800_000_120)                                       # still counts as booked
     tasks.fail = RuntimeError("quota")
     assert not await w.at(1_800_000_300)                                   # logged, not raised
     assert not await Waker("", "https://x").at(1_800_000_000) and not await Waker(q, "").at(1_800_000_000)
-    task = _cloud_task(f"{q}/tasks/briefing-wake-1", "https://x/healthz", 1_800_000_000)
-    assert task.http_request.url == "https://x/healthz" and task.schedule_time.timestamp() == 1_800_000_000
+    task = _cloud_task(f"{q}/tasks/briefing-wake-1", "https://x/health", 1_800_000_000)
+    assert task.http_request.url == "https://x/health" and task.schedule_time.timestamp() == 1_800_000_000
 
 
 @check("a render clock voices as fast as it can: nothing is ever left ahead of the playhead")

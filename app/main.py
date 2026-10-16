@@ -7,7 +7,7 @@ GET  /memo  /intro                         make a pod from a voice memo; your sh
 GET  /cohost  /cohost/{id}               co-host live: set up a call, then the call itself
 
 API ("you" = the signed-in user; pods are visible per accounts.can_view)
-GET    /healthz
+GET    /health  /healthz                 (on Cloud Run only /health reaches the app)
 GET    /api/options                      voices, presets, templates, sign-in config, you
 POST   /api/auth/firebase {id_token}     sign in with a Firebase ID token
 POST   /api/auth/dev {email, name}       AUTH_MODE=dev only
@@ -643,6 +643,9 @@ async def page_with_id(request: Request, show_id: str = "", uid: str = "", album
     return _index(request)
 
 
+# /health is the one to use on Cloud Run: its front end answers some paths ending in "z",
+# /healthz among them, without ever reaching the container. /healthz stays for local tools.
+@app.get("/health")
 @app.get("/healthz")
 async def healthz() -> dict:
     return {"ok": True, "live_shows": rooms.live_count(), "calls": cohosts.live_count()}

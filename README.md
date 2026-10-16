@@ -370,7 +370,7 @@ What the script sets up:
 |---|---|---|
 | Cloud Run `podcasts` | the app, 1 instance, 2 vCPU, 2 GiB, 60-min request timeout | WebSockets + the live pod loop |
 | Firestore (native) | `shows/{id}` (+ segments, comments, context, sessions), `users/{uid}` (+ ledger, personas, styles, connections, watches, watch_pages, briefing_templates), `albums/{id}`, `subscriptions/{id}` | accounts, credits, library, transcripts, albums, following, listening stats, briefings |
-| Cloud Tasks `briefings-wake` | one task per scheduled briefing start, calling `/healthz` | wakes the scaled-to-zero service to make a scheduled briefing |
+| Cloud Tasks `briefings-wake` | one task per scheduled briefing start, calling `/health` | wakes the scaled-to-zero service to make a scheduled briefing |
 | Firestore security rules | deny all browser access (`deploy/firestore.rules`, released on every run) | the app only uses Firestore from the server; the Firebase web key is public |
 | Cloud Storage `gs://PROJECT-podcasts` | source text, context text, `episode.mp3`, `raw.mp3` (co-hosted calls), voice memo recordings (`shows/{id}/files/`), music made for a user (`users/{uid}/files/`) | replays and downloads (served by signed URL) |
 | Secret Manager | `gemini-api-key`, `session-secret` | injected as env vars |
@@ -413,8 +413,9 @@ own access control.
 - Gemini TTS voices at most two speakers per request, so pods have one or two hosts.
 - **Scheduled briefings wake the service.** Cloud Run scales to zero, so saving a
   schedule books a Cloud Task (queue `briefings-wake`, made by `deploy.sh`) that calls
-  `/healthz` at the start time; that starts an instance, whose briefing loop makes the
-  briefing headless and books the next day's wake-up. Nothing stays warm in between:
+  `/health` at the start time; that starts an instance, whose briefing loop makes the
+  briefing headless and books the next day's wake-up. (Not `/healthz`: Cloud Run's front
+  end answers some paths ending in "z" itself, so the request never reaches the app.) Nothing stays warm in between:
   with `--no-cpu-throttling` an idle instance is billed, so pinging every few minutes
   would cost far more. Expired briefings are deleted by the same loop.
 - **Search watches cost real Google Search grounding.** Each check of a search is one
