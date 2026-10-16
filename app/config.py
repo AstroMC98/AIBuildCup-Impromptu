@@ -134,11 +134,20 @@ class Settings(BaseSettings):
     research_timeout_seconds: float = 30.0
 
     # ---- co-hosting (you talk live with an AI co-host; see cohost.py) ----------
-    # A Gemini Live native-audio model: speech in, speech out, with barge-in.
-    cohost_model: str = "gemini-3.1-flash-live-preview"
+    # A Gemini Live native-audio model: speech in, speech out, with barge-in. 3.8 Live
+    # kept every opening word in real-API tests where 3.1 Flash Live dropped some
+    # ("Alright, that's fair" heard as "that's fair"), at the same price.
+    cohost_model: str = "gemini-3.8-live"
     # How long you pause before the co-host answers. Lower is snappier but
     # interrupts slow talkers mid-thought.
     cohost_silence_ms: int = 500
+    # What the co-host hears (its understanding and your captions both come from it).
+    # All input: your whole turn reaches the model. With only what the voice detector
+    # had marked as speech, the first word of a turn ("Alright, that's fair") was lost.
+    cohost_hear_all_input: bool = True
+    # How readily the detector decides you started talking: "high" catches soft starts,
+    # "low" ignores more background noise, blank leaves the model's default.
+    cohost_start_sensitivity: str = "high"
     # A call whose phone drops off is saved as an episode after this long.
     cohost_reconnect_seconds: float = 30.0
     # Your notes for the co-host: up to this many characters go to it whole. A Live

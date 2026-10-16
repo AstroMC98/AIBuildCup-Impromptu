@@ -40,6 +40,35 @@ def _terms(text: str) -> list[str]:
     return out
 
 
+_NAME = re.compile(r"\b(?:[A-Z][\w'’-]*|\w*\d\w*)(?:\s+[A-Z][\w'’-]*){0,2}")
+_NOT_NAMES = {
+    "a", "an", "and", "are", "at", "but", "for", "he", "her", "his", "how", "i", "if", "in", "is", "it", "its",
+    "my", "no", "of", "on", "or", "our", "she", "so", "that", "the", "their", "then", "there", "these", "they",
+    "this", "to", "was", "we", "what", "when", "where", "which", "who", "why", "will", "with", "yes", "you", "your",
+}
+
+
+def key_terms(*texts: str, limit: int = 40) -> list[str]:
+    """The names and terms a speech recognizer is likeliest to get wrong, for its custom
+    vocabulary: capitalised words and short runs of them ("Daniel Reyes", "Major League
+    Hacking"), acronyms and words with digits ("Q3", "GPT-5"), most frequent first."""
+    counts: Counter = Counter()
+    spelling: dict[str, str] = {}      # each term as first written, in the order met
+    for text in texts:
+        for m in _NAME.finditer(text or ""):
+            words = m.group(0).strip(" '’-").split()
+            while words and words[0].lower() in _NOT_NAMES:     # a capitalised sentence opener
+                words = words[1:]
+            term = " ".join(words)
+            if len(term) < 2 or len(term) > 40 or term.isdigit():
+                continue
+            counts[term.lower()] += 1
+            spelling.setdefault(term.lower(), term)
+    met = {k: i for i, k in enumerate(spelling)}
+    best = sorted(met, key=lambda k: (-counts[k], met[k]))
+    return [spelling[k] for k in best[:limit]]
+
+
 def passages(text: str, size: int = PASSAGE_CHARS) -> list[str]:
     """The notes in passages of up to `size` characters, broken between paragraphs
     where possible, then between sentences, and mid-sentence only as a last resort."""

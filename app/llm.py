@@ -362,22 +362,30 @@ class Gemini:
     # ---- live co-hosting ----------------------------------------------------
 
     @asynccontextmanager
-    async def cohost_link(self, *, system: str, voice: str, handle: str | None = None, lookup: bool = False
+    async def cohost_link(self, *, system: str, voice: str, handle: str | None = None, lookup: bool = False,
+                          languages: list[str] | None = None, vocabulary: list[str] | None = None,
                           ) -> AsyncIterator["CohostLink"]:
         """A Gemini Live session: it hears the user and answers in speech. `handle`
         resumes an earlier session (see ResumeHandle) with its whole conversation.
-        lookup: the co-host gets the check_notes tool (its calls arrive as ToolCall)."""
+        lookup: the co-host gets the check_notes tool (its calls arrive as ToolCall).
+        languages (BCP-47) and vocabulary (names, terms) steer how the user is heard:
+        without a language the transcriber guesses one, which an accent can throw."""
+        s = self.settings
+        start = {"high": types.StartSensitivity.START_SENSITIVITY_HIGH,
+                 "low": types.StartSensitivity.START_SENSITIVITY_LOW}.get(s.cohost_start_sensitivity.strip().lower())
         config = types.LiveConnectConfig(
             tools=[types.Tool(function_declarations=[CHECK_NOTES])] if lookup else None,
             response_modalities=[types.Modality.AUDIO],
             speech_config=types.SpeechConfig(voice_config=types.VoiceConfig(
                 prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=voice))),
             system_instruction=system,
-            input_audio_transcription=types.AudioTranscriptionConfig(),
+            input_audio_transcription=types.AudioTranscriptionConfig(
+                language_codes=languages or None, custom_vocabulary=vocabulary or None),
             output_audio_transcription=types.AudioTranscriptionConfig(),
             realtime_input_config=types.RealtimeInputConfig(
+                turn_coverage=types.TurnCoverage.TURN_INCLUDES_ALL_INPUT if s.cohost_hear_all_input else None,
                 automatic_activity_detection=types.AutomaticActivityDetection(
-                    silence_duration_ms=self.settings.cohost_silence_ms)),
+                    silence_duration_ms=s.cohost_silence_ms, start_of_speech_sensitivity=start)),
             # Connections are recycled every few minutes (GoAway); a handle carries
             # the conversation over. Compression lifts the audio session's length cap.
             session_resumption=types.SessionResumptionConfig(handle=handle),
@@ -448,6 +456,9 @@ LiveEvent = AudioOut | InputText | OutputText | Interrupted | TurnDone | GoAway 
 MIC_MIME = "audio/pcm;rate=16000"
 
 CHECK_NOTES = types.FunctionDeclaration(
+    # The co-host waits for the passages before it speaks. Some Live models call tools
+    # without waiting unless told; then the answer could land after it had moved on.
+    behavior=types.Behavior.BLOCKING,
     name="check_notes",
     description=("Search the notes you were given for exact details: names, numbers, dates, quotes, or what "
                  "they say about something. Returns the passages that match best."),

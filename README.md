@@ -259,7 +259,7 @@ is reserved when the call starts and unused minutes come back when it's saved.
 ```
 phone                                  server: one CohostSession per call             Gemini Live
 ─────                                  ──────────────────────────────────             ───────────
-mic → AudioWorklet → 16 kHz, 40 ms ─WS─▶ forwarded at once ───────────────────────────▶ gemini-3.1-flash-live
+mic → AudioWorklet → 16 kHz, 40 ms ─WS─▶ forwarded at once ───────────────────────────▶ gemini-3.8-live
   frames, sent the whole call            + recorded: the call's clock                    (server VAD, barge-in,
 speaker ◀── played on arrival ◀─────── <turn><24 kHz PCM> ◀── its voice ◀───────────────  transcripts both ways)
   (flushed when you cut in)              + recorded where it started playing
@@ -281,6 +281,15 @@ What keeps it quick:
   ducks at once; keep talking (0.4 s) and the phone stops it and tells the server.
 - **Turn-taking** is Gemini's voice activity detection; `COHOST_SILENCE_MS` is how long
   you pause before it answers.
+- **Hearing you right.** The co-host's understanding and your captions both come from
+  what Gemini hears, so the call sets it up to hear well: your whole turn reaches the
+  model (`COHOST_HEAR_ALL_INPUT`; with only what the voice detector had marked as speech,
+  the first word of a turn went missing), it picks up soft starts
+  (`COHOST_START_SENSITIVITY`), the transcriber is told the call's language instead of
+  guessing it from an accent, and its vocabulary gets the call's names and terms: yours,
+  the co-host's, your show's, and the ones in your topic and notes. On the phone, the mic
+  is filtered below 8 kHz before it's cut down to 16 kHz, so "s", "t" and "f" don't fold
+  back into the speech as hiss.
 - **Connections are recycled** by Gemini every few minutes (GoAway); the server
   reconnects with a resumption handle, so the co-host keeps the whole conversation.
   If the phone drops off, the call waits `COHOST_RECONNECT_SECONDS`, then saves.
@@ -491,8 +500,10 @@ own access control.
 | `MUSIC_DIR` | `music` | the music library every pod's theme comes from |
 | `MUSIC_MODEL` | `lyria-3-clip-preview` | original music for memo pods; empty turns it off |
 | `MUSIC_CREDITS` | `2` | what original music costs on top of the minutes |
-| `COHOST_MODEL` | `gemini-3.1-flash-live-preview` | the Live (native audio) model your co-host talks with |
+| `COHOST_MODEL` | `gemini-3.8-live` | the Live (native audio) model your co-host talks with (`gemini-3.1-flash-live-preview` also works) |
 | `COHOST_SILENCE_MS` | `500` | how long you pause before the co-host answers; lower is snappier but cuts slow talkers off |
+| `COHOST_HEAR_ALL_INPUT` | `true` | the co-host hears your whole turn, not just what its voice detector marked as speech (keeps first words) |
+| `COHOST_START_SENSITIVITY` | `high` | how readily it decides you started talking: `high` catches soft starts, `low` ignores more noise, blank: the model's default |
 | `COHOST_RECONNECT_SECONDS` | `30` | a call whose phone drops off is saved after this long |
 | `COHOST_SOURCE_CHARS` | `20000` | notes up to this long go to the co-host whole; longer ones as a brief plus a lookup |
 | `COHOST_NOTES_MAX_CHARS` | `400000` | the most notes the co-host's lookup covers |

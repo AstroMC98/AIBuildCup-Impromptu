@@ -42,7 +42,7 @@ from typing import Callable
 
 from . import prompts
 from .audio import Mp3Writer
-from .catalog import COHOST_MODES_BY_ID, VOICE_GENDER, VOICES, pick_voice
+from .catalog import COHOST_MODES_BY_ID, VOICE_GENDER, VOICES, language_code, pick_voice
 from .config import Settings
 from .editing import RATE, Take, assemble, build_edit, fallback_plan, raw_mix, scored
 from .limits import TokenBucket
@@ -52,7 +52,7 @@ from .llm import (
 from .mixer import Cues
 from .models import CohostRequest, Host, HostRequest
 from .music import Library, theme_for
-from .notes import NotesIndex
+from .notes import NotesIndex, key_terms
 from .room import Conn, refund_unused
 from .store import Store
 
@@ -63,6 +63,7 @@ WRAP_UP_SECONDS = 30         # the co-host is told to start wrapping up this lon
 LINK_RETRIES = 2             # reconnects in a row before the call is ended and saved
 RECAP_LINES = 16
 SAID_KEPT = 12               # caption entries a rejoining phone gets back
+VOCABULARY_TERMS = 40        # names and terms the transcriber is told to expect
 MIC_BYTES_PER_SECOND = 32_000
 FRAME_BYTES = 16 * 1024
 _background: set[asyncio.Task] = set()
@@ -123,6 +124,14 @@ class CohostSession:
         self.you = you
         self.notes = notes
         self.index = index
+        # How you're heard: in the call's language (the transcriber otherwise guesses it
+        # from the audio, and an accent can throw it), with the names and terms of the
+        # call in its vocabulary. People's names lead; then the topic's and the notes'.
+        code = language_code(request.language)
+        self.languages = [code] if code else []
+        names = [you, host.name, (doc.get("intro") or {}).get("show_name", "")]
+        self.vocabulary = list(dict.fromkeys(t.strip() for t in names + key_terms(request.topic, notes)
+                                             if t.strip()))[:VOCABULARY_TERMS]
         self.lookups = 0
         self.gemini = gemini
         self.settings = settings
@@ -233,7 +242,8 @@ class CohostSession:
         while not self._hangup.is_set():
             try:
                 async with self.gemini.cohost_link(system=self._system(), voice=self.host.voice,
-                                                   handle=self.resume_handle, lookup=self.index is not None) as link:
+                                                   handle=self.resume_handle, lookup=self.index is not None,
+                                                   languages=self.languages, vocabulary=self.vocabulary) as link:
                     self._link = link
                     retries = 0
                     if self.started is None:

@@ -1,4 +1,5 @@
 """Static catalogs shared by the API and the UI."""
+import re
 import zlib
 
 # Gemini TTS prebuilt voices: their published character, and whether the voice
@@ -386,3 +387,21 @@ def accent_for(vibe: str | None, style: str = "") -> str:
 def style_label(vibe: str | None) -> str:
     preset = PRESETS_BY_ID.get(vibe or "")
     return preset["label"] if preset else "Custom style"
+
+
+# The language a co-hosted call is in, as the BCP-47 code Gemini's transcriber takes.
+# Without one it guesses the language from the audio, and an accent can throw it.
+LANGUAGE_CODES = {
+    "english": "en", "spanish": "es", "español": "es", "filipino": "fil", "tagalog": "fil",
+    "french": "fr", "german": "de", "italian": "it", "portuguese": "pt", "dutch": "nl",
+    "japanese": "ja", "korean": "ko", "chinese": "zh", "mandarin": "zh", "cantonese": "yue",
+    "hindi": "hi", "indonesian": "id", "bahasa indonesia": "id", "malay": "ms", "thai": "th",
+    "vietnamese": "vi", "arabic": "ar", "russian": "ru", "turkish": "tr", "polish": "pl", "swedish": "sv",
+}
+_BCP47 = re.compile(r"^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$")
+
+
+def language_code(language: str) -> str | None:
+    """"English" -> "en"; a code given as is ("en-PH") passes through; anything else: None."""
+    name = language.strip()
+    return LANGUAGE_CODES.get(name.lower()) or (name if _BCP47.match(name) else None)

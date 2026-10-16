@@ -42,6 +42,7 @@ import secrets
 import struct
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime
 from pathlib import Path
@@ -318,8 +319,88 @@ COHOST_LINES = [
 CUT_IN_LINE = 3     # said over the co-host's answer, 1.5 s after it starts
 
 
-async def voice_lines(lines: list[str]) -> list[bytes]:
-    """Each line as 16 kHz mono s16le, voiced by the TTS model (a male voice)."""
+def _words(text: str) -> list[str]:
+    """Lower-cased words without punctuation ("I've" stays one word; OK = okay, all right = alright)."""
+    text = re.sub(r"\ball right\b", "alright", text.lower().replace("’", "'"))
+    words = re.findall(r"[a-z0-9]+(?:'[a-z]+)?", text)
+    return ["okay" if w == "ok" else w for w in words]
+
+
+def caption_accuracy(said: list[str], heard: str) -> dict:
+    """How well the captions caught what you said: word error rate over the whole call
+    (substitutions, deletions and insertions per word said), and the lines whose first
+    word never made it into the captions (a turn that starts before the model hears it)."""
+    ref = [w for line in said for w in _words(line)]
+    hyp = _words(heard)
+    # Levenshtein over words, keeping the moves to tell which said words were matched.
+    rows, cols = len(ref) + 1, len(hyp) + 1
+    d = [[0] * cols for _ in range(rows)]
+    for i in range(rows):
+        d[i][0] = i
+    for j in range(cols):
+        d[0][j] = j
+    for i in range(1, rows):
+        for j in range(1, cols):
+            d[i][j] = min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (ref[i - 1] != hyp[j - 1]))
+    matched, i, j = set(), len(ref), len(hyp)
+    while i and j:
+        if d[i][j] == d[i - 1][j - 1] + (ref[i - 1] != hyp[j - 1]):
+            if ref[i - 1] == hyp[j - 1]:
+                matched.add(i - 1)
+            i, j = i - 1, j - 1
+        elif d[i][j] == d[i - 1][j] + 1:
+            i -= 1
+        else:
+            j -= 1
+    starts, at = [], 0
+    for line in said:
+        starts.append(at)
+        at += len(_words(line))
+    lost = [said[k] for k, s in enumerate(starts) if s < len(ref) and s not in matched]
+    return {"wer": round(d[-1][-1] / max(1, len(ref)), 3), "words": len(ref),
+            "first_words_lost": len(lost), "lines_losing_first_word": lost}
+
+
+async def judge_understanding(pairs: list[tuple[str, str]]) -> list[dict]:
+    """For each (what you said, the co-host's answer): did the answer respond to what
+    was actually said, or to something misheard? Judged by the script model."""
+    from app.config import Settings
+    from app.llm import Gemini
+
+    gemini = Gemini(Settings())
+    schema = {"type": "object", "properties": {"verdicts": {"type": "array", "items": {
+        "type": "object", "properties": {"understood": {"type": "boolean"}, "why": {"type": "string"}},
+        "required": ["understood", "why"]}}}, "required": ["verdicts"]}
+    listing = "\n\n".join(f"{n}. GUEST SAID: {s}\n   CO-HOST ANSWERED: {a or '(no answer)'}"
+                          for n, (s, a) in enumerate(pairs, 1))
+    data = await gemini._json_call(
+        system=("You check a podcast co-host's listening. For each exchange, say whether the co-host's "
+                "answer responds to what the guest actually said. Disagreeing, joking or changing the "
+                "subject on purpose still counts as understood; answering a different or garbled version "
+                "of the guest's words, or ignoring them, does not. Keep each reason to one short sentence."),
+        user=listing, schema=schema)
+    return data.get("verdicts", [])[: len(pairs)]
+
+
+DEVICE_RATE = 48_000     # what a laptop or phone mic records at, before the worklet
+
+
+def _noise(n: int, rng) -> "np.ndarray":
+    """Pink noise (equal energy per octave, like a room): white noise shaped by 1/f."""
+    import numpy as np
+    spectrum = np.fft.rfft(rng.standard_normal(n))
+    spectrum /= np.sqrt(np.maximum(np.arange(len(spectrum)), 1))
+    pink = np.fft.irfft(spectrum, n)
+    return pink / (np.sqrt(np.mean(pink ** 2)) or 1)
+
+
+async def voice_lines(lines: list[str], accent: str = "", noise_db: float | None = None,
+                      mic_path: bool = False) -> list[bytes]:
+    """Each line as 16 kHz mono s16le, voiced by the TTS model (a male voice).
+    accent: voiced in that accent of English. noise_db: room noise mixed in at that
+    signal-to-noise ratio. mic_path: through this checkout's own phone worklet
+    (static/js/cohost/mic-worklet.js, run by node) from a 48 kHz device, the way the
+    app's browser side records, instead of straight to 16 kHz."""
     import numpy as np
     from app.config import Settings
     from app.llm import Gemini
@@ -327,13 +408,29 @@ async def voice_lines(lines: list[str]) -> list[bytes]:
 
     gemini = Gemini(Settings())
     host = Host(name="Marc", persona="", voice="Puck", gender="male")
+    style = f"Speak naturally and casually, with a {accent} accent." if accent else ""
+    rng = np.random.default_rng(20261016)
     out = []
     for text in lines:
-        pcm = b"".join([c async for c in gemini.stream_speech([Line(speaker="Marc", text=text)], [host])])
-        x = np.frombuffer(pcm[: len(pcm) // 2 * 2], dtype="<i2").astype(np.float32)
-        n = len(x) * MIC_RATE // RATE
-        y = np.interp(np.arange(n) * (RATE / MIC_RATE), np.arange(len(x)), x)
-        out.append(y.astype("<i2").tobytes())
+        pcm = b"".join([c async for c in gemini.stream_speech([Line(speaker="Marc", text=text, style=style)],
+                                                               [host])])
+        x = np.frombuffer(pcm[: len(pcm) // 2 * 2], dtype="<i2").astype(np.float32) / 32768
+        rate = DEVICE_RATE if mic_path else MIC_RATE
+        n = len(x) * rate // RATE
+        y = np.interp(np.arange(n) * (RATE / rate), np.arange(len(x)), x)
+        if noise_db is not None:
+            loud = np.sqrt(np.mean(y ** 2)) or 1e-4
+            y = y + _noise(len(y), rng) * loud / (10 ** (noise_db / 20))
+        if mic_path:
+            with tempfile.TemporaryDirectory() as tmp:
+                src, dst = Path(tmp) / "in.f32", Path(tmp) / "out.s16"
+                src.write_bytes(y.astype("<f4").tobytes())
+                subprocess.run(["node", str(ROOT / "tests" / "mic_path.mjs"),
+                                str(ROOT / "static" / "js" / "cohost" / "mic-worklet.js"),
+                                str(DEVICE_RATE), str(src), str(dst)], check=True)
+                out.append(dst.read_bytes())
+            continue
+        out.append((np.clip(y, -1, 1) * 32767).astype("<i2").tobytes())
     return out
 
 
@@ -410,7 +507,7 @@ class CallPhone:
         """Talk; returns when you stopped (the last of it went out)."""
         self.speech += pcm
         await asyncio.sleep(len(pcm) / 2 / MIC_RATE)
-        while self.speech:
+        while self.speech and not self.tasks[1].done():   # the call may have ended under you
             await asyncio.sleep(0.02)
         return time.monotonic()
 
@@ -431,9 +528,11 @@ class CallPhone:
             pass
 
 
-async def run_cohost(producer: httpx.AsyncClient, cookie: str, opts: dict, out: Path) -> dict:
+async def run_cohost(producer: httpx.AsyncClient, cookie: str, opts: dict, out: Path,
+                     args: argparse.Namespace | None = None) -> dict:
     print("[co-host] voicing your lines with the TTS model…", flush=True)
-    lines = await voice_lines(COHOST_LINES)
+    accent, noise_db, mic_path = (args.accent, args.noise_db, args.mic_path) if args else ("", None, False)
+    lines = await voice_lines(COHOST_LINES, accent=accent, noise_db=noise_db, mic_path=mic_path)
     preset = next(p for p in opts["persona_presets"] if p["id"] == "comedian")
     r = await producer.post("/api/cohost", json={"request": {
         "host": {k: preset[k] for k in ("name", "gender", "voice", "persona", "likes", "specialties", "skills")},
@@ -444,9 +543,9 @@ async def run_cohost(producer: httpx.AsyncClient, cookie: str, opts: dict, out: 
     print(f"[co-host] on a call: {show_id}", flush=True)
     phone = await CallPhone(show_id, cookie).open()
     t_join = time.monotonic()
-    marks: dict = {"answers": [], "jump_ins": 0}
+    marks: dict = {"answers": [], "answer_turns": [], "jump_ins": 0}
 
-    async def answer_after(stopped: float, after_turn: int) -> float | None:
+    async def answer_after(stopped: float, after_turn: int, track: bool = True) -> float | None:
         """Seconds from when you stopped to the co-host's answer. A turn it started
         while you were still talking (it took a pause for the end of your turn, then
         stopped when you carried on) is a jump-in, not the answer."""
@@ -455,6 +554,8 @@ async def run_cohost(producer: httpx.AsyncClient, cookie: str, opts: dict, out: 
                          if t > after_turn and at >= stopped - 0.3), None)
         ok = await phone.until(lambda: answer() is not None, 15)
         marks["jump_ins"] += sum(1 for t, at in phone.turn_first.items() if t > after_turn and at < stopped - 0.3)
+        if track:
+            marks["answer_turns"].append(answer() if ok else None)
         return round(phone.turn_first[answer()] - stopped, 2) if ok else None
 
     async def let_it_finish() -> None:
@@ -472,7 +573,7 @@ async def run_cohost(producer: httpx.AsyncClient, cookie: str, opts: dict, out: 
             before = phone.last_turn
             t = time.monotonic()
             await phone.ws.send(json.dumps({"type": "mode", "mode": "debate"}))
-            marks["mode_switch_answer_s"] = await answer_after(t, before)
+            marks["mode_switch_answer_s"] = await answer_after(t, before, track=False)
             await let_it_finish()
         before = phone.last_turn
         stopped = await phone.say(lines[i])
@@ -514,7 +615,31 @@ async def run_cohost(producer: httpx.AsyncClient, cookie: str, opts: dict, out: 
         if audio.status_code == 200:
             (out / name).write_bytes(audio.content)
     answers = [a for a in marks["answers"] if a is not None]
+    # How you were heard: your captions against the script, and whether each answer
+    # responded to what you actually said.
+    said = phone.of("said")
+    heard = " ".join(e["text"] for e in said if e["who"] == "you")
+    host_text = {}
+    for e in said:
+        if e["who"] == "host":
+            host_text[e["turn"]] = host_text.get(e["turn"], "") + e["text"]
+    captions = caption_accuracy(COHOST_LINES, heard)
+    pairs = [(line, host_text.get(turn, "").strip() if turn else "")
+             for line, turn in zip(COHOST_LINES, marks["answer_turns"])]
+    try:
+        verdicts = await judge_understanding(pairs)
+    except Exception as exc:          # the judge is a bonus; the call's numbers still stand
+        print(f"[co-host] couldn't judge understanding: {exc}", flush=True)
+        verdicts = []
     result = {
+        "model": os.environ.get("COHOST_MODEL") or "default",
+        "audio": {"accent": accent or "(TTS default)", "noise_db": noise_db, "mic_path": mic_path},
+        "caption_wer": captions["wer"], "caption_words": captions["words"],
+        "first_words_lost": captions["first_words_lost"],
+        "lines_losing_first_word": captions["lines_losing_first_word"],
+        "understood": f"{sum(1 for v in verdicts if v.get('understood'))} of {len(verdicts)}" if verdicts else None,
+        "misunderstood": [f"{s} -> {v.get('why')}" for (s, _), v in zip(pairs, verdicts) if not v.get("understood")],
+        "you_captions": heard,
         "show_id": show_id, "saved": bool(saved_at), "title": show.get("title"),
         "opening_s": marks["opening_s"],
         "answers_s": marks["answers"],
@@ -534,7 +659,13 @@ async def run_cohost(producer: httpx.AsyncClient, cookie: str, opts: dict, out: 
 
 def cohost_report(result: dict, out: Path) -> None:
     rows = [
-        ("Saved", result.get("saved")), ("Title", result.get("title")),
+        ("Saved", result.get("saved")), ("Title", result.get("title")), ("Model", result.get("model")),
+        ("Your audio", result.get("audio")),
+        ("Caption word error rate (your words)", f"{result.get('caption_wer')} over {result.get('caption_words')} words"),
+        ("Lines whose first word was lost", f"{result.get('first_words_lost')} {result.get('lines_losing_first_word')}"),
+        ("Answers that responded to what you said", result.get("understood")),
+        ("Misunderstood", result.get("misunderstood")),
+        ("Your captions", result.get("you_captions")),
         ("Co-host opened the show after (s)", result.get("opening_s")),
         ("Answered after you stopped (s), each line", result.get("answers_s")),
         ("Answer latency median / max (s)", f"{result.get('answer_median_s')} / {result.get('answer_max_s')}"),
@@ -656,7 +787,7 @@ async def main_async(minutes_list: list[int], out: Path, args: argparse.Namespac
         assert me_g["uid"]
         if args.cohost:
             try:
-                return [await run_cohost(producer, cookies["producer"], opts, out)], []
+                return [await run_cohost(producer, cookies["producer"], opts, out, args)], []
             except Exception as exc:
                 return [{"crashed": f"{type(exc).__name__}: {exc}", "saved": False}], []
         tasks = []
@@ -762,6 +893,10 @@ def main() -> int:
     ap.add_argument("--review", action="store_true", help="stop at the outline, then press Produce")
     ap.add_argument("--gemini-base-url", help="a Gemini stub to use instead of the real API (spends nothing)")
     ap.add_argument("--cohost", action="store_true", help="a co-host call (Gemini Live) instead of pods")
+    ap.add_argument("--accent", default="", help="--cohost: your lines in this accent of English (e.g. Filipino)")
+    ap.add_argument("--noise-db", type=float, default=None, help="--cohost: room noise at this signal-to-noise ratio")
+    ap.add_argument("--mic-path", action="store_true",
+                    help="--cohost: through the phone's own mic worklet from a 48 kHz device (needs node)")
     args = ap.parse_args()
     for p in args.memo:
         if not p.is_file():

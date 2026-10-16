@@ -1596,6 +1596,48 @@ def _():
     assert later.startswith(head) and later[: len(head)] == calls[1][: len(head)]
 
 
+# ---- how a live co-host hears you: the call's language, and its names in the vocabulary --
+
+@check("co-host hearing: language names map to BCP-47; key terms keep names, drop sentence openers")
+def _():
+    from app.catalog import language_code
+    from app.notes import key_terms
+    assert [language_code(x) for x in ("English", " tagalog ", "en-PH", "Klingon", "")] == [
+        "en", "fil", "en-PH", None, None]
+    terms = key_terms("Is sourdough worth it? The judges at Major League Hacking saw GPT-5 and Q3 numbers.",
+                      "Daniel Reyes judged it. Then Daniel Reyes won in 2026.")
+    assert terms[0] == "Daniel Reyes"                         # the most frequent first
+    assert {"Major League Hacking", "GPT-5", "Q3"} <= set(terms)
+    assert not {"Is", "The", "Then", "2026"} & set(terms)
+    assert key_terms("x " * 10, limit=5) == [] and len(key_terms(" ".join(f"Name{i}" for i in range(99)), limit=7)) == 7
+
+
+@check("co-host hearing: the call's language and names reach the session; unknown language guesses")
+def _():
+    from app.cohost import CohostSession
+
+    class FakeGemini: ...
+
+    async def run():
+        req = CohostRequest(host=HostRequest(name="Zoe Park"), topic="Pricing at Acme Corp", language="English")
+        s = CohostSession(doc={"id": "c1", "intro": {"show_name": "Walk & Talk"}}, request=req,
+                          host=cast_cohost(req.host), you="Marc", notes="Acme Corp raised prices in Q3.",
+                          gemini=FakeGemini(), settings=Settings(), store=None, on_closed=lambda _id: None)
+        try:
+            assert s.languages == ["en"]
+            assert s.vocabulary[:3] == ["Marc", "Zoe Park", "Walk & Talk"] and "Acme Corp" in s.vocabulary
+        finally:
+            for t in (s._main, s._ticker):
+                t.cancel()
+        req2 = req.model_copy(update={"language": "Klingon"})
+        s2 = CohostSession(doc={"id": "c2"}, request=req2, host=cast_cohost(req2.host), you="Marc", notes="",
+                           gemini=FakeGemini(), settings=Settings(), store=None, on_closed=lambda _id: None)
+        for t in (s2._main, s2._ticker):
+            t.cancel()
+        assert s2.languages == []
+    return run()
+
+
 # ---- long notes for a live co-host: a brief, and a lookup over all of them ---------------
 
 @check("notes: passages break between paragraphs, then sentences, and stay under the size")

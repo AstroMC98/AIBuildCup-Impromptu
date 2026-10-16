@@ -752,6 +752,12 @@ async def cohost_scenario(checks: dict) -> None:
         checks["co-host: the co-host gets its persona, private notes, the topic and your notes"] = (
             "NOVA PRIVATE NOTE" in first_setup and "Starter is 3 days old" in first_setup
             and "Is sourdough worth it?" in first_setup and f'"{ready["host"]["voice"]}"' in first_setup)
+        vocabulary = re.search(r'ustom_?[vV]ocabulary"\s*:\s*\[([^\]]*)\]', first_setup)
+        checks["co-host: it hears your whole turn, in the call's language, expecting its names"] = (
+            "TURN_INCLUDES_ALL_INPUT" in first_setup and "START_SENSITIVITY_HIGH" in first_setup
+            and re.search(r'anguage_?[cC]odes"\s*:\s*\["en"\]', first_setup) is not None
+            and vocabulary is not None and f'"{ready["you"]}"' in vocabulary.group(1)
+            and '"Walk & Talk"' in vocabulary.group(1))
         await phone.say(1.0)
         await phone.until(lambda: phone.done(6), timeout=15, what="an answer after the reconnect")
         await asyncio.sleep(1.6)
