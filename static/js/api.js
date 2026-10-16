@@ -75,6 +75,7 @@ export const api = {
   rawAudioUrl: (showId) => `/api/shows/${id(showId)}/audio?raw=1&download=1`,   // a co-hosted call, unedited
   // co-hosting
   createCohost: (body) => call("POST", "/api/cohost", { json: body }),
+  cohostNotes: (notes) => call("POST", "/api/cohost/notes", { json: { notes } }),   // long notes, briefed ahead
   organize: (showId, body) => call("PATCH", `/api/shows/${id(showId)}/organize`, { json: body }),
   // voice memos, your music and your show intro
   createMemo: (form) => call("POST", "/api/memos", { form }),

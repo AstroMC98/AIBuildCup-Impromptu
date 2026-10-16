@@ -138,7 +138,11 @@ export class CallController {
           this._elapsed = { s: this._elapsed.s, at: performance.now(), running: true };
         }
         break;
+      case "lookup":
+        this.lookingUp = performance.now();   // the co-host is quiet while it checks your notes
+        break;
       case "said": {
+        if (e.who === "host") this.lookingUp = 0;
         const last = this.said[this.said.length - 1];
         if (last && last.who === e.who && last.turn === e.turn) last.text += e.text;
         else this.said.push({ who: e.who, turn: e.turn, text: e.text });
@@ -146,6 +150,7 @@ export class CallController {
         break;
       }
       case "interrupted":
+        this.lookingUp = 0;
         this.player.flush(e.turn);
         this._ducked = false;
         break;

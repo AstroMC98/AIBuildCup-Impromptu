@@ -114,6 +114,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import ingest as ingest_mod
 from . import memo as memo_mod
+from . import notes as notes_mod
 from .accounts import Accounts, User, published
 from .auth import COOKIE, SESSION_MAX_AGE, Auth, AuthError, client_ip, same_origin
 from . import stats as stats_mod
@@ -127,13 +128,13 @@ from .catalog import (
 from .cohost import FRAME_BYTES, CohostSession, Cohosts, cast_cohost, mic_bucket
 from .config import settings
 from .limits import (
-    COMMENT_CHARS, GUEST_CONTEXT, MEMO_UPLOADS, NAME_CHARS, PRODUCER_CONTEXT, WS_MESSAGE_BYTES, Limiter,
+    COMMENT_CHARS, GUEST_CONTEXT, MEMO_UPLOADS, NAME_CHARS, NOTES_BRIEFS, PRODUCER_CONTEXT, WS_MESSAGE_BYTES, Limiter,
 )
 from .llm import Gemini
 from .mixer import intro_sting
 from .models import (
-    AlbumIn, ContextItem, MemoOptions, NewCohost, NewShow, Organize, PersonaIn, ProduceMemo, ShareSettings,
-    ShowIntroIn, ShowRequest, StyleIn,
+    AlbumIn, CohostNotes, ContextItem, MemoOptions, NewCohost, NewShow, Organize, PersonaIn, ProduceMemo,
+    ShareSettings, ShowIntroIn, ShowRequest, StyleIn,
 )
 from .music import MINE, Library, theme_for
 from .room import Conn, Rooms, ShowRoom, style_revisions
@@ -166,6 +167,7 @@ rooms = Rooms()
 renders = memo_mod.Renders(settings.max_renders)
 library = Library.load(settings.music_dir)
 cohosts = Cohosts()
+briefs = notes_mod.Briefs()
 _gemini: Gemini | None = None
 
 
@@ -659,6 +661,7 @@ async def options(request: Request) -> dict:
         "persona_presets": PERSONA_PRESETS,
         "cohost_modes": [{k: m[k] for k in ("id", "label", "blurb", "accent")} for m in COHOST_MODES],
         "cohost_source_chars": settings.cohost_source_chars,
+        "cohost_notes_max_chars": settings.cohost_notes_max_chars,
         "host_colors": HOST_COLORS,
         "file_types": SUPPORTED,
         "image_types": IMAGE_EXTENSIONS,
@@ -1472,6 +1475,27 @@ async def create_show(body: NewShow, request: Request) -> dict:
             "credits": (await accounts.get(user.uid)).credits}  # type: ignore[union-attr]
 
 
+@app.post("/api/cohost/notes")
+async def cohost_notes(body: CohostNotes, request: Request) -> dict:
+    """Long notes for a co-host call, sent from the setup screen as soon as they're in:
+    the co-host's brief of them is written now, so starting the call doesn't wait for
+    it. Answers once the brief is ready ({"brief": true}) or couldn't be written."""
+    _require_origin(request)
+    user = await require_user(request)
+    notes = body.notes[: settings.cohost_notes_max_chars]
+    if len(notes) <= settings.cohost_source_chars:
+        return {"brief": False}                     # short enough to give the co-host whole
+    if user.credits < _cost(5):
+        raise HTTPException(status_code=402, detail="Co-hosting uses credits.")
+    model = gemini_or_none()
+    if model is None:
+        return {"brief": False}
+    if not briefs.has(user.uid, notes) and not NOTES_BRIEFS.take(user.uid):
+        raise HTTPException(status_code=429, detail="One set of notes at a time.")
+    brief = await briefs.get(user.uid, notes, lambda: model.brief_notes(notes), settings.cohost_brief_timeout_seconds)
+    return {"brief": brief is not None}
+
+
 @app.post("/api/cohost")
 async def create_cohost(body: NewCohost, request: Request) -> dict:
     """Start a call with an AI co-host. The length asked for is charged now; what
@@ -1493,7 +1517,15 @@ async def create_cohost(body: NewCohost, request: Request) -> dict:
     you = (req.your_name.strip() or user.name or "You")[:40]
     if host.name.casefold() == you.casefold():
         host.name = f"{host.name} 2"[:40]
-    notes = req.notes[: settings.cohost_source_chars]
+    # Long notes: the co-host gets their brief (usually written while you set up, see
+    # cohost_notes) and searches all of them; without a brief, their first part.
+    notes = req.notes[: settings.cohost_notes_max_chars]
+    given, index, brief = notes, None, None
+    if len(notes) > settings.cohost_source_chars:
+        brief = await briefs.get(user.uid, notes, lambda: model.brief_notes(notes),
+                                 settings.cohost_brief_timeout_seconds)
+        given = brief or notes[: settings.cohost_source_chars]
+        index = await asyncio.to_thread(notes_mod.NotesIndex, notes)
     mode = COHOST_MODES_BY_ID[req.mode]
     label = f"Co-host · {mode['label']}"
     topic = req.topic.strip()
@@ -1519,7 +1551,7 @@ async def create_cohost(body: NewCohost, request: Request) -> dict:
         # vibe / style_label / accent: what style_revisions() reads for revision 0
         "request": {**req.model_dump(exclude={"notes"}), "vibe": None, "style_label": label,
                     "accent": mode["accent"]},
-        "source": {"chars": len(notes), "names": req.notes_names or [title]},
+        "source": {"chars": len(notes), "names": req.notes_names or [title], "brief": brief is not None},
         "title": title,
         "tagline": "",
         "about": "",
@@ -1552,10 +1584,11 @@ async def create_cohost(body: NewCohost, request: Request) -> dict:
     except Exception:
         await accounts.adjust_credits(user.uid, cost, reason="refund", show_id=show_id, note="Couldn't start")
         raise
-    call = CohostSession(doc=doc, request=req, host=host, you=you, notes=notes, gemini=model,
-                         settings=settings, store=store, on_closed=cohosts.remove, music=library)
+    call = CohostSession(doc=doc, request=req, host=host, you=you, notes=given, gemini=model,
+                         settings=settings, store=store, on_closed=cohosts.remove, music=library, index=index)
     cohosts.add(call)
-    return {"id": show_id, "trimmed": len(req.notes) > settings.cohost_source_chars,
+    return {"id": show_id, "trimmed": len(req.notes) > settings.cohost_notes_max_chars,
+            "notes": "whole" if index is None else "brief" if brief else "first_part",
             "credits": (await accounts.get(user.uid)).credits}  # type: ignore[union-attr]
 
 

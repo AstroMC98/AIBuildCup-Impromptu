@@ -381,7 +381,8 @@ class CohostRequest(BaseModel):
     host: HostRequest                     # the AI co-host, usually one of your personas
     mode: CohostMode = "banter"
     topic: str = Field(min_length=1, max_length=2_000)
-    # Material for the co-host to draw on; trimmed to settings.cohost_source_chars.
+    # Material for the co-host to draw on: given whole up to settings.cohost_source_chars,
+    # past that as a brief plus a lookup over the rest (notes.py).
     notes: str = Field(default="", max_length=400_000)
     notes_names: list[str] = Field(default_factory=list, max_length=20)
     your_name: str = Field(default="", max_length=40)   # blank = your account name
@@ -392,6 +393,11 @@ class CohostRequest(BaseModel):
     @classmethod
     def _default_language(cls, v: str) -> str:
         return v.strip() or "English"
+
+
+class CohostNotes(BaseModel):
+    """Long notes sent ahead from the setup screen, so their brief is ready by the call."""
+    notes: str = Field(max_length=400_000)
 
 
 class NewCohost(BaseModel):

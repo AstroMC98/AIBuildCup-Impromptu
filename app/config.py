@@ -141,8 +141,16 @@ class Settings(BaseSettings):
     cohost_silence_ms: int = 500
     # A call whose phone drops off is saved as an episode after this long.
     cohost_reconnect_seconds: float = 30.0
-    # Your notes for the co-host, trimmed to this many characters.
+    # Your notes for the co-host: up to this many characters go to it whole. A Live
+    # session bills its whole context on every turn, so longer notes are read into a
+    # brief (about cohost_brief_words) and the co-host searches the rest with a tool
+    # (notes.py), up to cohost_notes_max_chars.
     cohost_source_chars: int = 20_000
+    cohost_notes_max_chars: int = 400_000
+    cohost_brief_words: int = 1_200
+    # Starting a call waits this long for a brief that is still being written, then
+    # goes ahead with the notes' first part (and the lookup over all of them).
+    cohost_brief_timeout_seconds: float = 40.0
     # Hang-up to saved episode: past this, the editor's notes are skipped and the
     # episode is saved with the mechanical edits only.
     cohost_edit_timeout_seconds: float = 40.0

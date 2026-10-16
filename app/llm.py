@@ -175,6 +175,15 @@ class Gemini:
             raise ModelOutputError("the re-plan had no beats")
         return beats
 
+    async def brief_notes(self, notes: str) -> str:
+        """What a live co-host keeps in mind from notes too long to give it whole (notes.py)."""
+        interaction = await self._create(system=prompts.NOTES_BRIEF_SYSTEM.format(words=self.settings.cohost_brief_words),
+                                         user=prompts.notes_brief_input(notes), thinking="low")
+        brief = (interaction.output_text or "").strip()
+        if not brief:
+            raise ModelOutputError("the brief came back empty")
+        return brief[: self.settings.cohost_source_chars]
+
     async def transcribe(self, data: bytes, mime: str) -> str:
         """The producer's spoken question as text."""
         interaction = await self.client.aio.interactions.create(
@@ -353,11 +362,13 @@ class Gemini:
     # ---- live co-hosting ----------------------------------------------------
 
     @asynccontextmanager
-    async def cohost_link(self, *, system: str, voice: str, handle: str | None = None
+    async def cohost_link(self, *, system: str, voice: str, handle: str | None = None, lookup: bool = False
                           ) -> AsyncIterator["CohostLink"]:
         """A Gemini Live session: it hears the user and answers in speech. `handle`
-        resumes an earlier session (see ResumeHandle) with its whole conversation."""
+        resumes an earlier session (see ResumeHandle) with its whole conversation.
+        lookup: the co-host gets the check_notes tool (its calls arrive as ToolCall)."""
         config = types.LiveConnectConfig(
+            tools=[types.Tool(function_declarations=[CHECK_NOTES])] if lookup else None,
             response_modalities=[types.Modality.AUDIO],
             speech_config=types.SpeechConfig(voice_config=types.VoiceConfig(
                 prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=voice))),
@@ -425,8 +436,27 @@ class ResumeHandle:
     handle: str
 
 
-LiveEvent = AudioOut | InputText | OutputText | Interrupted | TurnDone | GoAway | ResumeHandle
+@dataclass
+class ToolCall:
+    """The co-host called a tool; it says nothing more until it gets the answer."""
+    id: str
+    name: str
+    args: dict
+
+
+LiveEvent = AudioOut | InputText | OutputText | Interrupted | TurnDone | GoAway | ResumeHandle | ToolCall
 MIC_MIME = "audio/pcm;rate=16000"
+
+CHECK_NOTES = types.FunctionDeclaration(
+    name="check_notes",
+    description=("Search the notes you were given for exact details: names, numbers, dates, quotes, or what "
+                 "they say about something. Returns the passages that match best."),
+    parameters=types.Schema(
+        type=types.Type.OBJECT,
+        properties={"query": types.Schema(type=types.Type.STRING, description="What to look for, in a few words.")},
+        required=["query"],
+    ),
+)
 
 
 class CohostLink:
@@ -442,6 +472,10 @@ class CohostLink:
     async def pause(self) -> None:
         """The mic went away (the phone dropped off): don't wait for more of it."""
         await self._session.send_realtime_input(audio_stream_end=True)
+
+    async def answer_tool(self, call: ToolCall, response: dict) -> None:
+        await self._session.send_tool_response(function_responses=[
+            types.FunctionResponse(id=call.id or None, name=call.name, response=response)])
 
     async def events(self) -> AsyncIterator[LiveEvent]:
         """Until the connection closes. The SDK's receive() stops after each turn."""
@@ -470,6 +504,9 @@ def _live_events(message: types.LiveServerMessage) -> list[LiveEvent]:
             out.append(Interrupted())
         if content.turn_complete:
             out.append(TurnDone())
+    if message.tool_call:
+        for fc in message.tool_call.function_calls or []:
+            out.append(ToolCall(fc.id or "", fc.name or "", dict(fc.args or {})))
     if message.go_away:
         match = re.match(r"([\d.]+)s", str(message.go_away.time_left or ""))
         out.append(GoAway(float(match.group(1)) if match else None))

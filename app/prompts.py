@@ -925,9 +925,17 @@ TOPIC:
 {notes}"""
 
 
-def cohost_system(req: CohostRequest, host: Host, user_name: str, notes: str) -> str:
+def cohost_system(req: CohostRequest, host: Host, user_name: str, notes: str, lookup: bool = False) -> str:
+    """notes: the whole notes, or, when they're too long for that (lookup), a brief of
+    them; the co-host then searches the full notes with the check_notes tool."""
     material = ""
-    if notes.strip():
+    if notes.strip() and lookup:
+        material = (f"\nNOTES from {user_name} are long, so you have a brief of them below and can search "
+                    f"the full notes with the check_notes tool. Check them before you state a name, number, "
+                    f"date or quote from the notes that the brief doesn't give you, and when {user_name} asks "
+                    f"what the notes say about something. Don't check them for small talk. Draw on them when "
+                    f"they fit; never read them out as a list.\n<<<\n{notes}\n>>>\n")
+    elif notes.strip():
         material = (f"\nNOTES from {user_name}, to draw on when they fit (never read them out "
                     f"as a list):\n<<<\n{notes}\n>>>\n")
     return COHOST_SYSTEM.format(
@@ -939,6 +947,28 @@ def cohost_system(req: CohostRequest, host: Host, user_name: str, notes: str) ->
         topic=req.topic.strip(),
         notes=material,
     )
+
+
+NOTES_BRIEF_SYSTEM = """\
+You prepare an AI co-host for a live, unscripted audio conversation. The person \
+they'll be talking with handed over NOTES that are too long to keep in mind whole. \
+Write the brief the co-host keeps in mind during the call; they can search the full \
+notes for exact passages while they talk.
+
+In plain text with short headings, write:
+- What the notes are (an article, an outline, research, a transcript...), their main \
+thread, and how they're organised, part by part, in order, so the co-host knows what \
+is in there to look up.
+- The key facts, names, numbers, dates and claims most likely to come up, exactly as \
+the notes give them.
+- A few strong quotes or examples, word for word, that would land well on air.
+- Open questions, disagreements or caveats the notes raise.
+
+At most {words} words. No preamble. Write in the language of the notes."""
+
+
+def notes_brief_input(notes: str) -> str:
+    return f"NOTES:\n<<<\n{notes}\n>>>"
 
 
 def cohost_opening(user_name: str, minutes: int, show_name: str = "", intro_line: str = "") -> str:

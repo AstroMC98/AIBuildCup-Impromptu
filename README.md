@@ -284,6 +284,13 @@ What keeps it quick:
 - **Connections are recycled** by Gemini every few minutes (GoAway); the server
   reconnects with a resumption handle, so the co-host keeps the whole conversation.
   If the phone drops off, the call waits `COHOST_RECONNECT_SECONDS`, then saves.
+- **Long notes** (`app/notes.py`). A Live session bills its whole context, instructions
+  included, on every turn, so notes over `COHOST_SOURCE_CHARS` don't go in whole. The
+  setup screen sends them ahead (`POST /api/cohost/notes`) and Gemini writes a brief the
+  co-host keeps in mind, while you finish setting up. During the call the co-host
+  searches the full notes (up to `COHOST_NOTES_MAX_CHARS`) with a `check_notes` tool:
+  BM25 over passages, in memory, so a lookup costs the model's round trip (about 0.7 s
+  in testing) and only on turns that need it. The phone shows "checking your notes".
 
 What hanging up does (`app/editing.py`, then `app/cohost.py`):
 
@@ -487,7 +494,10 @@ own access control.
 | `COHOST_MODEL` | `gemini-3.1-flash-live-preview` | the Live (native audio) model your co-host talks with |
 | `COHOST_SILENCE_MS` | `500` | how long you pause before the co-host answers; lower is snappier but cuts slow talkers off |
 | `COHOST_RECONNECT_SECONDS` | `30` | a call whose phone drops off is saved after this long |
-| `COHOST_SOURCE_CHARS` | `20000` | notes for the co-host are trimmed to this |
+| `COHOST_SOURCE_CHARS` | `20000` | notes up to this long go to the co-host whole; longer ones as a brief plus a lookup |
+| `COHOST_NOTES_MAX_CHARS` | `400000` | the most notes the co-host's lookup covers |
+| `COHOST_BRIEF_WORDS` | `1200` | the longest brief of long notes |
+| `COHOST_BRIEF_TIMEOUT_SECONDS` | `40` | starting a call waits this long for a brief still being written, then uses the notes' first part |
 | `COHOST_EDIT_TIMEOUT_SECONDS` | `40` | past this, the episode is saved without the editor's notes |
 | `BRIEFING_MINUTES_PER_CREDIT` | `5` | a briefing costs 1 credit per this many minutes |
 | `BRIEFING_KEEP_HOURS` | `48` | briefings are deleted after this long |

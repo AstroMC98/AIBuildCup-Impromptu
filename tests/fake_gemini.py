@@ -22,7 +22,10 @@ followed by 0.4 s of quiet is an utterance, transcribed as "Mic check, can you h
 me?" the first time and "Point number N about bread." after that, and answered
 with a 3 s tone streamed at twice real time. Loud audio while it's answering
 interrupts it. Producer cues get a short spoken reply; after replying to a mode
-switch it recycles the connection (GoAway), as Gemini does every few minutes.
+switch it recycles the connection (GoAway), as Gemini does every few minutes. A
+session given the check_notes tool calls it on the first thing you say ("the house
+loaf's hydration") and answers only once the tool's response comes back. A brief of
+long notes (a text call asking what the co-host keeps in mind) gets a canned brief.
 
 GET /_seen returns the writer system instructions, Live setups and Live text
 received, and how many memo briefs, memo research and music calls came in.
@@ -54,7 +57,7 @@ _writer_calls = itertools.count(1)
 requests_seen: list[dict] = []
 writer_systems: list[str] = []
 config = {"lyria_fail": False, "search_json_400": False}
-counts = {"memo_briefs": 0, "memo_research": 0, "music": 0}
+counts = {"memo_briefs": 0, "memo_research": 0, "music": 0, "note_briefs": 0}
 
 BRIEF = {
     "usable": True, "reason": "", "language": "English",
@@ -92,6 +95,7 @@ CITATIONS = [
 MEMO_SUGGESTIONS = '<div class="container"><a class="chip" href="https://www.google.com/search?q=night+noise">night noise</a></div>'
 live_setups: list[dict] = []
 live_texts: list[str] = []
+live_tool_responses: list[dict] = []
 _live_sessions = itertools.count(1)
 _utterances = itertools.count(1)
 
@@ -160,7 +164,7 @@ SUGGESTIONS = '<div class="container"><a class="chip" href="https://www.google.c
 @app.get("/_seen")
 async def seen() -> dict:
     return {"writer_systems": writer_systems, "count": len(requests_seen),
-            "live_setups": live_setups, "live_texts": live_texts,
+            "live_setups": live_setups, "live_texts": live_texts, "live_tool_responses": live_tool_responses,
             "writer_schemas": writer_schemas, "research": research_asked, **counts}
 
 
@@ -240,6 +244,9 @@ async def interactions(req: Request):
         return _reply(json.dumps(BRIEF))
     if audio is not None:                            # the producer's spoken question
         return _reply("FAKE TRANSCRIPT: why did the serpent talk?")
+    if "the co-host keeps in mind" in str(body.get("system_instruction", "")):   # a brief of long notes
+        counts["note_briefs"] += 1
+        return _reply("FAKE BRIEF: the notes are about sourdough, part by part; the house loaf's numbers are in there.")
 
     searching = any(t.get("type") == "google_search" for t in body.get("tools") or [])
     if "items" in props and searching:   # a briefing's news search
@@ -396,6 +403,8 @@ async def live(ws: WebSocket) -> None:
     live_setups.append(setup)
     session = next(_live_sessions)
     lock = asyncio.Lock()
+    lookup = {"tool": "check_notes" in json.dumps(setup.get("setup", {}).get("tools") or []),
+              "asked": False, "waiting": 0}
 
     async def send(obj: dict) -> None:
         async with lock:
@@ -447,6 +456,13 @@ async def live(ws: WebSocket) -> None:
                 break
             raw = message.get("text") or (message.get("bytes") or b"").decode()
             data = json.loads(raw)
+            tool = data.get("tool_response") or data.get("toolResponse")
+            if tool:
+                answers = tool.get("function_responses") or tool.get("functionResponses") or []
+                live_tool_responses.extend(answers)
+                passages = (answers[0].get("response") or {}).get("passages") or [""] if answers else [""]
+                await reply(f"Reply {lookup['waiting']}: my notes say {passages[0]}")
+                continue
             rt = data.get("realtime_input") or data.get("realtimeInput") or {}
             if "text" in rt:
                 live_texts.append(rt["text"])
@@ -470,7 +486,13 @@ async def live(ws: WebSocket) -> None:
                         n = next(_utterances)
                         said = "Mic check, can you hear me?" if n == 1 else f"Point number {n} about bread."
                         await send({"serverContent": {"inputTranscription": {"text": said}}})
-                        await reply("Loud and clear!" if n == 1 else f"Reply {n}: great point about bread.")
+                        if lookup["tool"] and not lookup["asked"]:   # check the notes, then answer
+                            lookup.update(asked=True, waiting=n)
+                            await send({"toolCall": {"functionCalls": [
+                                {"id": f"fc-{session}", "name": "check_notes",
+                                 "args": {"query": "the house loaf's hydration"}}]}})
+                        else:
+                            await reply("Loud and clear!" if n == 1 else f"Reply {n}: great point about bread.")
                         loud = quiet = 0
     except Exception:
         traceback.print_exc()

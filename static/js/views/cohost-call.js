@@ -139,6 +139,9 @@ export async function cohostCallView(root, { params }) {
   const hint = () => {
     if (!ctl.onAir) return "";
     if (ctl.mic?.muted) return html`${icon("micOff", 14)} You're muted. ${hostName()} can't hear you.`;
+    if (ctl.lookingUp && performance.now() - ctl.lookingUp < 10000) {
+      return html`${icon("search", 14)} ${hostName()} is checking your notes…`;
+    }
     if (ctl.wrapping) return html`${hostName()} is wrapping up.`;
     if (!local.get("gp_cohost_hint")) {
       return html`${icon("headphones", 14)} Best with headphones, so ${hostName()} doesn't hear itself.

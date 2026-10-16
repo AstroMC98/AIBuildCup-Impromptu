@@ -812,6 +812,36 @@ async def cohost_scenario(checks: dict) -> None:
             await asyncio.sleep(0.5)
         checks["co-host: a call nobody joined leaves no pod and refunds everything"] = (
             (await alice_c.get(f"/api/shows/{ghost}")).status_code == 404 and await credits_for(ghost, "refund") == 5)
+
+        # long notes: briefed while you set up, and looked up during the call
+        filler = "\n\n".join(f"Paragraph {i}: sourdough is flour, water, salt and patience." for i in range(400))
+        long_notes = filler + "\n\nGrandma Rosa kept the house loaf at 78 percent hydration.\n\n" + filler
+        early = await alice_c.post("/api/cohost/notes", json={"notes": long_notes})
+        checks["co-host: long notes are briefed while you set up"] = early.status_code == 200 and early.json()["brief"]
+        r = await alice_c.post("/api/cohost", json={**body, "visibility": "private",
+                                                    "request": {**body["request"], "notes": long_notes}})
+        noted = r.json()["id"]
+        seen = httpx.get(f"http://127.0.0.1:{FAKE_PORT}/_seen").json()
+        checks["co-host: starting the call uses that brief, not a second one"] = (
+            r.json()["notes"] == "brief" and seen["note_briefs"] == 1)
+        phone = await Phone("phone-notes", f"{WS}/ws/cohost/{noted}", alice_cookie).connect()
+        await phone.until(lambda: phone.of("ready"), what="ready")
+        phone.start_mic()
+        await phone.until(lambda: phone.done(1), timeout=20, what="the opening")
+        await asyncio.sleep(1.6)
+        await phone.say(1.0)                      # the stub checks the notes before it answers
+        await phone.until(lambda: phone.done(2), timeout=20, what="the answer after checking the notes")
+        seen = httpx.get(f"http://127.0.0.1:{FAKE_PORT}/_seen").json()
+        setup = json.dumps(seen["live_setups"][-1])
+        checks["co-host: with long notes it gets the brief and check_notes, not the notes themselves"] = (
+            "FAKE BRIEF" in setup and "check_notes" in setup and "Grandma Rosa" not in setup
+            and "Paragraph 9:" not in setup)
+        checks["co-host: a lookup finds the passage, the co-host uses it, and the phone is told"] = (
+            "78 percent" in json.dumps(seen["live_tool_responses"]) and bool(phone.of("lookup"))
+            and any(e["who"] == "host" and "78 percent" in e["text"] for e in phone.of("said")))
+        await phone.send({"type": "hangup"})
+        await phone.until(lambda: phone.of("saved") or phone.of("ended"), timeout=60, what="saved")
+        await phone.close()
     finally:
         for c in clients:
             await c.aclose()

@@ -11,7 +11,7 @@ quickly as the model does.
                      JSON: join | mode {mode} | cut_in | hangup
   server -> browser  binary: <turn:u32 LE> + 24 kHz mono s16le, the co-host's voice
                      JSON: ready | state | said | interrupted | turn_done | mode |
-                           wrap | editing | saved | ended | error
+                           lookup | wrap | editing | saved | ended | error
 
 Cutting in: Gemini stops a turn when it hears you over it (`interrupted`). It sends
 audio faster than the phone plays it, though, so a long answer can be fully sent
@@ -26,6 +26,10 @@ ordinary pod with kind "cohost", which replays like any other.
 Gemini recycles a Live connection every few minutes (GoAway), and one can drop.
 The session reconnects with the latest resumption handle, so the co-host keeps the
 whole conversation; without one, it starts afresh with a recap.
+
+Long notes (notes.py) reach the co-host as a brief, and it searches the full notes
+with the check_notes tool: the session answers each call from the in-memory index and
+tells the phone (`lookup`), since the co-host goes quiet until it has the answer.
 """
 from __future__ import annotations
 
@@ -43,11 +47,12 @@ from .config import Settings
 from .editing import RATE, Take, assemble, build_edit, fallback_plan, raw_mix, scored
 from .limits import TokenBucket
 from .llm import (
-    AudioOut, CohostLink, Gemini, GoAway, InputText, Interrupted, OutputText, ResumeHandle, TurnDone,
+    AudioOut, CohostLink, Gemini, GoAway, InputText, Interrupted, OutputText, ResumeHandle, ToolCall, TurnDone,
 )
 from .mixer import Cues
 from .models import CohostRequest, Host, HostRequest
 from .music import Library, theme_for
+from .notes import NotesIndex
 from .room import Conn, refund_unused
 from .store import Store
 
@@ -106,14 +111,19 @@ class CohostSession:
         store: Store,
         on_closed: Callable[[str], None],
         music: Library | None = None,
+        index: NotesIndex | None = None,
     ):
-        """music: the library the episode's theme comes from (none: open and close on a chime)."""
+        """notes: what the co-host is given of your notes (all of them, or a brief of
+        long ones); index: the full notes to search with check_notes, when they're long.
+        music: the library the episode's theme comes from (none: open and close on a chime)."""
         self.id: str = doc["id"]
         self.doc = doc
         self.request = request
         self.host = host
         self.you = you
         self.notes = notes
+        self.index = index
+        self.lookups = 0
         self.gemini = gemini
         self.settings = settings
         self.store = store
@@ -223,7 +233,7 @@ class CohostSession:
         while not self._hangup.is_set():
             try:
                 async with self.gemini.cohost_link(system=self._system(), voice=self.host.voice,
-                                                   handle=self.resume_handle) as link:
+                                                   handle=self.resume_handle, lookup=self.index is not None) as link:
                     self._link = link
                     retries = 0
                     if self.started is None:
@@ -310,6 +320,25 @@ class CohostSession:
                 self._send({"type": "turn_done", "turn": turn.id})
         elif isinstance(event, ResumeHandle):
             self.resume_handle = event.handle
+        elif isinstance(event, ToolCall):
+            _spawn(self._quietly(self._answer(event)))
+
+    async def _answer(self, call: ToolCall) -> None:
+        """check_notes: the passages of the full notes that best match what the co-host
+        asked for. The co-host is silent until it gets them, so this never waits on anything."""
+        if call.name == "check_notes" and self.index is not None:
+            query = str(call.args.get("query", ""))[:200]
+            found = self.index.search(query)
+            self.lookups += 1
+            log.info("call %s: checked the notes for %r (%d passages)", self.id, query, len(found))
+            self._send({"type": "lookup", "query": query})
+            response = {"passages": found} if found else {"passages": [], "note": "Nothing in the notes matches that."}
+        else:
+            response = {"error": f"There's no tool called {call.name}."}
+        link = self._link
+        if link is not None:
+            async with self._send_lock:
+                await link.answer_tool(call, response)
 
     async def _tick_loop(self) -> None:
         try:
@@ -506,7 +535,7 @@ class CohostSession:
 
     def _system(self) -> str:
         return prompts.cohost_system(self.request.model_copy(update={"mode": self.mode}), self.host,
-                                     self.you, self.notes)
+                                     self.you, self.notes, lookup=self.index is not None)
 
     async def _send_text(self, text: str) -> None:
         link = self._link

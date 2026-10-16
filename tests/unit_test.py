@@ -1596,6 +1596,73 @@ def _():
     assert later.startswith(head) and later[: len(head)] == calls[1][: len(head)]
 
 
+# ---- long notes for a live co-host: a brief, and a lookup over all of them ---------------
+
+@check("notes: passages break between paragraphs, then sentences, and stay under the size")
+def _():
+    from app.notes import passages
+    text = "Short one.\n\nAnother short one.\n\n" + " ".join(f"Sentence {i} is here." for i in range(60)) + "\n\n" + "x" * 250
+    parts = passages(text, size=100)
+    assert all(len(p) <= 100 for p in parts)
+    assert parts[0].startswith("Short one.\n\nAnother short one.\n\nSentence 0")   # small pieces share a passage
+    assert any(p.startswith("Sentence ") and p.endswith("here.") for p in parts)   # cut between sentences
+    assert "".join(p for p in parts if set(p) == {"x"}) == "x" * 250  # an unbreakable run is cut, nothing lost
+
+
+@check("notes: a lookup finds the matching passages, in the notes' order")
+def _():
+    from app.notes import NotesIndex
+    filler = "\n\n".join(f"Paragraph {i}: sourdough is flour, water, salt and patience." for i in range(300))
+    notes = (filler + "\n\nGrandma Rosa kept the house loaf at 78 percent hydration.\n\n" + filler
+             + "\n\nHer starters were fed twice a day with rye.")
+    idx = NotesIndex(notes)
+    found = idx.search("house loaf hydration")
+    assert found and "78 percent" in found[0]
+    assert any("rye" in p for p in idx.search("how often was the starter fed"))   # starters ~ starter
+    both = idx.search("rye starters hydration")
+    assert "78 percent" in both[0] and "rye" in both[-1]                          # in the notes' order
+    assert idx.search("quantum chromodynamics") == [] and NotesIndex("").search("anything") == []
+
+
+@check("notes: one brief per person, reused for the same notes; new notes replace it; failures aren't kept")
+async def _():
+    from app.notes import Briefs
+    briefs, calls = Briefs(), []
+
+    async def make(text, delay=0.05, fail=False):
+        calls.append(text)
+        await asyncio.sleep(delay)
+        if fail:
+            raise RuntimeError("model down")
+        return f"BRIEF of {text}"
+
+    first = briefs.job("u1", "notes A", lambda: make("notes A", delay=0.2))
+    assert await briefs.get("u1", "notes A", lambda: make("notes A"), timeout=2) == "BRIEF of notes A"
+    assert calls == ["notes A"] and briefs.has("u1", "notes A") and first.done()
+    slow = briefs.job("u1", "notes B", lambda: make("notes B", delay=5))
+    await briefs.get("u1", "notes C", lambda: make("notes C"), timeout=2)       # newer notes replace B
+    await asyncio.sleep(0)
+    assert slow.cancelled() and not briefs.has("u1", "notes B") and briefs.has("u1", "notes C")
+    assert await briefs.get("u2", "notes D", lambda: make("notes D", fail=True), timeout=2) is None
+    assert await briefs.get("u2", "notes D", lambda: make("notes D"), timeout=2) == "BRIEF of notes D"   # retried
+    assert await briefs.get("u3", "notes E", lambda: make("notes E", delay=5), timeout=0.05) is None    # too slow
+
+
+@check("co-host: long notes come as a brief, with the check_notes tool to look up the rest")
+def _():
+    from google.genai import types
+    from app.llm import CHECK_NOTES, ToolCall, _live_events
+    req = CohostRequest(host=HostRequest(name="Nova"), topic="Bread")
+    host = cast_cohost(req.host)
+    briefed = prompts.cohost_system(req, host, "Marc", "THE BRIEF", lookup=True)
+    whole = prompts.cohost_system(req, host, "Marc", "ALL THE NOTES")
+    assert "THE BRIEF" in briefed and "check_notes" in briefed and "check_notes" not in whole
+    assert CHECK_NOTES.name == "check_notes" and "query" in CHECK_NOTES.parameters.required
+    msg = types.LiveServerMessage(tool_call=types.LiveServerToolCall(function_calls=[
+        types.FunctionCall(id="fc1", name="check_notes", args={"query": "hydration"})]))
+    assert _live_events(msg) == [ToolCall("fc1", "check_notes", {"query": "hydration"})]
+
+
 # ---- co-hosting: recording a call and editing it into an episode ----------------------
 
 R, M = ed.RATE, ed.MIC_RATE

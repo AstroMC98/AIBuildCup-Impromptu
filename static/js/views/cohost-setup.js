@@ -42,7 +42,11 @@ export async function cohostSetupView(root) {
     useIntro: true,      // open with your saved show intro, if you have one
     attachments: [],     // { name, kind, text }
     busy: "",
+    // Long notes are sent ahead so the co-host's brief of them is ready by the call.
+    brief: { notes: "", status: "" },   // status: reading | ready | failed
   };
+  const inlineMax = session.options.cohost_source_chars || 20000;
+  const notesMax = session.options.cohost_notes_max_chars || 400000;
   const data = { personas: [], connections: [], intro: null };
 
   const el = document.createElement("div");
@@ -168,15 +172,43 @@ export async function cohostSetupView(root) {
       <span class="attach-chip">${icon(KIND_ICON[a.kind] || "file", 14)}<span class="ellipsis">${a.name}</span>
         <button type="button" data-remove="${i}" aria-label="Remove ${a.name}">${icon("close", 14, 2.2)}</button></span>`)}`);
     updateMeta();
+    briefSoon(300);
   };
   const collectNotes = () => [notes.value.trim(), ...state.attachments.map((a) => `--- ${a.name} ---\n${a.text}`)]
     .filter(Boolean).join("\n\n");
   const updateMeta = () => {
-    const n = collectNotes().length;
-    const max = session.options.cohost_source_chars || 20000;
-    $("[data-meta]").textContent = state.busy || (!n ? ""
-      : n > max ? `${n.toLocaleString()} characters. Your co-host reads the first ${max.toLocaleString()}.`
-        : `${n.toLocaleString()} characters of notes`);
+    const all = collectNotes();
+    const n = all.length;
+    const count = (x) => x.toLocaleString();
+    let text = state.busy;
+    if (!text && n && n <= inlineMax) text = `${count(n)} characters of notes`;
+    else if (!text && n) {
+      const status = state.brief.notes === all ? state.brief.status : "";
+      text = `${count(n)} characters. ${status === "ready" ? "Your co-host has the gist and looks up the details as you talk."
+        : status === "failed" ? `Your co-host reads the first ${count(inlineMax)} and looks up the rest as you talk.`
+          : "Your co-host is reading them…"}`;
+      if (n > notesMax) text += ` Only the first ${count(notesMax)} are used.`;
+    }
+    $("[data-meta]").textContent = text;
+  };
+  // Long notes go to the server as soon as they settle, so the brief is written while
+  // you finish setting up; starting the call picks up the same brief.
+  let briefTimer = 0;
+  const briefSoon = (ms) => {
+    clearTimeout(briefTimer);
+    briefTimer = setTimeout(requestBrief, ms);
+  };
+  const requestBrief = async () => {
+    const all = collectNotes();
+    if (all.length <= inlineMax || all === state.brief.notes) return;
+    state.brief = { notes: all, status: "reading" };
+    updateMeta();
+    let status = "failed";
+    try {
+      status = (await api.cohostNotes(all.slice(0, notesMax))).brief ? "ready" : "failed";
+    } catch { /* the call reads the first part instead */ }
+    if (state.brief.notes === all) state.brief.status = status;
+    updateMeta();
   };
   const setError = (msg) => { $("[data-error]").textContent = msg || ""; };
 
@@ -252,7 +284,10 @@ export async function cohostSetupView(root) {
       e.currentTarget.hidden = true;
     }
   });
-  notes.addEventListener("input", updateMeta);
+  notes.addEventListener("input", () => {
+    updateMeta();
+    briefSoon(1500);
+  });
 
   function editHost() {
     const form = document.createElement("form");
@@ -307,14 +342,14 @@ export async function cohostSetupView(root) {
     try {
       const res = await api.createCohost({
         request: {
-          host: state.host, mode: state.mode, topic, notes: collectNotes(), minutes: state.minutes,
+          host: state.host, mode: state.mode, topic, notes: collectNotes().slice(0, notesMax), minutes: state.minutes,
           notes_names: state.attachments.map((a) => a.name).slice(0, 20), your_name: yourName, language,
         },
         visibility: state.visibility,
         shared_with: state.visibility === "private" ? state.sharedWith : [],
         use_show_intro: state.useIntro,
       });
-      if (res.trimmed) toast("Your notes were long, so your co-host reads the first part.");
+      if (res.trimmed) toast(`Your notes were long, so your co-host uses the first ${notesMax.toLocaleString()} characters.`);
       session.refresh();
       navigate(`/cohost/${res.id}`);
     } catch (err) {

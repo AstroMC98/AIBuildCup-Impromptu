@@ -83,3 +83,6 @@ PRODUCER_CONTEXT = Limiter(rate=1 / 5, burst=3)
 # Per user. Transcribing and researching a memo is paid for before any credits are
 # (a memo held for review is only charged at Produce), so uploads are rationed.
 MEMO_UPLOADS = Limiter(rate=1 / 300, burst=3, ttl=6 * 3600)
+
+# Per user. A co-host's brief of long notes reads all of them, before any credits are spent.
+NOTES_BRIEFS = Limiter(rate=1 / 10, burst=3)
