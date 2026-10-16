@@ -42,7 +42,7 @@ The prototypes are the visual spec. Where this document and a prototype disagree
 
 ## 1. What changes, in one page
 
-- **Name.** "Gemini Podcasts" becomes **Impromptu**. The mark is the word set in Anybody italic, with the dot of the i replaced by a red tally lamp. On its own, the lamp-dotted i is the app icon.
+- **Name.** "Gemini Podcasts" becomes **Impromptu**. The logo comes from the Impromptu brand kit (`static/brand/README.md`): a play button inside a speech bubble, cyan to ultraviolet, beside the word. The bubble alone is the app icon. (It replaced the first mark, the word in Anybody italic with a tally lamp for the dot of the i.)
 - **Type.** Bricolage Grotesque (one family doing every job) is replaced by two families:
   - **Anybody** for display and captions. Its width axis lets long caption lines narrow instead of shrinking.
   - **Atkinson Hyperlegible Next** for everything else. It was drawn for low-vision readers, which suits a product built around live captions.
@@ -138,7 +138,7 @@ Contrast guard: captions are always white or `--gel-text` on `--stage`, whose OK
 - Preload both files.
 - Declare `@font-face` with `font-stretch: 50% 150%` and `font-display: swap`.
 - Add a fallback face, `Arial` with `size-adjust` and `ascent-override` tuned, so the swap doesn't shift captions.
-- Anybody italic (another 55 KB) is only used by the wordmark. Ship the wordmark as inline SVG instead and skip that file.
+- Anybody italic (another 55 KB) would only serve the wordmark, so skip that file. The logo is artwork from the brand kit, not type.
 
 ### 2.3 Space, radius, layers
 
@@ -318,7 +318,7 @@ How each loader binds to real state is listed under "Driven by" in the Motion La
 
 | Route / surface | Code | World | Loading today → new | Transition in | Main changes |
 |---|---|---|---|---|---|
-| Boot | `main.js:18` | stage | blank #app → **ident** (wordmark opens, lamp ignites), inline in `index.html` so it shows before JS; skipped if `/api/me` answers in under 250 ms | — | "Off air" error uses the same ident |
+| Boot | `main.js:18` | stage | blank #app → **ident** (the glowing logo fades up), inline in `index.html` so it shows before JS; skipped if `/api/me` answers in under 250 ms | — | "Off air" error uses the same ident |
 | `/login` | `login.js:11` | stage | buttons only disable → button shows the ring in `chase` | ident hand-off | Google first, email second, "Browse public pods" link; stops inheriting the last `--deep` (it never calls `applyAccent` today) |
 | `/`, `/discover`, `/following` | `library.js:280`, list `:125` | house | "Loading…" → delayed skeletons (300 ms), then rows fade in 30 ms apart | Opening the app / tab cross-fade | Composer on Home; Live now shelf; recent rows; free-account card; Discover by format chips; Following with live banner |
 | Library tab | `library.js:125` (+ albums) | house | as above | tab | Sleeve grid; Yours / Shared / Albums; filter and tag chips reorder with FLIP |

@@ -91,6 +91,7 @@ intro's, else a library pack that suits the pod) and the hosts' spoken welcome.
 from __future__ import annotations
 
 import asyncio
+import html
 import json
 import logging
 import math
@@ -103,7 +104,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from fastapi import Body, FastAPI, File, Form, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from typing import Literal
 
 from pydantic import BaseModel, Field, ValidationError
@@ -590,8 +591,16 @@ def _set_session(res: Response, uid: str) -> None:
 
 # ---- pages ---------------------------------------------------------------------
 
-def _index() -> FileResponse:
-    return FileResponse(INDEX, headers={"Referrer-Policy": "same-origin", "Cache-Control": "no-cache"})
+def _index(request: Request) -> HTMLResponse:
+    """The app's one page. Link previews need an absolute image URL, so it names its own address."""
+    origin = (settings.public_url or str(request.base_url)).rstrip("/")
+    page = INDEX.read_text(encoding="utf-8").replace("{{origin}}", html.escape(origin))
+    return HTMLResponse(page, headers={"Referrer-Policy": "same-origin", "Cache-Control": "no-cache"})
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon() -> FileResponse:
+    return FileResponse(STATIC / "brand" / "favicon.ico", headers={"Cache-Control": "public, max-age=86400"})
 
 
 @app.get("/")
@@ -610,8 +619,8 @@ def _index() -> FileResponse:
 @app.get("/styles")
 @app.get("/connections")
 @app.get("/admin")
-async def page() -> FileResponse:
-    return _index()
+async def page(request: Request) -> HTMLResponse:
+    return _index(request)
 
 
 @app.get("/show/{show_id}")
@@ -620,8 +629,8 @@ async def page() -> FileResponse:
 @app.get("/album/{album_id}")
 @app.get("/creator/{uid}")
 @app.get("/invite/{uid}")
-async def page_with_id(show_id: str = "", uid: str = "", album_id: str = "") -> FileResponse:
-    return _index()
+async def page_with_id(request: Request, show_id: str = "", uid: str = "", album_id: str = "") -> HTMLResponse:
+    return _index(request)
 
 
 @app.get("/healthz")
@@ -1135,8 +1144,8 @@ async def _briefing_loop() -> None:
 
 
 @app.get("/briefings")
-async def briefings_page() -> FileResponse:
-    return _index()
+async def briefings_page(request: Request) -> HTMLResponse:
+    return _index(request)
 
 
 @app.get("/api/briefings")

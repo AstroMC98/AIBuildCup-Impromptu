@@ -1,4 +1,4 @@
-/* Shared components (docs/plans/design-system.md): the wordmark, buttons, fields, chips,
+/* Shared components (docs/plans/design-system.md): the logo, buttons, fields, chips,
    pills and lamps, badges, avatars, cards, switches and radio cards, the studio-clock
    ring, loaders and cue-card toasts. Semantic tokens only, so each works in the house
    (light or dark) and on the stage. */
@@ -38,21 +38,11 @@
 }
 
 @layer components {
-  /* ---- the wordmark: the dot of the i is the tally lamp ---------------------------- */
-  .wm {
-    display: inline-flex; align-items: flex-end; white-space: nowrap; padding-top: .26em;
-    font-family: var(--f-mark); font-weight: 800; font-style: italic; font-synthesis: none;
-    letter-spacing: -0.02em; line-height: 1; color: var(--fg); text-decoration: none;
-  }
-  .wm .iw { position: relative; display: inline-block; }
-  .wm .i { display: inline-block; clip-path: inset(0.02em -0.2em -0.3em -0.2em); }
-  .wm .tittle {
-    position: absolute; left: 0.24em; top: -0.25em; width: .22em; height: .22em; border-radius: 50%;
-    background: var(--tally); box-shadow: 0 0 .35em .04em color-mix(in oklch, var(--tally) 55%, transparent);
-  }
-  .wm.ignite .tittle { animation: tittle-ignite 1.1s steps(1, end) both; }
-  @keyframes tittle-ignite {
-    0% { opacity: .15; box-shadow: none; } 10% { opacity: 1; } 18% { opacity: .25; } 28% { opacity: 1; } 38% { opacity: .55; } 50%, 100% { opacity: 1; }
+  /* ---- the logo: the house's lights and the stage pick the artwork (--logo); set --logo-h ---- */
+  .logo { position: relative; display: inline-block; flex: none; height: var(--logo-h, 30px); aspect-ratio: 1606.92 / 389.81; }
+  .logo::before {
+    content: ""; position: absolute; inset: calc(var(--logo-h, 30px) * var(--logo-bleed) / -389.81);
+    background: var(--logo) center / 100% 100% no-repeat;
   }
 
   /* ---- buttons ---------------------------------------------------------------------- */
@@ -375,6 +365,6 @@
     .toast { animation: none; }
     .toast.leaving { animation: toast-fade .15s both; }
     .odo > span { transition: none; }
-    .wm.ignite .tittle, .badge.live.ignite { animation: none; }
+    .badge.live.ignite { animation: none; }
   }
 }

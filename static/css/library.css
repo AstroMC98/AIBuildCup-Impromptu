@@ -9,7 +9,7 @@
     background: color-mix(in srgb, var(--bg) 86%, transparent);
     backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
   }
-  .brand { display: inline-flex; text-decoration: none; font-size: 24px; color: var(--fg); }
+  .brand { display: inline-flex; --logo-h: 30px; }
   .head-search { flex: 1 1 280px; max-width: 520px; position: relative; }
   .head-search-ic { position: absolute; left: 15px; top: 13px; color: var(--fg-3); }
   .head-search input {
@@ -62,7 +62,7 @@
       top: 0; right: auto; width: 236px; display: flex; flex-direction: column; gap: 4px;
       padding: 22px 16px 18px; box-shadow: 1px 0 0 var(--line); background: var(--bg);
     }
-    .appnav-mark { display: inline-flex; font-size: 28px; padding: 0 10px 22px; color: var(--fg); text-decoration: none; }
+    .appnav-mark { display: flex; --logo-h: 34px; padding: 0 10px 22px; }
     .appnav-item { flex-direction: row; gap: 12px; height: 46px; padding: 0 12px; border-radius: 12px; font-size: 15px; color: var(--fg-2); }
     .appnav-item[aria-current="page"] { background: var(--bg-2); }
     .appnav-item[aria-current="page"] .appnav-ic { background: none; }
@@ -291,8 +291,7 @@
   @media (min-width: 1000px) { .login-ring { right: -340px; top: 50%; width: 820px; height: 820px; margin-top: -410px; } }
   .login-ring .ring { width: 100%; height: 100%; }
   .login-card { position: relative; width: 100%; max-width: 400px; display: flex; flex-direction: column; gap: 12px; }
-  .login-mark { font-size: 46px; color: #fff; text-decoration: none; margin-bottom: 4px; }
-  .login-mark .wm { color: #fff; }
+  .login-mark { display: flex; align-self: flex-start; --logo-h: 52px; margin-bottom: 8px; }
   .login-lede { font: 760 21px/1.12 var(--f-display); font-stretch: 88%; max-width: 18ch; margin-bottom: 14px; }
   .login-card h1 { font: 800 28px/1 var(--f-display); font-stretch: 86%; letter-spacing: -0.015em; }
   .login-card .btn svg { flex: none; }

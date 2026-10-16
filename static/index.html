@@ -6,9 +6,23 @@
   <meta name="theme-color" content="#0B0C12">
   <meta name="color-scheme" content="light dark">
   <title>Impromptu</title>
+  <meta name="description" content="Live podcasts about anything. Call in while they're on air.">
+  <!-- link previews: the server fills in {{origin}}, since previews need an absolute image URL -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Impromptu">
+  <meta property="og:title" content="Impromptu">
+  <meta property="og:description" content="Live podcasts about anything. Call in while they're on air.">
+  <meta property="og:image" content="{{origin}}/static/brand/og-image-1200x630.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="The Impromptu logo">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="/favicon.ico" sizes="32x32">
+  <link rel="icon" href="/static/brand/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/static/brand/apple-touch-icon-180.png">
+  <link rel="manifest" href="/static/brand/manifest.json">
   <link rel="preload" href="/static/fonts/atkinson-next-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/static/fonts/anybody-latin.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="preload" href="/static/fonts/anybody-wordmark.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/static/css/tokens.css">
   <link rel="stylesheet" href="/static/css/base.css">
   <link rel="stylesheet" href="/static/css/motion.css">
@@ -22,18 +36,17 @@
   <link rel="stylesheet" href="/static/css/memo.css">
   <link rel="stylesheet" href="/static/css/briefings.css">
   <link rel="stylesheet" href="/static/css/cohost.css">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23141720'/><path d='M14.6 13.5h5.2l-2.3 12.5h-5.2z' fill='white'/><circle cx='18.4' cy='8.4' r='3.3' fill='%23FF3B30'/></svg>">
   <style>
     /* The boot ident: only shows if the app takes longer than 250 ms to know who you are. */
-    .boot { position: fixed; inset: 0; z-index: 400; display: grid; place-items: center; font-size: 46px;
-      background: #0B0C12; animation: boot-in .2s .25s both; transition: opacity .3s ease; }
-    .boot .wm { color: #fff; }
+    .boot { position: fixed; inset: 0; z-index: 400; display: grid; place-items: center;
+      background: #0B0C12; animation: boot-in .2s .25s both; transition: opacity .3s ease;
+      --logo: url("/static/brand/impromptu-horizontal-on-dark-glow.svg"); --logo-bleed: 40; --logo-h: 56px; }
     .boot.gone { opacity: 0; pointer-events: none; }
     @keyframes boot-in { from { opacity: 0; } }
   </style>
 </head>
 <body>
-  <div id="boot" class="boot" aria-hidden="true"><span class="wm ignite"><span class="iw"><span class="i">i</span><span class="tittle"></span></span>mpromptu</span></div>
+  <div id="boot" class="boot" aria-hidden="true"><span class="logo"></span></div>
   <div id="app"></div>
   <div id="toast" class="toast" role="status" hidden></div>
   <script type="module" src="/static/js/main.js"></script>

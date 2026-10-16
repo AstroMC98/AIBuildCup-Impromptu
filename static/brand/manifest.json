@@ -1,0 +1,15 @@
+{
+  "name": "Impromptu",
+  "short_name": "Impromptu",
+  "description": "Live podcasts about anything. Call in while they're on air.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "browser",
+  "background_color": "#0B0C12",
+  "theme_color": "#0B0C12",
+  "icons": [
+    { "src": "/static/brand/pwa-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/static/brand/pwa-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/static/brand/pwa-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

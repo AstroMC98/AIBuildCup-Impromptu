@@ -74,10 +74,9 @@ export function icon(name, size = 24, stroke = 2) {
   );
 }
 
-/** The Impromptu wordmark: the dot of the i is the tally lamp. markOnly: just the lit i. */
-export function wordmark({ markOnly = false } = {}) {
-  const i = '<span class="iw"><span class="i">i</span><span class="tittle"></span></span>';
-  return raw(`<span class="wm" aria-hidden="true">${i}${markOnly ? "" : "mpromptu"}</span>`);
+/** The Impromptu logo, drawn by CSS from static/brand: the house's lights and the stage pick the artwork. */
+export function logo() {
+  return raw('<span class="logo" aria-hidden="true"></span>');
 }
 
 export const KIND_ICON = { text: "note", file: "file", link: "link", photo: "photo", source: "file", research: "search" };

@@ -1,7 +1,7 @@
 // /login — Firebase (Google, or email + password), or dev sign-in locally.
 import { api } from "../api.js";
 import { html, raw, setHtml } from "../html.js";
-import { icon, wordmark } from "../icons.js";
+import { icon, logo } from "../icons.js";
 import { ring } from "../ring.js";
 import { navigate } from "../router.js";
 import { session } from "../session.js";
@@ -24,7 +24,7 @@ export async function loginView(root, { query }) {
     <main class="login stage" style="--gel:#FFB257">
       <span class="login-ring">${ring({ lit: (i) => i < 22, r: 46, dot: 0.9 })}</span>
       <div class="login-card">
-        <a class="login-mark" href="/" data-link aria-label="Impromptu home">${wordmark()}</a>
+        <a class="login-mark" href="/" data-link aria-label="Impromptu home">${logo()}</a>
         <p class="login-lede">Live podcasts about anything. Call in while they're on air.</p>
         <h1>${creating ? "Create your account" : "Sign in"}</h1>
         <p class="muted">Listen to pods, call in, connect with friends${creating ? ", and create your own with credits" : ""}.</p>

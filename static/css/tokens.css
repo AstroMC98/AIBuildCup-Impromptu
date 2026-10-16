@@ -35,12 +35,6 @@
   font-weight: 200 800; font-style: normal; font-display: swap;
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
-/* The wordmark: Anybody italic at one instance, only the letters in "impromptu" (3 KB). */
-@font-face {
-  font-family: "Impromptu Wordmark";
-  src: url("/static/fonts/anybody-wordmark.woff2") format("woff2");
-  font-weight: 800; font-style: italic; font-display: block;
-}
 
 /* The gel animates (a restyle or a new chapter relights the whole stage). */
 @property --gel { syntax: "<color>"; inherits: true; initial-value: #FFB257; }
@@ -51,8 +45,12 @@
     /* type */
     --f-display: "Anybody", "Arial Narrow", "Segoe UI", system-ui, sans-serif;
     --f-ui: "Atkinson Hyperlegible Next", "Segoe UI", system-ui, -apple-system, sans-serif;
-    --f-mark: "Impromptu Wordmark", "Anybody", "Arial Narrow", sans-serif;
     --font: var(--f-ui);
+
+    /* the logo (static/brand): which artwork, and how far its glow spills past the logo's box
+       in the artwork's units (the glowing file adds 40 on every side of a logo 389.81 tall) */
+    --logo: url("/static/brand/impromptu-horizontal-on-light.svg");
+    --logo-bleed: 0;
 
     /* space and shape */
     --gutter: 16px;
@@ -123,6 +121,7 @@
       --pri: #F1F3F6; --on-pri: #141720; --live-text: #FF7A8F; --focus: #7C9BFF;
       --danger: #FF8A7A; --ok: #7FE0B0; --warn: #FFB27A;
       --scrim: rgba(0, 0, 0, .55); --shadow: 0 0 0 transparent; --shadow-float: 0 18px 44px -14px rgba(0, 0, 0, .7);
+      --logo: url("/static/brand/impromptu-horizontal-on-dark-glow.svg"); --logo-bleed: 40;
       color-scheme: dark;
     }
   }
@@ -132,6 +131,7 @@
     --pri: #F1F3F6; --on-pri: #141720; --live-text: #FF7A8F; --focus: #7C9BFF;
     --danger: #FF8A7A; --ok: #7FE0B0; --warn: #FFB27A;
     --scrim: rgba(0, 0, 0, .55); --shadow: 0 0 0 transparent; --shadow-float: 0 18px 44px -14px rgba(0, 0, 0, .7);
+    --logo: url("/static/brand/impromptu-horizontal-on-dark-glow.svg"); --logo-bleed: 40;
     color-scheme: dark;
   }
 
@@ -161,6 +161,8 @@
     --warn: #FFC58A;
     --scrim: rgba(4, 5, 10, .55);
     --shadow: 0 0 0 transparent;
+    --logo: url("/static/brand/impromptu-horizontal-on-dark-glow.svg");
+    --logo-bleed: 40;
     color: var(--fg);
     color-scheme: dark;
     background:

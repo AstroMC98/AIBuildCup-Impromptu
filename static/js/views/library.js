@@ -3,7 +3,7 @@
 import { api } from "../api.js";
 import { waiting } from "../components.js";
 import { html, setHtml } from "../html.js";
-import { icon, VISIBILITY_ICON, VISIBILITY_LABEL, wordmark } from "../icons.js";
+import { icon, logo, VISIBILITY_ICON, VISIBILITY_LABEL } from "../icons.js";
 import { flipById, slideIndicator, stagger } from "../motion.js";
 import { ring } from "../ring.js";
 import { navigate } from "../router.js";
@@ -36,7 +36,7 @@ function section(path) {
 export function appHeader({ search = true, nav = true } = {}) {
   return html`
     <header class="app-head">
-      <a class="brand" href="/" data-link aria-label="Impromptu home">${wordmark()}</a>
+      <a class="brand" href="/" data-link aria-label="Impromptu home">${logo()}</a>
       ${session.signedIn && search ? html`
         <form class="head-search" role="search" data-search>
           <label class="sr-only" for="head-search">Search pods</label>
@@ -52,7 +52,7 @@ function appNav() {
   const here = section(location.pathname);
   return html`
     <nav class="appnav" aria-label="Main">
-      <a class="appnav-mark" href="/" data-link aria-label="Impromptu home">${wordmark()}</a>
+      <a class="appnav-mark" href="/" data-link aria-label="Impromptu home">${logo()}</a>
       ${NAV.map(([href, ic, label]) => html`
         <a class="appnav-item" href="${href}" data-link ${here === href ? html`aria-current="page"` : ""}>
           <span class="appnav-ic">${icon(ic, 22)}${href === "/you" && session.incoming ? html`<span class="appnav-dot" aria-label="${session.incoming} new"></span>` : ""}</span>

@@ -281,7 +281,10 @@
     animation: np-cover-in var(--dur-smooth) var(--spring-smooth) both;
   }
   @keyframes np-cover-in { from { transform: scale(.86); opacity: 0; } }
-  .cover-brand { position: absolute; left: 7%; top: 7%; font: 800 italic 14px/1 var(--f-mark); opacity: .9; }
+  .cover-brand {
+    position: absolute; left: 7%; top: 7%; opacity: .9;
+    --logo: url("/static/brand/impromptu-horizontal-mono-white.svg"); --logo-bleed: 0; --logo-h: 7.5cqi;
+  }
   .cover-ring { position: absolute; right: -22%; top: -22%; width: 76%; height: 76%; opacity: .55; }
   .cover-ring circle { fill: rgba(255, 255, 255, .32); }
   .cover-ring circle.lit { fill: #fff; }

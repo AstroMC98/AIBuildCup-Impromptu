@@ -101,7 +101,7 @@ export function mountNowPlaying(host, ctl, { page = false, onClose } = {}) {
     r.set("title", s.show.title, () => s.show.title || "Getting the studio ready");
     r.set("hosts", s.hostNames(), () => s.hostNames());
     r.set("cover", s.show.title, () => html`
-      <span class="cover-brand">impromptu</span>
+      <span class="cover-brand logo" aria-hidden="true"></span>
       ${ring({ cls: "cover-ring", lit: (i) => i % 3 === 0, r: 44, dot: 2 })}
       <span class="cover-title">${s.show.title || "…"}</span>`);
     r.el("cover").setAttribute("aria-label", `Episode cover: ${s.show.title || ""}`);
