@@ -367,6 +367,24 @@ class LocalStore:
             await asyncio.to_thread(_atomic_write, self._udir(uid) / "ledger" / f"{entry['id']}.json", _dump(entry))
             return user["credits"]
 
+    async def top_up_credits(self, uid: str, target: int, *, reason: str, note: str = "") -> tuple[int, int]:
+        """Raise the balance to `target` (never lower it). Returns (balance, credits added)."""
+        async with self._credit_locks[uid]:
+            user = await asyncio.to_thread(_read_json, self._udir(uid) / "user.json")
+            if user is None:
+                raise KeyError(uid)
+            balance = int(user.get("credits", 0))
+            if balance >= target:
+                return balance, 0
+            user["credits"] = target
+            entry = {
+                "id": f"{time.time_ns()}", "amount": target - balance, "balance": target, "reason": reason,
+                "show_id": None, "by": None, "note": note[:200], "at": time.time(),
+            }
+            await asyncio.to_thread(_atomic_write, self._udir(uid) / "user.json", _dump(user))
+            await asyncio.to_thread(_atomic_write, self._udir(uid) / "ledger" / f"{entry['id']}.json", _dump(entry))
+            return target, target - balance
+
     async def ledger(self, uid: str, limit: int = 50) -> list[dict]:
         def run() -> list[dict]:
             entries = [d for p in (self._udir(uid) / "ledger").glob("*.json") if (d := _read_json(p))]

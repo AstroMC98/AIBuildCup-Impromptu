@@ -291,6 +291,12 @@ async def scenario(checks: dict) -> None:
 
         r = await alice_c.post("/api/shows", json={"request": request(), "live": True})
         checks["no credits -> 402"] = r.status_code == 402
+        checks["402 says where to top up (demo)"] = "You page" in r.json()["detail"] and opts["demo_reset_credits"] == 30
+        checks["demo reset: signed out -> 401"] = (await anon.post("/api/me/credits/reset")).status_code == 401
+        r1 = (await carol_c.post("/api/me/credits/reset")).json()
+        r2 = (await carol_c.post("/api/me/credits/reset")).json()
+        checks["demo reset tops up to 30, then adds nothing"] = (r1 == {"credits": 30, "added": 30}
+                                                                and r2 == {"credits": 30, "added": 0})
         checks["non-admin can't grant"] = (await bob_c.post(f"/api/admin/users/{bob['uid']}/credits", json={"amount": 50})).status_code == 403
         r = await alice_c.post(f"/api/admin/users/{alice['uid']}/credits", json={"amount": 100, "note": "demo"})
         checks["admin grants credits"] = r.status_code == 200 and r.json()["credits"] == 100

@@ -69,7 +69,20 @@ async def contract(store, tag: str) -> list[str]:
         await store.adjust_credits(u1, 1, reason="refund", show_id=s1)
         assert sorted(e["amount"] for e in await store.ledger_for_show(u1, s1)) == [-4, 1]
         assert await store.ledger_for_show(u1, s2) == [] and await store.ledger_for_show(u2, s1) == []
-    await check("users, credit transaction, ledger, a show's ledger entries", users)
+        # the demo top-up: up to the target in one transaction, never down, no entry when nothing moves
+        assert await store.top_up_credits(u1, 30, reason="reset", note="Demo top-up") == (30, 23)
+        assert (await store.get_user(u1))["credits"] == 30
+        top = (await store.ledger(u1))[0]
+        assert (top["reason"], top["amount"], top["balance"]) == ("reset", 23, 30)
+        assert await store.top_up_credits(u1, 30, reason="reset") == (30, 0)
+        assert await store.top_up_credits(u1, 12, reason="reset") == (30, 0)
+        assert len(await store.ledger(u1)) == 4
+        try:
+            await store.top_up_credits(f"nobody-{run}", 30, reason="reset")
+            raise AssertionError("topped up a missing user")
+        except KeyError:
+            pass
+    await check("users, credit transaction, ledger, a show's ledger entries, demo top-up", users)
 
     async def items():
         await store.put_item(u1, "personas", {"id": "p1", "name": "Maya", "context": "secret " * 2000, "created_at": 1})

@@ -263,6 +263,8 @@
   .credit-card { flex-direction: row; align-items: center; gap: 14px; }
   .credit-card .credit-ring { --ring: 72px; }
   .credit-num { font: 800 22px/1 var(--f-display); font-stretch: 86%; font-variant-numeric: tabular-nums; }
+  .credit-card .credit-num { white-space: nowrap; }
+  .credit-card .reset-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 10px; }
   .ledger { display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; color: var(--fg-2); padding: 0 4px; }
   .ledger:empty { display: none; }
   .ledger li { display: flex; justify-content: space-between; gap: 12px; }

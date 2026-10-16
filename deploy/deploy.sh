@@ -15,6 +15,7 @@
 #   ADMIN_EMAILS           required: comma-separated; they can grant credits
 #   FIREBASE_AUTH_DOMAIN   default PROJECT_ID.firebaseapp.com
 #   SIGNUP_CREDITS         default 0 (new accounts are free accounts)
+#   DEMO_RESET_CREDITS     default 30: anyone can top up to this from the You page; 0 turns it off
 #   GEMINI_API_KEY         asked for on the first run if not set; kept in Secret Manager
 # To change the Gemini key later:
 #   printf '%s' 'new key' | gcloud secrets versions add gemini-api-key --data-file=- --project PROJECT_ID
@@ -28,6 +29,7 @@ FIREBASE_API_KEY="${FIREBASE_API_KEY:?Set FIREBASE_API_KEY (Firebase console > P
 ADMIN_EMAILS="${ADMIN_EMAILS:?Set ADMIN_EMAILS, e.g. you@example.com}"
 FIREBASE_AUTH_DOMAIN="${FIREBASE_AUTH_DOMAIN:-${PROJECT_ID}.firebaseapp.com}"
 SIGNUP_CREDITS="${SIGNUP_CREDITS:-0}"
+DEMO_RESET_CREDITS="${DEMO_RESET_CREDITS:-30}"
 SERVICE="podcasts"
 REPO="podcasts"
 BUCKET="${PROJECT_ID}-podcasts"
@@ -157,7 +159,7 @@ say "Deploying Cloud Run service: $SERVICE ($REGION)"
 # "^|^" switches gcloud's list separator to "|" so ADMIN_EMAILS can contain commas.
 ENV_VARS="^|^STORAGE_BACKEND=gcp|GCS_BUCKET=$BUCKET|GCP_PROJECT=$PROJECT_ID|COOKIE_SECURE=true"
 ENV_VARS+="|AUTH_MODE=firebase|FIREBASE_PROJECT_ID=$PROJECT_ID|FIREBASE_API_KEY=$FIREBASE_API_KEY"
-ENV_VARS+="|FIREBASE_AUTH_DOMAIN=$FIREBASE_AUTH_DOMAIN|ADMIN_EMAILS=$ADMIN_EMAILS|SIGNUP_CREDITS=$SIGNUP_CREDITS"
+ENV_VARS+="|FIREBASE_AUTH_DOMAIN=$FIREBASE_AUTH_DOMAIN|ADMIN_EMAILS=$ADMIN_EMAILS|SIGNUP_CREDITS=$SIGNUP_CREDITS|DEMO_RESET_CREDITS=$DEMO_RESET_CREDITS"
 ENV_VARS+="|PUBLIC_URL=$PUBLIC_URL|WAKE_QUEUE=$WAKE_QUEUE"
 g run deploy "$SERVICE" \
   --image "$IMAGE" --region "$REGION" --service-account "$RUN_SA" \

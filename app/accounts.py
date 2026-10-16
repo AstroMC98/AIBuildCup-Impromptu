@@ -104,6 +104,13 @@ class Accounts:
         finally:
             self.forget(uid)
 
+    async def top_up_credits(self, uid: str, target: int, **kw) -> tuple[int, int]:
+        """Bring a balance back up to `target` (never down). Returns (balance, added)."""
+        try:
+            return await self.store.top_up_credits(uid, target, **kw)
+        finally:
+            self.forget(uid)
+
     # ---- access ----------------------------------------------------------------
 
     async def connected(self, a: str, b: str) -> bool:

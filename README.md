@@ -33,7 +33,10 @@ accounts at once in different browsers. Grant yourself credits on the **Admin** 
   (all of them if it never got going). Listening, calling in, connecting, and making
   personas and styles are free. There are no payments in this demo: admins
   (`ADMIN_EMAILS`) grant credits on the Admin page, and new accounts start with
-  `SIGNUP_CREDITS` (default 0, so new accounts are free accounts).
+  `SIGNUP_CREDITS` (default 0, so new accounts are free accounts). Anyone can also
+  press **Reset to 30** on the You page to top their balance back up to
+  `DEMO_RESET_CREDITS` (default 30) whenever they like; it never takes credits away,
+  and `0` hides the button.
 - **Connections** are mutual: send a request by email or share your invite link; the
   other person accepts.
 - **Who can listen** is set per pod, when you create it or any time later from Share:
@@ -455,6 +458,7 @@ own access control.
 | `RESEARCH_MAX_BEATS` | `3` | of those, at most this many for chapters the planner found thin |
 | `RESEARCH_TIMEOUT_SECONDS` | `30` | a slower lookup is dropped; the hosts answer with what they know |
 | `SIGNUP_CREDITS` | `0` | credits new accounts start with |
+| `DEMO_RESET_CREDITS` | `30` | demo: the You page's button tops a balance back up to this (never down); `0` hides it |
 | `ADMIN_EMAILS` | | who can grant credits and delete any pod |
 | `TTS_MODEL` | `gemini-3.8-flash-tts` | `gemini-3.8-flash-lite-tts` is faster and cheaper |
 | `SCRIPT_MODEL` | `gemini-3.8-flash` | writes the plan and every segment, describes photos |

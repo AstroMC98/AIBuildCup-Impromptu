@@ -43,6 +43,7 @@ export const api = {
   signOut: () => call("DELETE", "/api/auth/session"),
   me: () => call("GET", "/api/me"),
   ledger: () => call("GET", "/api/me/ledger"),
+  resetCredits: () => call("POST", "/api/me/credits/reset"),
   // personas and styles
   list: (kind) => call("GET", `/api/${kind}`),
   create: (kind, item) => call("POST", `/api/${kind}`, { json: item }),

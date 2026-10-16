@@ -193,6 +193,19 @@ async def _():
     assert sorted(reasons) == ["pod", "signup"]
 
 
+@check("demo reset tops a balance up to the target, never down, and the account cache sees it")
+async def _():
+    acc, s = await _accounts()
+    assert (await acc.get("ann")).credits == 5            # cached now
+    assert await acc.top_up_credits("ann", 30, reason="reset", note="Demo top-up") == (30, 25)
+    assert (await acc.get("ann")).credits == 30           # the cache was dropped
+    await acc.adjust_credits("ann", -10, reason="pod")
+    assert await acc.top_up_credits("ann", 30, reason="reset") == (30, 10)
+    await acc.adjust_credits("ann", 15, reason="grant")
+    assert await acc.top_up_credits("ann", 30, reason="reset") == (45, 0)   # more than 30 stays
+    assert [e["reason"] for e in await s.ledger("ann")].count("reset") == 2
+
+
 @check("connections: request, accept, remove; asking back accepts")
 async def _():
     acc, s = await _accounts()

@@ -13,6 +13,7 @@ POST   /api/auth/firebase {id_token}     sign in with a Firebase ID token
 POST   /api/auth/dev {email, name}       AUTH_MODE=dev only
 DELETE /api/auth/session                 sign out
 GET    /api/me    /api/me/ledger         your account, pending requests, credit history
+POST   /api/me/credits/reset             demo: top your credits back up to DEMO_RESET_CREDITS
 GET|POST /api/personas  PUT|DELETE /api/personas/{id}   your speaker personas (with private notes)
 GET|POST /api/styles    PUT|DELETE /api/styles/{id}     your styles
 GET    /api/connections                  connected, incoming, outgoing
@@ -536,7 +537,7 @@ async def _charge_memo(user: User, doc: dict, pod: int, music: int) -> None:
             await accounts.adjust_credits(user.uid, -music, reason="music", show_id=doc["id"], note="Original music")
         except InsufficientCredits as exc:
             await accounts.adjust_credits(user.uid, pod, reason="refund", show_id=doc["id"], note="Couldn't start")
-            raise HTTPException(status_code=402, detail=(
+            raise _broke((
                 f"This pod needs {pod + music} credits with original music, and you have {exc.balance + pod}."
             )) from exc
     fields = {"credits_charged": pod, "music_credits_charged": music}
@@ -566,11 +567,18 @@ def _bytes_response(request: Request, data: bytes, mime: str) -> Response:
                     headers={**headers, "Content-Range": f"bytes {start}-{end}/{size}"})
 
 
+def _broke(detail: str) -> HTTPException:
+    """Not enough credits (402). On the demo, say where to top up."""
+    if settings.demo_reset_credits > 0:
+        detail += f" This is a demo: top up to {settings.demo_reset_credits} credits any time on the You page."
+    return HTTPException(status_code=402, detail=detail)
+
+
 async def _charge(user: User, cost: int, show_id: str) -> None:
     try:
         await accounts.adjust_credits(user.uid, -cost, reason="pod", show_id=show_id)
     except InsufficientCredits as exc:
-        raise HTTPException(status_code=402, detail=(
+        raise _broke((
             f"This pod needs {exc.needed} credits and you have {exc.balance}. "
             "Creating pods uses credits; listening and calling in are free."
         )) from exc
@@ -658,6 +666,7 @@ async def options(request: Request) -> dict:
         "api_key_set": bool(settings.gemini_api_key),
         "models": {"script": settings.script_model, "tts": settings.tts_model},
         "credits_per_minute": settings.credits_per_minute,
+        "demo_reset_credits": settings.demo_reset_credits,   # 0: no reset button
         "music": {
             "library": [p.public() for p in library.packs],
             "moods": MUSIC_MOODS,
@@ -755,6 +764,18 @@ async def me(request: Request) -> dict:
 async def my_ledger(request: Request) -> dict:
     user = await require_user(request)
     return {"credits": user.credits, "entries": await store.ledger(user.uid, limit=100)}
+
+
+@app.post("/api/me/credits/reset")
+async def reset_my_credits(request: Request) -> dict:
+    """Demo version: bring your balance back up to DEMO_RESET_CREDITS. Never takes credits away."""
+    _require_origin(request)
+    user = await require_user(request)
+    if settings.demo_reset_credits <= 0:
+        raise HTTPException(status_code=404, detail="Credits can't be reset here.")
+    balance, added = await accounts.top_up_credits(user.uid, settings.demo_reset_credits, reason="reset",
+                                                   note="Demo top-up")
+    return {"credits": balance, "added": added}
 
 
 # ---- personas and styles ------------------------------------------------------------
@@ -1014,7 +1035,7 @@ async def _make_briefing(user: User, template: dict, minutes: int, tz: str, *,
     """Charge, gather the watchlist, compose, and start the room (live, or headless)."""
     cost = briefing.cost(minutes, settings.briefing_minutes_per_credit)
     if user.credits < cost:
-        raise HTTPException(status_code=402, detail=(
+        raise _broke((
             f"A {minutes}-minute briefing needs {cost} credit{'s' if cost != 1 else ''} and you have {user.credits}."))
     model = _check_capacity()
     watches = await _refresh_watches(user.uid)
@@ -1073,7 +1094,7 @@ async def _make_briefing(user: User, template: dict, minutes: int, tz: str, *,
     try:
         await accounts.adjust_credits(user.uid, -cost, reason="briefing", show_id=show_id)
     except InsufficientCredits as exc:
-        raise HTTPException(status_code=402, detail=f"This briefing needs {exc.needed} credits and you have {exc.balance}.") from exc
+        raise _broke(f"This briefing needs {exc.needed} credits and you have {exc.balance}.") from exc
     doc["credits_charged"] = cost
     try:
         await store.create_show(doc)
@@ -1388,7 +1409,7 @@ async def create_show(body: NewShow, request: Request) -> dict:
                                           "intro_line": intro["intro_line"]})
     cost = _cost(req.minutes, req.research)
     if user.credits < cost:
-        raise HTTPException(status_code=402, detail=(
+        raise _broke((
             f"Creating pods uses credits: this one needs {cost} and you have {user.credits}. "
             "Listening, calling in and connecting are free."
         ))
@@ -1460,7 +1481,7 @@ async def create_cohost(body: NewCohost, request: Request) -> dict:
     req = body.request
     cost = _cost(req.minutes)
     if user.credits < cost:
-        raise HTTPException(status_code=402, detail=(
+        raise _broke((
             f"Co-hosting uses credits: this call needs {cost} and you have {user.credits}. "
             "Listening, calling in and connecting are free."
         ))
@@ -1987,7 +2008,7 @@ async def create_memo(request: Request, audio: UploadFile = File(...), options: 
     pod_cost = _cost(opts.minutes)
     music_cost = settings.music_credits if music == "generate" else 0
     if user.credits < pod_cost + music_cost:
-        raise HTTPException(status_code=402, detail=(
+        raise _broke((
             f"This pod needs {pod_cost + music_cost} credits and you have {user.credits}. "
             "Listening, calling in and connecting are free."))
     if not MEMO_UPLOADS.take(user.uid):
@@ -2036,7 +2057,7 @@ async def produce_memo(show_id: str, body: ProduceMemo, request: Request) -> dic
     pod_cost = _cost(minutes)
     music_cost = settings.music_credits if music == "generate" else 0
     if user.credits < pod_cost + music_cost:
-        raise HTTPException(status_code=402, detail=f"This pod needs {pod_cost + music_cost} credits and you have {user.credits}.")
+        raise _broke(f"This pod needs {pod_cost + music_cost} credits and you have {user.credits}.")
     await _charge_memo(user, doc, pod_cost, music_cost)
     # How long the memo, research and outline took stays on record.
     render = {**memo_mod.fresh_render(opts.review), "timings": (doc.get("render") or {}).get("timings", {})}

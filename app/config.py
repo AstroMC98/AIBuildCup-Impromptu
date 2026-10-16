@@ -59,6 +59,9 @@ class Settings(BaseSettings):
     research_credits_per_minute: float = 0.5
     # Credits every new account starts with. 0 = new accounts are free accounts.
     signup_credits: int = 0
+    # Demo version: a button on the You page brings anyone's balance back up to this many
+    # credits, as often as they like (it never takes credits away). 0 hides the button.
+    demo_reset_credits: int = 30
 
     # ---- voice memos (a memo becomes a finished, pre-recorded pod; see memo.py) ----
     # Uploads go to Gemini inline, and requests cap at 20 MB after base64.

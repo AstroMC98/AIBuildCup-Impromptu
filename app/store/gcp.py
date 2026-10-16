@@ -325,6 +325,29 @@ class GcpStore:
 
         return await run(self.db.transaction())
 
+    async def top_up_credits(self, uid: str, target: int, *, reason: str, note: str = "") -> tuple[int, int]:
+        """Raise the balance to `target` (never lower it), in one transaction with its
+        ledger entry. Returns (balance, credits added)."""
+        ref = self._user(uid)
+        entry_ref = ref.collection("ledger").document()
+
+        @firestore.async_transactional
+        async def run(tx) -> tuple[int, int]:
+            snap = await ref.get(transaction=tx)
+            if not snap.exists:
+                raise KeyError(uid)
+            balance = int((snap.to_dict() or {}).get("credits", 0))
+            if balance >= target:
+                return balance, 0
+            tx.update(ref, {"credits": target})
+            tx.set(entry_ref, {
+                "id": entry_ref.id, "amount": target - balance, "balance": target, "reason": reason,
+                "show_id": None, "by": None, "note": note[:200], "at": time.time(),
+            })
+            return target, target - balance
+
+        return await run(self.db.transaction())
+
     async def ledger(self, uid: str, limit: int = 50) -> list[dict]:
         query = self._user(uid).collection("ledger").order_by("at", direction=firestore.Query.DESCENDING).limit(limit)
         return [snap.to_dict() async for snap in query.stream()]

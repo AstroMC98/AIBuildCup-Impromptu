@@ -11,7 +11,7 @@ import { loginPath, session } from "../session.js";
 import { openPodMenu } from "../sheets.js";
 import { applyAccent, gelFor, initial } from "../theme.js";
 import { bindActions } from "../ui.js";
-import { fmtAgo, fmtTime, store as local } from "../util.js";
+import { fmtAgo, fmtTime, store as local, toast } from "../util.js";
 
 const FILTERS = [["all", "All"], ["live", "Live"], ["finished", "Finished"], ["draft", "Drafts"]];
 const SCOPE_LABEL = { mine: "Yours", following: "Following", shared: "Shared", public: "Public" };
@@ -518,7 +518,6 @@ export async function youView(root) {
   applyAccent(document.documentElement, HOUSE_ACCENT);
   const el = document.createElement("div");
   el.className = "house-page";
-  const perMin = session.options.credits_per_minute;
   setHtml(el, html`
     ${appHeader({ search: false })}
     <main class="page narrow you">
@@ -527,11 +526,7 @@ export async function youView(root) {
         <span class="col grow"><h1>${me.name}</h1><span class="muted small">${me.email}</span></span>
         ${me.admin ? html`<span class="tag">Admin</span>` : ""}
       </div>
-      <section class="card credit-card">
-        ${ring({ lit: (i) => i < Math.min(60, me.credits), cls: "credit-ring", label: `${me.credits} credits` })}
-        <span class="col grow"><strong class="credit-num">${me.credits} credits</strong>
-          <span class="muted small">${me.credits ? `About ${Math.round(me.credits / perMin)} minutes of pods, at ${perMin} credit a minute.` : "A free account: listen, call in and connect for free."}</span></span>
-      </section>
+      <section class="card credit-card" data-credits>${creditCard(me.credits)}</section>
       <ul class="ledger" data-ledger><li>${waiting("", { inline: true })}</li></ul>
       <nav class="menu" aria-label="Your things">
         <a class="menu-item" href="/briefings" data-link>${icon("sparkle", 20)}Briefings<span class="faint">made just for you</span>${icon("chevronRight", 16)}</a>
@@ -553,14 +548,44 @@ export async function youView(root) {
     await session.signOut();
     navigate("/", { replace: true });
   });
-  api.ledger().then((r) => {
+  const loadLedger = () => api.ledger().then((r) => {
     const ul = el.querySelector("[data-ledger]");
     if (!ul) return;
     setHtml(ul, r.entries.length ? html`${r.entries.slice(0, 6).map((e) => html`
       <li><span>${ledgerLabel(e)}</span><span class="${e.amount > 0 ? "plus" : "minus"}">${e.amount > 0 ? "+" : ""}${e.amount}</span></li>`)}` : "");
   }).catch(() => setHtml(el.querySelector("[data-ledger]"), ""));
+  loadLedger();
+  // Demo version: top the balance back up (the server never lowers it).
+  el.querySelector("[data-credits]").addEventListener("click", async (ev) => {
+    const btn = ev.target.closest("[data-reset-credits]");
+    if (!btn || btn.disabled) return;
+    btn.disabled = true;
+    try {
+      const r = await api.resetCredits();
+      toast(r.added ? `Back to ${r.credits} credits.` : `You already have ${r.credits} credits.`);
+      setHtml(el.querySelector("[data-credits]"), creditCard(r.credits));
+      loadLedger();
+      session.refresh();
+    } catch (err) {
+      btn.disabled = false;
+      toast(err.message);
+    }
+  });
   session.refresh();
   return { unmount() { offHead(); } };
+}
+
+/** The You page's balance: the studio clock fills with credits; on the demo, a top-up button. */
+function creditCard(credits) {
+  const perMin = session.options.credits_per_minute;
+  const target = session.options.demo_reset_credits || 0;
+  return html`
+    ${ring({ lit: (i) => i < Math.min(60, credits), cls: "credit-ring", label: `${credits} credits` })}
+    <span class="col grow"><strong class="credit-num">${credits} credits</strong>
+      <span class="muted small">${credits ? `About ${Math.round(credits / perMin)} minutes of pods, at ${perMin} credit a minute.` : "A free account: listen, call in and connect for free."}</span>
+      ${target ? html`<span class="reset-row"><button class="btn chip-btn small-btn" type="button" data-reset-credits
+        ${credits >= target ? "disabled" : ""} title="${credits >= target ? `You have ${target} or more` : `Back to ${target} credits`}">
+        ${icon("back", 14, 2.4)}Reset to ${target}</button><span class="faint small">Demo version: top up to ${target} any time.</span></span>` : ""}</span>`;
 }
 
 /** Kept for callers that still open the account as a sheet: it's a page now. */
@@ -577,6 +602,7 @@ function ledgerLabel(e) {
     case "refund": return `${e.note ? `Refund: ${e.note}` : "Unused minutes back"}, ${when}`;
     case "signup": return `Welcome credits, ${when}`;
     case "grant": return `${e.note || "Credits added"}, ${when}`;
+    case "reset": return `Demo top-up to ${e.balance}, ${when}`;
     default: return `${e.note || "Adjustment"}, ${when}`;
   }
 }
