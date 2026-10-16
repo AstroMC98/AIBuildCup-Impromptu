@@ -1486,7 +1486,7 @@ async def cohost_notes(body: CohostNotes, request: Request) -> dict:
     if len(notes) <= settings.cohost_source_chars:
         return {"brief": False}                     # short enough to give the co-host whole
     if user.credits < _cost(5):
-        raise HTTPException(status_code=402, detail="Co-hosting uses credits.")
+        raise _broke(f"Co-hosting uses credits: the shortest call needs {_cost(5)} and you have {user.credits}.")
     model = gemini_or_none()
     if model is None:
         return {"brief": False}
