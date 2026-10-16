@@ -31,6 +31,17 @@ from .models import (
 log = logging.getLogger("podcasts.llm")
 
 _FENCE = re.compile(r"^```(?:json)?\s*|\s*```$")
+# Gemini's implicit cache only serves prompts at least this long (Gemini 3.x Flash).
+CACHE_MIN_TOKENS = 4_096
+
+
+def _log_cache(label: str, interaction) -> None:
+    """How much of a long prompt came from the implicit cache (prompts.source_block)."""
+    usage = getattr(interaction, "usage", None)
+    total = getattr(usage, "total_input_tokens", None) or 0
+    cached = getattr(usage, "total_cached_tokens", None) or 0
+    if total >= CACHE_MIN_TOKENS:
+        log.info("%s: %d of %d input tokens from the cache", label, cached, total)
 
 
 class ModelOutputError(RuntimeError):
@@ -84,9 +95,11 @@ class Gemini:
         )
 
     async def _json_call(self, *, system: str, user: str | list, schema: dict, tools: list | None = None,
-                         model: str | None = None, thinking: str | None = None) -> dict:
+                         model: str | None = None, thinking: str | None = None, label: str = "") -> dict:
         interaction = await self._create(system=system, user=user, schema=schema, tools=tools, model=model,
                                          thinking=thinking)
+        if label:
+            _log_cache(label, interaction)
         return _parse_json(interaction.output_text)
 
     async def plan_show(self, req: ShowRequest, source: str) -> ShowPlan:
@@ -94,6 +107,7 @@ class Gemini:
             system=prompts.planner_system(req, source, self.settings.research_max_beats),
             user=prompts.planner_input(req),
             schema=prompts.plan_schema(len(req.hosts), research=req.research),
+            label="plan",
         )
         try:
             plan = ShowPlan.model_validate(data)
@@ -125,7 +139,7 @@ class Gemini:
         for attempt in range(2):
             try:
                 draft = SegmentDraft.model_validate(
-                    await self._json_call(system=system, user=user, schema=schema, thinking=thinking)
+                    await self._json_call(system=system, user=user, schema=schema, thinking=thinking, label="segment")
                 )
             except (ModelOutputError, ValidationError) as exc:
                 last_error = exc
@@ -150,6 +164,7 @@ class Gemini:
             system=prompts.replan_system(req, plan, source, style, steer, minutes_left, beat_index),
             user=prompts.replan_input(transcript),
             schema=prompts.replan_schema(),
+            label="re-plan",
         )
         try:
             beats = [Beat.model_validate(b) for b in data.get("beats", [])]

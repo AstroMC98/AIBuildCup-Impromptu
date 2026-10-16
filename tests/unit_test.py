@@ -1509,14 +1509,15 @@ def _():
     r = _runner()
     live_w = prompts.writer_system(r.req, r.plan, "SRC", "STYLE", [])
     live_p = prompts.planner_system(r.req, "SRC")
-    assert live_w.startswith(prompts.WRITER_INTRO["live"]) and "Listener comments:" in live_w
+    head = prompts.source_block("SRC")
+    assert live_w.startswith(head + prompts.WRITER_INTRO["live"]) and "Listener comments:" in live_w
     assert "EPISODE DIRECTION" not in live_w + live_p and "live audio show" in live_p
     rec = r.req.model_copy(update={"mode": "recorded", "direction": "Credit Ana's memo."})
     w = prompts.writer_system(rec, r.plan, "SRC", "STYLE", [])
     p = prompts.planner_system(rec, "SRC")
-    assert w.startswith(prompts.WRITER_INTRO["recorded"]) and "Listener comments" not in w
+    assert w.startswith(head + prompts.WRITER_INTRO["recorded"]) and "Listener comments" not in w
     assert not re.search(r"\blive\b", w, re.IGNORECASE)
-    assert w.index("HOSTS:") < w.index("EPISODE DIRECTION:\nCredit Ana's memo.") < w.index("SOURCE:")
+    assert w.index("SOURCE:") < w.index("HOSTS:") < w.index("EPISODE DIRECTION:\nCredit Ana's memo.")
     assert "pre-recorded" in p and "EPISODE DIRECTION:\nCredit Ana's memo.\n\nSTYLE:" in p
 
 
@@ -1579,6 +1580,20 @@ def _():
     s = prompts.writer_system(r.req, r.plan, "SOURCE TEXT", "THE STYLE", items)
     assert s.index("SOURCE TEXT") < s.index("TREE") < s.rindex("THE STYLE")
     assert "background: use silently" in s and s.rstrip().endswith("THE STYLE")
+
+
+@check("the planner, the writers and the re-planner all open with the same source, for the cache")
+def _():
+    r = _runner()
+    src = "A LONG SOURCE {with braces} " * 50
+    head = prompts.source_block(src)
+    calls = [prompts.planner_system(r.req, src), prompts.writer_system(r.req, r.plan, src, "STYLE", []),
+             prompts.replan_system(r.req, r.plan, src, "STYLE", "go left", 4.0, 1)]
+    assert all(c.startswith(head) and c.count("SOURCE:\n<<<") == 1 for c in calls)
+    # a restyle or new context changes only what comes after the source
+    later = prompts.writer_system(r.req, r.plan, src, "NEW STYLE",
+                                  [ContextItem(id=1, kind="text", name="n", text="NEW", when="now", added_by="Ana")])
+    assert later.startswith(head) and later[: len(head)] == calls[1][: len(head)]
 
 
 # ---- co-hosting: recording a call and editing it into an episode ----------------------

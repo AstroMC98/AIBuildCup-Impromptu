@@ -13,6 +13,14 @@ from .models import (
 TRANSCRIPT_WINDOW = 80
 
 
+# Every call that reads the SOURCE opens with it, byte for byte the same: the planner,
+# the writers (every segment) and the re-planner. Gemini's implicit cache reuses the
+# longest identical prefix, so a long source is read once, when the plan is made, and
+# each later call (a segment, a re-plan after a steer) gets it from the cache.
+def source_block(source: str) -> str:
+    return f"SOURCE:\n<<<\n{source}\n>>>\n\n"
+
+
 # A pre-recorded episode (a voice memo's pod) is planned and written with the same
 # prompts: only the opening differs, the live-only writer rules are left out, and
 # the EPISODE DIRECTION says what shape the episode takes. Live prompts are unchanged.
@@ -60,12 +68,7 @@ direction) and `move_on` (they want to skip ahead). Spread them across the hosts
 - Write everything in {language}.{research}
 {direction}
 STYLE:
-{style}
-
-SOURCE:
-<<<
-{source}
->>>"""
+{style}"""
 
 PLANNER_RESEARCH = """
 - RESEARCH IS ON: the show has a research desk that searches the web while it's on \
@@ -84,10 +87,10 @@ WRITER_INTRO = {
                 "transcript so far.",
 }
 
-# Ordered from what never changes to what can change mid-show: rules, hosts,
-# direction, source, plan, then the append-only added context, and the style last.
-# Gemini's implicit caching reuses the longest identical prefix, so a restyle or
-# new context only re-reads the tail, never the (possibly huge) source.
+# After the source (source_block), ordered from what never changes to what can change
+# mid-show: rules, hosts, direction, plan, then the append-only added context, and the
+# style last. Gemini's implicit caching reuses the longest identical prefix, so a
+# restyle or new context only re-reads the tail, never the (possibly huge) source.
 WRITER_SYSTEM = """\
 {intro}
 
@@ -112,11 +115,6 @@ one or two per segment.
 HOSTS:
 {hosts}
 {direction}
-SOURCE:
-<<<
-{source}
->>>
-
 SHOW: {title}. {tagline}
 
 EPISODE PLAN:
@@ -362,7 +360,7 @@ def planner_system(req: ShowRequest, source: str, research_beats: int = 0) -> st
         persona = f'; persona (keep it, tighten it to one sentence): "{h.persona.strip()}"' if h.persona.strip() else ""
         rules.append(f"host {i}: {name}; {voice}{persona}{_traits(h)}")
     beats = "4 to 5" if req.minutes <= 5 else "4 to 6" if req.minutes <= 10 else "5 to 7"
-    return PLANNER_SYSTEM.format(
+    return source_block(source) + PLANNER_SYSTEM.format(
         intro=PLANNER_INTRO[req.mode].format(host_count=_host_count(len(req.hosts))),
         show_name=f' to "{req.show_name.strip()}"' if req.show_name.strip() else "",
         intro_line=(f' Work in the show\'s own intro line, keeping its words: "{req.intro_line.strip()}".'
@@ -376,7 +374,6 @@ def planner_system(req: ShowRequest, source: str, research_beats: int = 0) -> st
         tags=" ".join(VOCAL_TAGS),
         language=req.language,
         style=req.style,
-        source=source,
     )
 
 
@@ -452,7 +449,7 @@ def writer_system(
     req: ShowRequest, plan: ShowPlan, source: str, style: str, context: list[ContextItem]
 ) -> str:
     """Changes only when context is added or the style changes; see WRITER_SYSTEM."""
-    return WRITER_SYSTEM.format(
+    return source_block(source) + WRITER_SYSTEM.format(
         intro=WRITER_INTRO[req.mode],
         live_rules=(WRITER_LIVE_RULES.format(research=WRITER_RESEARCH if req.research else "")
                     if req.mode == "live" else ""),
@@ -466,7 +463,6 @@ def writer_system(
         beats="\n".join(f"{i}. {b.title}: {b.notes}" for i, b in enumerate(plan.beats, 1)),
         added_context=format_context(context),
         tags=" ".join(VOCAL_TAGS),
-        source=source,
     )
 
 
@@ -640,22 +636,17 @@ HOSTS:
 ALREADY COVERED: {done}
 
 STYLE:
-{style}
-
-SOURCE:
-<<<
-{source}
->>>"""
+{style}"""
 
 
 def replan_system(req: ShowRequest, plan: ShowPlan, source: str, style: str, steer: str,
                   minutes_left: float, beat_index: int) -> str:
     done = "; ".join(b.title for b in plan.beats[: beat_index + 1]) or "the cold open"
     beats = "1 to 2" if minutes_left < 3 else "2 to 3" if minutes_left < 7 else "3 to 5"
-    return REPLANNER_SYSTEM.format(
+    return source_block(source) + REPLANNER_SYSTEM.format(
         steer=steer, beat_range=beats, minutes=minutes_left, language=req.language,
         title=plan.title, tagline=plan.tagline, hosts="\n".join(f"- {h.name}: {h.persona}" for h in plan.hosts),
-        done=done, style=style, source=source,
+        done=done, style=style,
     )
 
 

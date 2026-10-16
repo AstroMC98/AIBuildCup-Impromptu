@@ -26,7 +26,9 @@ class Caps:
 
 
 GUEST = Caps(text_chars=4_000, file_bytes=5 * MB, file_chars=15_000)
-PRODUCER = Caps(text_chars=20_000, file_bytes=25 * MB, file_chars=60_000)
+# Added context sits after the source in the writer's instructions (prompts.source_block),
+# so once a segment has read it, every later segment gets it from Gemini's cache.
+PRODUCER = Caps(text_chars=100_000, file_bytes=25 * MB, file_chars=100_000)
 
 
 def setup_caps(max_source_chars: int) -> Caps:

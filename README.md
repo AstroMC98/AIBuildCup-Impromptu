@@ -97,7 +97,10 @@ accounts at once in different browsers. Grant yourself credits on the **Admin** 
 - **Seek**: click or drag the progress bar, or tap a chapter, to jump there (a live
   pod: back as far as your browser holds, about 5 minutes); arrow keys move 10 s.
 - **Add context**: text, a file, a link or a photo, used **right now**, at the **next
-  chapter**, or as **background only**, credited on air or not.
+  chapter**, or as **background only**, credited on air or not. The creator can add up
+  to 100,000 characters at a time (300,000 a show). The source opens every prompt, with
+  added context after it, so Gemini's implicit cache serves both to every later segment
+  (the server logs how many input tokens came from the cache).
 - **Restyle** (creator): switch the vibe mid-show; the hosts switch within a couple of
   lines and the whole screen re-tints.
 - **Interrupt** (creator): hold to talk or type, and the show stops where you are. A
