@@ -692,6 +692,32 @@ async def _():
     assert any(e["type"] == "error" and "no audio" in e["message"] for e in r.room.events)
 
 
+@check("a line whose speech goes quiet before any audio is asked for again, not skipped")
+async def _():
+    import app.show as show_mod
+    r = _runner()
+    calls = []
+
+    class QuietOnce:
+        async def stream_speech(self, lines, hosts):
+            calls.append(lines[0].text)
+            if len(calls) == 1:          # the API goes quiet on this request
+                await asyncio.sleep(3600)
+            yield b"\x00\x00" * 2400
+
+    r.gemini = QuietOnce()
+    old, show_mod.SPEECH_STALL_SECONDS = show_mod.SPEECH_STALL_SECONDS, 0.3
+    try:
+        d = _draft(r, segment=SegmentDraft(lines=[Line(speaker="A", text="only line")]))
+        r._commit(d)
+        await asyncio.wait_for(r._speak(d), 5)
+    finally:
+        show_mod.SPEECH_STALL_SECONDS = old
+    assert calls == ["only line", "only line"]
+    assert not any(e["type"] == "error" for e in r.room.events)
+    assert [e["samples"] for e in r.room.events if e["type"] == "segment_end"] == [2400]
+
+
 @check("a plan made beforehand skips planning; speech that never started gets another try")
 async def _():
     speech = []

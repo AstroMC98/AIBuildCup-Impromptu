@@ -31,6 +31,7 @@ and come back as cited context (the call-in is answered once its lookup is in).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import random
 import re
@@ -79,6 +80,7 @@ WRITE_TIMEOUT_SECONDS = 15.0
 PLAN_TIMEOUT_SECONDS = 45.0     # plans take ~11 s; listeners are waiting on Go live
 SPEECH_STALL_SECONDS = 15.0     # speech that stops streaming this long is skipped
 SPEECH_AHEAD = 3                # lines voiced at once: the one playing and a couple ahead
+LINE_TRIES = 3                  # a line whose audio never starts (an error, or silence) is asked for again
 LINE_GAP_SECONDS = 0.12         # a breath between lines (each line is voiced on its own)
 # A rewrite costs a writer call plus the wait for first audio. Both are measured as the
 # show runs; these are the starting guesses, and the margin covers a slow call.
@@ -861,13 +863,24 @@ class ShowRunner:
             gate = asyncio.Semaphore(SPEECH_AHEAD)
 
             async def fetch(i: int) -> None:
+                """Voice line i into its queue. A call that errors, or sends nothing for a
+                while, before any of its audio is asked for again: the API sometimes goes
+                quiet on a request, and a fresh one usually answers at once. Once audio has
+                started, a stall can't be redone and is reported."""
                 line = draft.lines[i]
                 voice = [by_name.get(line.speaker, hosts[0])]
+                first_wait = SPEECH_STALL_SECONDS * 2 / 3
                 async with gate:   # first come, first served: earlier lines go first
-                    for attempt in range(2):   # a line that fails before any audio gets one more try
+                    for attempt in range(LINE_TRIES):
                         got = False
+                        stream = self.gemini.stream_speech([line], voice)
                         try:
-                            async for chunk in self.gemini.stream_speech([line], voice):
+                            while True:
+                                try:
+                                    chunk = await asyncio.wait_for(
+                                        anext(stream), SPEECH_STALL_SECONDS if got else first_wait)
+                                except StopAsyncIteration:
+                                    break
                                 got = True
                                 queues[i].put_nowait(chunk)
                             queues[i].put_nowait(None)
@@ -875,11 +888,14 @@ class ShowRunner:
                         except asyncio.CancelledError:
                             raise
                         except Exception as exc:  # the line that plays when it's due raises it
-                            if got or attempt:
+                            if got or attempt == LINE_TRIES - 1:
                                 queues[i].put_nowait(exc)
                                 return
-                            log.warning("speech for segment %d line %d failed before any audio (%s); trying again",
-                                        draft.seq, i, exc)
+                            why = "no audio yet" if isinstance(exc, TimeoutError) else str(exc)
+                            log.warning("speech for segment %d line %d: %s; asking again", draft.seq, i, why)
+                        finally:
+                            with contextlib.suppress(Exception):
+                                await stream.aclose()
 
             tasks = [asyncio.create_task(fetch(i)) for i in range(len(draft.lines))]
             try:
@@ -891,7 +907,9 @@ class ShowRunner:
                     self.room.publish({"type": "line", "seq": draft.seq, "idx": i, "at": samples})
                     carry = b""
                     while True:
-                        chunk = await asyncio.wait_for(queues[i].get(), SPEECH_STALL_SECONDS)
+                        # fetch() has its own stall checks and retries; this only guards against
+                        # waiting forever (longer than all of a line's tries could take)
+                        chunk = await asyncio.wait_for(queues[i].get(), SPEECH_STALL_SECONDS * (LINE_TRIES + 1))
                         if chunk is None:
                             break
                         if isinstance(chunk, Exception):
