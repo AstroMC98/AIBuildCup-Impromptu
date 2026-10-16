@@ -369,7 +369,7 @@ export async function libraryView(root, { url }) {
     <main class="home-main">
       ${me ? html`
         <section class="home-hero">
-          <h1>${hello} What should today's pod be about?</h1>
+          <h1><span class="hello">${hello}</span> What should today's pod be about?</h1>
           <div data-brief></div>
           ${me.credits > 0 ? html`
             <form class="composer card" data-composer>
@@ -406,7 +406,7 @@ export async function libraryView(root, { url }) {
       ${templates.length ? html`
         <section class="shelf" aria-labelledby="tpl-h">
           <div class="shelf-head"><h2 id="tpl-h" class="shelf-h">Start from a template</h2></div>
-          <div class="tpl-grid">${templates.map((t) => templateCard(t, { as: "link" }))}</div>
+          <div class="tpl-row">${templates.map((t) => templateCard(t, { as: "link" }))}</div>
         </section>` : ""}
     </main>`);
   root.append(el);

@@ -185,11 +185,6 @@
   }
 
   /* ---- templates (gel tiles) ------------------------------------------------------------------------ */
-  .tpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
-  @media (max-width: 1023px) {
-    .tpl-grid { display: flex; overflow-x: auto; padding: 2px 2px 10px; scroll-snap-type: x proximity; scrollbar-width: none; }
-    .tpl-grid .tpl { flex: none; width: 236px; scroll-snap-align: start; }
-  }
   .tpl-row { display: flex; gap: 10px; overflow-x: auto; padding: 2px 2px 10px; scroll-snap-type: x proximity; scrollbar-width: none; }
   .tpl-row .tpl { scroll-snap-align: start; }
   /* with a mouse there's no swipe, so the shelves keep a thin, quiet scrollbar */
@@ -213,13 +208,15 @@
   .tpl-host { font-size: 11px; font-weight: 750; padding: 2px 8px; border-radius: var(--pill); background: rgba(8, 9, 14, .3); }
   .vibe-check { position: absolute; right: 10px; top: 10px; width: 24px; height: 24px; border-radius: 50%; background: #fff; color: #141720; display: grid; place-items: center; }
 
-  /* ---- Home ------------------------------------------------------------------------------------------ */
-  .home-main { max-width: 1120px; margin: 0 auto; padding: 8px var(--gutter) 48px; display: flex; flex-direction: column; gap: 30px; }
+  /* ---- Home: one column, so the question, the composer and every shelf share both edges ---------------- */
+  .home-main { max-width: 840px; margin: 0 auto; padding: 8px var(--gutter) 48px; display: flex; flex-direction: column; gap: 30px; }
   .home-hero { display: flex; flex-direction: column; gap: 16px; padding-top: 8px; }
-  .home-hero h1 { font: 790 clamp(30px, 6.4vw, 54px)/.98 var(--f-display); font-stretch: 84%; letter-spacing: -0.02em; max-width: 17ch; }
+  .home-hero h1 { font: 790 clamp(30px, 6.4vw, 54px)/.98 var(--f-display); font-stretch: 84%; letter-spacing: -0.02em; text-wrap: balance; }
+  .home-hero h1 .hello { display: block; }
   .home-hero.signed-out { padding: 20px 0 6px; }
+  .home-hero.signed-out h1 { max-width: 17ch; }
   .home-hero.signed-out .muted { max-width: 54ch; font-size: 17px; }
-  .composer { padding: 14px; gap: 10px; max-width: 760px; box-shadow: inset 0 0 0 1px var(--line), var(--shadow); }
+  .composer { padding: 14px; gap: 10px; box-shadow: inset 0 0 0 1px var(--line), var(--shadow); }
   .composer-area {
     width: 100%; min-height: 76px; border: 0; padding: 4px 2px; resize: none; background: transparent; color: var(--fg);
     font-size: 17px; line-height: 1.45;
@@ -232,7 +229,7 @@
   @media (max-width: 420px) { .composer-row .btn.quiet { padding: 0 12px; } }
 
   .brief-ready {
-    display: flex; align-items: center; gap: 14px; padding: 14px 16px; border-radius: var(--r-card); max-width: 760px; color: #fff; text-decoration: none;
+    display: flex; align-items: center; gap: 14px; padding: 14px 16px; border-radius: var(--r-card); color: #fff; text-decoration: none;
     background: radial-gradient(120% 160% at 0% 0%, color-mix(in oklch, var(--gel) 70%, #fff), color-mix(in oklch, var(--gel) 38%, #0A0F1C) 72%);
     box-shadow: var(--shadow);
   }
